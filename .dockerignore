@@ -1,0 +1,102 @@
+# Ignore data directories
+SPEED_FIXED
+SPEED_FIXED/*
+SPEED_PLUS_SYNTHETIC_FIXED
+SPEED_PLUS_SYNTHETIC_FIXED/*
+speed
+speed/
+speedplusv2
+speedplusv2/
+SPEED_PLUS_FIXED
+SPEED_PLUS_FIXED/
+SPEED_FIXED_copy/
+SPEED_FIXED_copy
+
+# Ignore scripts directory
+scripts
+scripts/*
+
+# Ignore runs directory
+runs
+runs/*
+
+# Ignore __pycache__ directory
+__pycache__
+__pycache__/*
+
+# Ignore .git directory
+.git
+.git/*
+
+# Ignore temp directory
+temp
+temp/*
+
+# Ignore commands.txt and converts.txt
+commands.txt
+converts.txt
+
+# Ignore .venv directory
+.venv
+.venv/*
+
+# Ignore pytest cache
+.pytest_cache
+.pytest_cache/*
+
+# Ignore .ruff_cache directory
+.ruff_cache
+.ruff_cache/*
+
+# Ignore egg-info directory
+*.egg-info
+*.egg-info/*
+
+# Ignore commands.txt
+commands.txt
+temp.txt
+converts.txt
+
+# Ignore all .pth files
+*.pth
+
+# Ignore old folder
+old
+old/*
+
+# Ignore onnx and trt models
+*.onnx
+*.trt
+
+# Ignore json files except assets/all_annotations.json
+*.json
+!assets/all_annotations.json
+
+# Ignore all test folders except tests
+test*
+!tests
+
+# Ignore results folder
+results
+results/*
+eval_results/
+
+# Ignore .zip files
+*.zip
+
+# Ignore checkpoints
+checkpoints
+checkpoints/*
+
+# Ignore visualization files
+visualizations*/
+profile.out
+
+# Compiled cuda libraries
+*.so
+.crush/
+
+# Object detector weights
+lwdetr_weights/
+vit_backends_experiment/
+baseline/

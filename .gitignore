@@ -1,0 +1,105 @@
+# Ignore data directories
+SPEED_FIXED
+SPEED_FIXED/*
+SPEED_PLUS_SYNTHETIC_FIXED
+SPEED_PLUS_SYNTHETIC_FIXED/*
+speed
+speed/
+speedplusv2
+speedplusv2/
+SPEED_PLUS_FIXED/
+SPEED_PLUS_FIXED
+SPEED_FIXED_copy/
+SPEED_FIXED_copy
+
+# Ignore runs directory
+runs
+runs/*
+
+# Ignore __pycache__ directory
+__pycache__
+__pycache__/*
+
+# Ignore temp directory
+temp
+temp/*
+
+# Ignore commands.txt
+commands.txt
+
+# Ignore .venv directory
+.venv
+.venv/*
+
+# Ignore pytest cache
+.pytest_cache
+.pytest_cache/*
+
+# Ignore .ruff_cache directory
+.ruff_cache
+.ruff_cache/*
+
+# Ignore egg-info directory
+*.egg-info
+*.egg-info/*
+
+# Ignore commands.txt and converts.txt
+commands.txt
+converts.txt
+temp.txt
+
+# Ignore all .pth files except weights from styleaug
+*.pth
+!styleaug/checkpoints/*.pth
+
+# Ignore old folder
+old
+old/*
+
+# Ignore onnx and trt models
+*.onnx
+*.trt
+
+# Ignore json files except bbox annotations
+*.json
+!assets/speed_bbox_annotations.json
+!assets/speed_plus_bbox_annotations.json
+!assets/speed_plus_synthetic_bbox_annotations.json
+
+# Ignore all test folders except tests
+test*
+!tests
+
+# Ignore all deb packages (tensorrt)
+*.deb
+
+# Ignore results folder
+results
+results/*
+eval_results/
+
+# Ignore .zip files
+*.zip
+
+# Ignore images folder under other_utils
+other_utils/*images*
+other_utils/*images*/*
+
+# Ignore checkpoints
+checkpoints
+checkpoints/*
+!styleaug/checkpoints
+
+# Ignore visualization files
+visualizations*/
+profile.out
+
+# Compiled cuda libraries
+*.so
+.crush/
+
+# Object detector weights
+lwdetr_weights/
+vit_backends_experiment/
+baseline/
+weights/

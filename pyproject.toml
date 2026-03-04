@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "FastPoseViT"
+version = "1.0.0"
+description = "FastPoseViT's project repository"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    {name = "Pierre Ancey"}
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+dynamic = ["dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*", "object_detector*", "styleaug*"]
+
+# This section uses the `ruff` tool to enforce code style.
+[tool.ruff]
+line-length = 99

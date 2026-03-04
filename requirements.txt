@@ -1,0 +1,26 @@
+albumentationsx==2.0.13
+cuda-python<13
+cython
+einops
+fairscale
+muon-optimizer @ git+https://github.com/KellerJordan/Muon.git
+nbformat
+onnx
+onnxruntime-gpu
+onnxscript
+onnxsim
+opencv-python
+Pillow==10.4.0
+plotly
+pycocotools
+pycuda
+pygame
+PyOpenGL 
+PyOpenGL_accelerate
+pytest
+ruff
+scikit_learn==1.5.2
+scipy
+tensorboard
+timm
+tqdm

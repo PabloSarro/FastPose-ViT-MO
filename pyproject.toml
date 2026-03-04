@@ -3,9 +3,9 @@ requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "FastPoseViT"
+name = "FastPose-ViT"
 version = "1.0.0"
-description = "FastPoseViT's project repository"
+description = "FastPose-ViT's project repository"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [

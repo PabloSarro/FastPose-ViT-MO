@@ -1,6 +1,6 @@
-# FastPoseViT
+# FastPose-ViT
 ![Front image](assets/front.png)
-FastPoseViT is a Vision Transformer (ViT) pipeline for 6D spacecraft pose estimation on the SPEED and SPEED+ datasets. It covers the full workflow from data preparation and training to NVIDIA Jetson deployment with dedicated tooling for bounding-box detection, quantization and TensorRT conversion.
+FastPose-ViT is a Vision Transformer (ViT) pipeline for 6D spacecraft pose estimation on the SPEED and SPEED+ datasets. It covers the full workflow from data preparation and training to NVIDIA Jetson deployment with dedicated tooling for bounding-box detection, quantization and TensorRT conversion.
 
 ## Table of Contents
 - [Highlights](#highlights)
@@ -15,7 +15,7 @@ FastPoseViT is a Vision Transformer (ViT) pipeline for 6D spacecraft pose estima
   - [Directory Layout](#directory-layout)
   - [Steps](#steps)
 - [Training & Evaluation](#training--evaluation)
-  - [Standard FastPoseViT Training](#standard-fastposevit-training)
+  - [Standard FastPose-ViT Training](#standard-FastPose-ViT-training)
   - [Evaluation](#evaluation)
   - [Prediction on SPEED for submission](#prediction-on-speed-for-submission)
   - [Latency Benchmark (PyTorch)](#latency-benchmark-pytorch)
@@ -41,17 +41,17 @@ FastPoseViT is a Vision Transformer (ViT) pipeline for 6D spacecraft pose estima
 - `optimization/`: Conversion, calibration, and TensorRT tooling
 - `other_utils/`: Utility scripts (dataset splitters, helpers, misc tools)
 - `scripts/`: Experiment ablation scripts (optimizer, representation, augmentation, pretraining, etc.)
-- `src/`: FastPoseViT training, evaluation, inference, and optimization code
+- `src/`: FastPose-ViT training, evaluation, inference, and optimization code
 - `styleaug/`: Style augmentation module integrated with the training pipeline
 - `tests/`: Unit and regression tests for core functionality
 
 ## Quick Start
 
-Getting started with FastPoseViT is straightforward. Follow these essential steps to begin training and evaluating your 6D pose estimation models:
+Getting started with FastPose-ViT is straightforward. Follow these essential steps to begin training and evaluating your 6D pose estimation models:
 
 1. Install the package (Docker or local Python environment)
 2. Download SPEED / SPEED+ and create train/val/test splits
-3. Train FastPoseViT on SPEED / SPEED+
+3. Train FastPose-ViT on SPEED / SPEED+
 4. Evaluate the model and export predictions or latency metrics
 5. (Optional) Optimize the model for Jetson deployment via ONNX -> quantization -> TensorRT
 
@@ -61,18 +61,18 @@ The sections below expand each step with detailed instructions and code examples
 
 Pretrained model weights trained on the SPEED dataset are available on HuggingFace:
 
-> **[HuggingFace: FastPoseViT](https://huggingface.co/PierreAncey/FastPoseViT)**
+> **[HuggingFace: FastPose-ViT](https://huggingface.co/PierreAncey/FastPose-ViT)**
 
 | File | Description | Download |
 |------|-------------|----------|
-| `vit_b_16_384.pth` | ViT-B/16-384 pose estimator | [Link](https://huggingface.co/PierreAncey/FastPoseViT/resolve/main/vit_b_16_384.pth) |
-| `vit_b_16.pth` | ViT-B/16 pose estimator | [Link](https://huggingface.co/PierreAncey/FastPoseViT/resolve/main/vit_b_16.pth) |
-| `small.pth` | LW-DETR Small object detector | [Link](https://huggingface.co/PierreAncey/FastPoseViT/resolve/main/small.pth) |
+| `vit_b_16_384.pth` | ViT-B/16-384 pose estimator | [Link](https://huggingface.co/PierreAncey/FastPose-ViT/resolve/main/vit_b_16_384.pth) |
+| `vit_b_16.pth` | ViT-B/16 pose estimator | [Link](https://huggingface.co/PierreAncey/FastPose-ViT/resolve/main/vit_b_16.pth) |
+| `small.pth` | LW-DETR Small object detector | [Link](https://huggingface.co/PierreAncey/FastPose-ViT/resolve/main/small.pth) |
 
 Download the weights and place them in a `weights/` directory (or any path of your choice):
 ```bash
 mkdir -p weights
-# Download from https://huggingface.co/PierreAncey/FastPoseViT/tree/main
+# Download from https://huggingface.co/PierreAncey/FastPose-ViT/tree/main
 # Place the .pth files in weights/
 ```
 
@@ -86,25 +86,25 @@ Then reference them when running evaluation or prediction commands, e.g.:
 
 ## Installation
 
-To get FastPoseViT up and running, you have several options depending on your environment and requirements. We recommend the Docker approach for consistency and ease of deployment.
+To get FastPose-ViT up and running, you have several options depending on your environment and requirements. We recommend the Docker approach for consistency and ease of deployment.
 
 ### Option 1: Docker (Recommended)
 **Requirements**: NVIDIA GPU with CUDA 13 capability and nvidia-cuda-toolkit installed. Tested with Ubuntu 24.04+, on A100 clusters.
 
 Build the image:
 ```bash
-docker build -t fastposevit .
+docker build -t FastPose-ViT .
 ```
 Run interactively with GPU access:
 ```bash
-docker run --gpus all --shm-size=8g --rm -it fastposevit
+docker run --gpus all --shm-size=8g --rm -it FastPose-ViT
 ```
 In practice you will want to mount your dataset and results directories:
 ```bash
 docker run --gpus all --shm-size=8g --rm -it \
   -v ./SPEED_FIXED:/app/SPEED_FIXED \
   -v ./results:/app/results \
-  fastposevit
+  FastPose-ViT
 ```
 
 ### Option 2: Manual Python Environment
@@ -113,7 +113,7 @@ docker run --gpus all --shm-size=8g --rm -it \
     pip install --break-system-packages --system --upgrade tensorrt
     ```
 2. Create a Python 3.12 virtual environment (venv, uv or conda)
-3. Install PyTorch first, then FastPoseViT and its dependencies:
+3. Install PyTorch first, then FastPose-ViT and its dependencies:
    ```bash
    pip install -r requirements-pytorch.txt
    pip install -e .
@@ -127,9 +127,9 @@ docker run --gpus all --shm-size=8g --rm -it \
 
 ## Dataset Preparation
 
-Before training or evaluating FastPoseViT models, you'll need to prepare the SPEED and SPEED+ datasets with appropriate directory structures and bounding box annotations. We support three dataset variants for different training and evaluation scenarios.
+Before training or evaluating FastPose-ViT models, you'll need to prepare the SPEED and SPEED+ datasets with appropriate directory structures and bounding box annotations. We support three dataset variants for different training and evaluation scenarios.
 
-FastPoseViT expects the official SPEED and SPEED+ datasets with additional JSON annotations for bounding boxes. We support three kinds of datasets:
+FastPose-ViT expects the official SPEED and SPEED+ datasets with additional JSON annotations for bounding boxes. We support three kinds of datasets:
 - SPEED, constituted mostly of synthetic images
 - SPEED+, constituted of synthetic images for training and real images for testing
 - SPEED+ synthetic (containing only the synthetic data from the SPEED+ dataset, even during evaluation)
@@ -171,16 +171,16 @@ SPEED_FIXED/
 
 ## Training & Evaluation
 
-With your dataset prepared, you can now train and evaluate FastPoseViT models. This section covers the essential commands for training, evaluation, prediction generation, and latency benchmarking.
+With your dataset prepared, you can now train and evaluate FastPose-ViT models. This section covers the essential commands for training, evaluation, prediction generation, and latency benchmarking.
 
 All command snippets assume you are inside the repository root.
 
 ### Pose Estimator (ViT)
 
 <details>
-<summary>Standard FastPoseViT Training</summary>
+<summary>Standard FastPose-ViT Training</summary>
 
-#### Standard FastPoseViT Training
+#### Standard FastPose-ViT Training
 For optimal performance with vit-b-16-384:
 ```bash
 DATASET=SPEED_FIXED && \
@@ -285,7 +285,7 @@ python3 optimization/evaluate_torch_latency.py \
 
 ### Object Detector
 
-FastPoseViT includes an integrated object detection pipeline using LW-DETR variants to generate spacecraft bounding boxes for SPEED/SPEED+ frames. This is a critical preprocessing step for pose estimation that crops the image around the spacecraft before feeding it to the pose estimator.
+FastPose-ViT includes an integrated object detection pipeline using LW-DETR variants to generate spacecraft bounding boxes for SPEED/SPEED+ frames. This is a critical preprocessing step for pose estimation that crops the image around the spacecraft before feeding it to the pose estimator.
 
 The detector is fine-tuned from COCO-pretrained LW-DETR weights (60 epochs). Download them from the [LW-DETR GitHub](https://github.com/Atten4Vis/LW-DETR) and place them in a `lwdetr_weights/` folder. Available variants: `tiny`, `small`, `medium`, `large`.
 
@@ -357,9 +357,9 @@ python3 object_detector/predict_on_folder.py \
 
 ## Optimization & Deployment
 
-For deployment on NVIDIA Jetson devices, FastPoseViT includes a comprehensive optimization pipeline that converts models through ONNX to TensorRT engines. This section details the optimization process for both the pose estimator and object detector components.
+For deployment on NVIDIA Jetson devices, FastPose-ViT includes a comprehensive optimization pipeline that converts models through ONNX to TensorRT engines. This section details the optimization process for both the pose estimator and object detector components.
 
-FastPoseViT ships with tooling to export ONNX graphs, build TensorRT engines, and profile latency on Jetson-class hardware. The snippets below assume you already trained the pose estimator (`results/vit-b-16-384`) and detector (`results/bbox`).
+FastPose-ViT ships with tooling to export ONNX graphs, build TensorRT engines, and profile latency on Jetson-class hardware. The snippets below assume you already trained the pose estimator (`results/vit-b-16-384`) and detector (`results/bbox`).
 
 ### Pose Estimator (ViT)
 
@@ -500,7 +500,7 @@ python3 optimization/evaluate_trt_performance.py \
 
 ## Tooling & Development
 
-To support ongoing development and experimentation, FastPoseViT includes various tooling options for testing, linting, and script execution. These tools help maintain code quality and enable rapid prototyping of new features.
+To support ongoing development and experimentation, FastPose-ViT includes various tooling options for testing, linting, and script execution. These tools help maintain code quality and enable rapid prototyping of new features.
 
 - **Testing**: `pytest ./tests/`
 - **Linting/Formatting**: `ruff check --fix` then `ruff format`
@@ -517,7 +517,7 @@ Third-party components are distributed under their original licenses:
 
 ## Citation
 
-If you use FastPoseViT in your research, please cite:
+If you use FastPose-ViT in your research, please cite:
 
 ```bibtex
 @InProceedings{Ancey_2026_WACV,

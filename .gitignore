@@ -104,3 +104,4 @@ vit_backends_experiment/
 baseline/
 weights/
 CLAUDE.local.md
+.claude/worktrees/

@@ -20,6 +20,17 @@ dev                                   # interactive GPU shell (job fastpose-dev)
 train NAME bash -c '<command>'        # long run in the background (new NAME each time)
 ```
 
+## Claude Code in a job (optional)
+
+Installed and logged in once (stored on the NAS). Each session, inside `dev`:
+
+```bash
+tmux new -A -s agent                  # survives a dropped connection
+claude
+```
+
+Never run `claude` on the jumphost itself, only inside a job.
+
 ## When done
 
 ```bash

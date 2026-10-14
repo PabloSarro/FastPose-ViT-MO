@@ -111,6 +111,7 @@ submit_job() {
         --memory "$MEMORY" --memory-limit "$MEMORY" \
         --node-pool "$NODE_POOL" \
         --run-as-uid "$(id -u)" --run-as-gid "$(id -g)" \
+        --supplemental-groups 11166,79706 \
         --existing-pvc claimname=cvlab-scratch,path=/mnt/cvlab/scratch \
         --working-dir "$dir" \
         --large-shm \

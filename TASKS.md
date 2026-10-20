@@ -30,7 +30,7 @@ W9 Dec 14 · W10 Dec 21 · W11 Dec 28 · W12 Jan 4 · W13 Jan 11 · W14 Jan 18. 
 
 | Milestone | Weeks | Status | Exit criterion | Result |
 |---|---|---|---|---|
-| M0 Setup and data access | W1 | `[x]` | Golden SPEED eval reproduced (0.0093) and bop_toolkit gives AR ≈ 1.0 on GT-as-prediction | Golden SPEED 0.0093 reproduced (byte-identical); bop_toolkit GT-as-prediction AR = **1.0** (VSD via EGL workaround) |
+| M0 Setup and data access | W1 | `[~]` | Golden SPEED eval reproduced (0.0093) and bop_toolkit gives AR ≈ 1.0 on GT-as-prediction | Golden SPEED 0.0093 reproduced (byte-identical); bop_toolkit GT-as-prediction AR = **1.0** (VSD via EGL workaround, `dev` and `train`); image 1.60 with `libegl1` pending |
 | M1 Refactor and safety net | W2 | `[ ]` | SPEED golden diff = 0, pytest green, smoke train OK | |
 | M2 BOP data loader (LM-O) | W3–4 | `[ ]` | Reprojection and label round-trip tests pass, throughput OK | |
 | M3 Single-object baseline B1 | W4–5 | `[ ]` | B1 metrics logged in §9 | |
@@ -270,12 +270,18 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
     - Fix without root: downloaded `libegl1_1.7.0-1build1_amd64.deb` with `apt-get download`, extracted it to **`$NAS_HOME/.local/lib/egl/`**, and pointed `EGL_LIBRARY` at it (vispy uses `find_library`, which ignores `LD_LIBRARY_PATH`).
     - Rendering then uses the A100 (`GL_RENDERER = NVIDIA A100-SXM4-80GB`).
     - `bop_eval.sh` sets all of this up automatically, and skips it once the image has `libEGL.so.1`.
-    - **Proper fix (user):** add `libegl1` to the `apt-get install` line of `Dockerfile` in the next image tag.
-    - Not tested yet inside a `train` job: GPU nodes may lack the NVIDIA EGL libraries. If so, the eval stays in `dev`, which takes about 1 min.
+    - **Also works inside a `train` job**, checked 2026-10-20 with `lmo-m0-bopeval-001` (1 GPU, 8 CPU, 16 Gi, node gpu007, still image 1.59 + workaround).
+      - GT-as-prediction gives AR 1.0 (VSD/MSSD/MSPD 1.0; every object and scene recall 1.000). The eval took 63 s.
+      - Submitted 21:13:39, started 21:19:58: about 6 min of queueing/image pull on a new node. The job was then stopped.
+      - The command pattern was `bash rcp/train.sh NAME bash -c 'export BOP_PATH=$NAS_HOME/datasets/bop && ... && bash scripts/bop_eval.sh $RUN_DIR file.csv'`.
   - Other gotchas:
     - `eval_bop19_pose.py` starts its sub-steps with a bare `python`, which isn't on PATH here, so `.venv/bin` must come first on PATH. The wrapper does this.
     - `/usr/bin/time` is not in the image.
     - MSSD/MSPD alone (no renderer) were also checked: 1.0 (`results/bop-m0-gtpred/eval_novsd`).
+- [~] New image tag `fastposevit:1.60` with `libegl1`, so the EGL workaround is no longer needed.
+  - `Dockerfile`: added `libegl1` to the `apt-get install` line (2026-10-20). This is for future full rebuilds.
+  - To build 1.60, the user adds one thin layer on top of 1.59 from WSL (Docker isn't available on RCP), commands in §10. A thin layer keeps the Python environment bit-identical, which matters for the golden SPEED check. A full rebuild would re-resolve unpinned requirements.
+  - After the push: set `IMAGE=...:1.60` in `rcp/project.env`, restart `dev`, then check that `ldconfig -p | grep libEGL.so.1` finds it, that `bash scripts/bop_eval.sh` gives AR 1.0 without the workaround, and that the golden SPEED eval still gives 0.0093.
 - **Exit:** golden SPEED 0.0093 reproduced, and toolkit AR ≈ 1.0.
 
 ### M1 — Safety net and refactor, no behaviour change (W2)
@@ -411,6 +417,14 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 2. Work on branch `multi-object` (created 2026-10-20). The §5 report to Pierre is deferred until M8.
 3. ~~Set up `.venv` + `bop_toolkit`~~ (done 2026-10-20, see §7 M0). Install with `.venv/bin/pip`, not uv.
 4. ~~Tiny `train` job that reads BOP files~~ (done 2026-10-20, `lmo-m0-access-004`). New jobs normally show in `runai list` within ~10 s; a one-off ~9 min delay happened once (see §7 M0). ~~`.gitignore`/pytest~~ (done). ~~Golden SPEED eval with `.venv`~~ (done, byte-identical). ~~bop_toolkit GT-as-prediction check~~ (done, AR = 1.0). **M0 complete.**
-5. Next: **M1**, first bullet `tests/test_rotation_convention.py`. Pending for the user: add `libegl1` to the Dockerfile (new image tag) so the EGL workaround becomes unnecessary.
+5. **Pending (user): image 1.60 with `libegl1`.** In WSL (Docker), from any folder:
+   ```bash
+   docker login registry.rcp.epfl.ch
+   printf 'FROM registry.rcp.epfl.ch/cvlab-pablo/fastposevit:1.59\nUSER root\nRUN apt-get update && apt-get install -y --no-install-recommends libegl1 && rm -rf /var/lib/apt/lists/*\n' \
+     | docker build -t registry.rcp.epfl.ch/cvlab-pablo/fastposevit:1.60 -
+   docker push registry.rcp.epfl.ch/cvlab-pablo/fastposevit:1.60
+   ```
+   Then Claude switches `rcp/project.env` to 1.60. The user restarts `dev` on the jumphost (`runai delete job fastpose-dev`, then `dev`), and Claude runs the checks listed in §7 M0.
+6. Then **M1**, first bullet `tests/test_rotation_convention.py`.
 - Way of working (decided 2026-10-20): go through §7 one bullet at a time. Do the step, update this file, then stop until the user has checked it.
 - After every bullet: commit on `multi-object` with a 2–4 word message with every word starting in a Capital Letter (e.g. `BOP Access Verified`), then `git push origin multi-object` to the fork `PabloSarro/FastPose-ViT-MO` (never to `upstream`), and don't show `claude` as the author of the pushes but myself (`PabloSarro`).

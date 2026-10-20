@@ -3,7 +3,7 @@ FROM nvidia/cuda:13.0.0-cudnn-devel-ubuntu24.04
 # Install core libraries
 RUN apt-get update && DEBIAN_FRONTEND="noninteractive" TZ="Europe/Zurich" \
     apt-get install -y software-properties-common wget git vim ffmpeg tmux \
-    python3-pip unzip curl python3-venv libgl1 libglib2.0-0 libsm6 libxext6 libxrender1 \
+    python3-pip unzip curl python3-venv libgl1 libegl1 libglib2.0-0 libsm6 libxext6 libxrender1 \
     build-essential python3-dev cmake ninja-build protobuf-compiler libprotobuf-dev
 
 # Create the cache folders

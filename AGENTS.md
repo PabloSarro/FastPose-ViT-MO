@@ -49,7 +49,7 @@ Exit codes: 0 ok · 1 job failed · 2 no such job · 3 still waiting · 4 runai 
 - Tests: `.venv/bin/python -m pytest tests/`.
 
 **Conventions:**
-- Code work on branch `multi-object`. After each §7 bullet: commit with a 2–4 word ALL-CAPS message and `git push origin multi-object` (fork `PabloSarro/FastPose-ViT-MO`; never push to `upstream`).
+- Code work on branch `multi-object`. After each §7 bullet: commit with a 2–4 word Title Case message (e.g. `BOP Access Verified`), no `Co-Authored-By: Claude` trailer (author is PabloSarro only), and `git push origin multi-object` (fork `PabloSarro/FastPose-ViT-MO`; never push to `upstream`).
 - Job names prefixed by dataset/milestone, e.g. `lmo-m3-b1-001`.
 - Results of BOP runs go in `$RUN_DIR`, and a summary row goes in `TASKS.md` §9.
 - Geometry conventions:

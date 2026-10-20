@@ -230,7 +230,13 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
       - Added only the missing deps: pypng, webdataset, imageio, scikit-image, vispy, matplotlib.
     - Result: torch 2.9.1+cu130 (CUDA True), numpy 2.3.5, cv2 4.13.0 and Pillow 10.4.0, all unchanged. `pip check` only reports the two intentional pin violations (numpy<2, opencv-python).
     - Smoke test under numpy 2: `inout.load_json` on LM-O `models_info.json`, `misc.get_symmetry_transformations` (eggbox → 2), and `pose_error.adi/mssd/mspd` (identity → 0). All OK. The renderer (`bop_toolkit_lib/rendering`) is tested in the VSD step below.
-- [ ] Verify BOP read access **inside a `train` job**, not just `dev`, with a tiny job that reads one PBR jpg, `scene_gt.json` and one `models_eval` ply. Commit `1c08f08` added the supplemental groups for this.
+- [!] Verify BOP read access **inside a `train` job**, not just `dev`, with a tiny job that reads one PBR jpg, `scene_gt.json` and one `models_eval` ply. Commit `1c08f08` added the supplemental groups for this.
+  - **Blocked 2026-10-20: no `train` job can start.** `runai submit` prints "submitted successfully" (exit 0), but the job never shows up in `runai list` / `runai describe` (not even as Pending or Failed), and `log.txt` is never written.
+  - Tried: `lmo-m0-access-001` (0 GPU), `lmo-m0-cpuprobe-001` (0 GPU, `echo hello`), `lmo-m0-access-002` (1 GPU, 2 CPU, 8 Gi), and `lmo-m0-subdebug-001` (manual `submit_job`, not in `jobs.log`). All vanished the same way, so it isn't the size or the command.
+  - Not the RCP scripts: `speed-short-001` worked on 2026-10-14 08:27 UTC with the same scripts (`1c08f08`, supplemental groups included) and the same image (`fastposevit:1.59`). Something changed on the cluster side since then.
+  - No `kubectl` in `dev`, and runai CLI v1 (2.24.86) shows no events for deleted workloads. **Next:** look at the RCP web UI (Workloads, including deleted ones) or try `bash rcp/train.sh` from the jumphost.
+  - `dev` itself has the right groups (`30257,11166,79706`), and `BOP_Datasets` is `drwxrwxrwx`, group 11166.
+  - The empty run folders of these attempts are kept in `outputs/FastPose-ViT/runs/` (they hold only `info.txt` and `code/`).
 - [ ] Add `.gitignore` exceptions (`!tests/**`, and any config JSON you add); check `pytest tests/` runs.
   - Found on 2026-10-20: `6b3c430` already removed the `test*` rule (so `tests/test_*.py` is no longer hidden), as well as the rules for `.pytest_cache`, `results`, `runs`, `checkpoints`, `temp` and `.ruff_cache`. It also added `AGENTS.md`, which has no effect because the file is tracked. `*.json` is still ignored.
   - The removals are intentional: these folders are empty for now. Add ignore rules back (e.g. `.pytest_cache`) once they start filling up.
@@ -369,6 +375,6 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 1. Start Claude inside `dev`, from the repo root (§4).
 2. Work on branch `multi-object` (created 2026-10-20). The §5 report to Pierre is deferred until M8.
 3. ~~Set up `.venv` + `bop_toolkit`~~ (done 2026-10-20, see §7 M0). Install with `.venv/bin/pip`, not uv.
-4. Next M0 bullet: a tiny `train` job that reads BOP files (access check). Then `.gitignore`/pytest, the golden SPEED eval with `.venv/bin/python`, and the GT-as-prediction bop_toolkit check.
+4. Next M0 bullet: a tiny `train` job that reads BOP files (access check). **Blocked: `train` jobs vanish right after submission (see §7 M0).** Then `.gitignore`/pytest, the golden SPEED eval with `.venv/bin/python`, and the GT-as-prediction bop_toolkit check.
 - Way of working (decided 2026-10-20): go through §7 one bullet at a time. Do the step, update this file, then stop until the user has checked it.
-- After every bullet: commit on `multi-object` with a 2–4 word ALL-CAPS message (e.g. `BOP ACCESS VERIFIED`), then `git push origin multi-object` to the fork `PabloSarro/FastPose-ViT-MO` (never to `upstream`).
+- After every bullet: commit on `multi-object` with a 2–4 word message with every word starting in a Capital Letter (e.g. `BOP Access Verified`), then `git push origin multi-object` to the fork `PabloSarro/FastPose-ViT-MO` (never to `upstream`), and don't show `claude` as the author of the pushes but myself (`PabloSarro`).

@@ -3,7 +3,7 @@
 Tracker for extending FastPose-ViT (single-object spacecraft pose) to **multi-object 6D pose estimation on BOP**.
 Keep it current: update §1 (status), §9 (results) and §10 (next steps) at the end of every work session.
 
-- Created: 2026-10-20 · Owner: Pablo Sarro · Branch for code: `multi-object` (to create)
+- Created: 2026-10-20 · Owner: Pablo Sarro · Branch for code: `multi-object` (created 2026-10-20 from `main` @ `6b3c430`, local only, not pushed yet)
 - Paths: `$NAS_HOME` = `/mnt/cvlab/scratch/cvlab/home/sarro`, `$DATA_DIR` = `/mnt/cvlab/scratch/cvlab/home/pvancey/datasets`
 - Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
@@ -109,7 +109,7 @@ Pretrained HF weights `weights/vit_b_16_384.pth` (ViT-B/16 at 384 px), evaluated
 - From `bop_toolkit_lib`: `inout.load_ply`, `misc.get_symmetry_transformations`, and `pose_error.mssd` / `mspd` / `adi` as test references.
 
 **`.gitignore` gotchas:**
-- `test*` also ignores `tests/test_*.py`, because `!tests` only re-includes the folder.
+- ~~`test*` also ignores `tests/test_*.py`~~: the rule was removed in `6b3c430`, so new tests are tracked.
 - `*.json` ignores any new JSON config, and also `.claude/settings.json`.
 - Ignored files never reach a `train` job's code snapshot.
 
@@ -157,7 +157,7 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 - **val:** PBR scenes 48–49 (synthetic), plus LM `test_bop19` scenes 1, 5, 6, 8, 9, 10, 11, 12 (real; each annotated only for its own object). Scene 2 is the LM-O test sequence, so leaving it out means no leak.
 - **test:** LM-O `test_bop19`, used only at milestones and never for early stopping or model selection.
 
-**Report to Pierre (dataset owner):**
+**Report to Pierre (dataset owner):** deferred on 2026-10-20. None of these issues affects LM-O, so send them before starting YCB-V (M8).
 - [ ] `hb/` is empty; the hb zips are in `xyzibd/`.
 - [ ] xyzibd is missing `xyzibd_train_pbr.z01`, `xyzibd_models.zip` and `xyzibd_test_all.zip`.
 - [ ] `ycbv_train_real.z01` is missing, so train_real cannot be extracted.
@@ -216,13 +216,14 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 
 ### M0 — Setup and data access (W1)
 - [x] Repair `$NAS_HOME/BOP_Datasets` symlink (done 2026-10-20; `ls $NAS_HOME/BOP_Datasets/lmo` works).
-- [ ] Send Pierre the data issues from §5.
-- [ ] Create branch `multi-object`; commit `TASKS.md` and the AGENTS.md project notes.
+- [ ] Send Pierre the data issues from §5. *Deferred (2026-10-20): LM-O comes first and isn't affected. Send before M8 (YCB-V).*
+- [x] Create branch `multi-object`; commit `TASKS.md` and the AGENTS.md project notes (done 2026-10-20). Both were already on `main` in `6b3c430`; the branch starts there and this update is its first commit.
 - [ ] Inside `dev`, create `.venv` with `uv venv --system-site-packages` and install `bop_toolkit` (`uv pip install git+https://github.com/thodan/bop_toolkit`).
   - Dry-run first so it doesn't replace the image's torch or numpy.
   - Check: `.venv/bin/python -c "import torch, bop_toolkit_lib; print(torch.cuda.is_available())"`.
 - [ ] Verify BOP read access **inside a `train` job**, not just `dev`, with a tiny job that reads one PBR jpg, `scene_gt.json` and one `models_eval` ply. Commit `1c08f08` added the supplemental groups for this.
 - [ ] Add `.gitignore` exceptions (`!tests/**`, and any config JSON you add); check `pytest tests/` runs.
+  - Found on 2026-10-20: `6b3c430` already removed the `test*` rule (so `tests/test_*.py` is no longer hidden), as well as the rules for `.pytest_cache`, `results`, `runs`, `checkpoints`, `temp` and `.ruff_cache`. It also added `AGENTS.md`, which has no effect because the file is tracked. `*.json` is still ignored.
 - [ ] Golden SPEED eval with `.venv/bin/python` (command in `docs/RCP_WORKFLOW.md` §5). It must print score 0.0093; diff its `results.json` against `$NAS_HOME/results/eval-rcp-check/results.json`.
 - [ ] bop_toolkit sanity check:
   - Build `scripts/make_bop_tree.sh` (symlinked tree in `$NAS_HOME/datasets/bop/`).
@@ -356,7 +357,7 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 ## 10. Next session: start here
 
 1. Start Claude inside `dev`, from the repo root (§4).
-2. Send Pierre the §5 data issues.
-3. Create branch `multi-object` and commit `TASKS.md` + AGENTS.md notes.
-4. Set up `.venv` + `bop_toolkit`; run the golden SPEED eval with `.venv/bin/python`.
-5. Tiny `train` job that reads BOP files (access check), then the GT-as-prediction bop_toolkit check.
+2. Work on branch `multi-object` (created 2026-10-20). The §5 report to Pierre is deferred until M8.
+3. Set up `.venv` + `bop_toolkit`; run the golden SPEED eval with `.venv/bin/python`.
+4. Tiny `train` job that reads BOP files (access check), then the GT-as-prediction bop_toolkit check.
+- Way of working (decided 2026-10-20): go through §7 one bullet at a time. Do the step, update this file, then stop until the user has checked it.

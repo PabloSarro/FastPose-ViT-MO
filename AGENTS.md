@@ -52,7 +52,7 @@ Exit codes: 0 ok · 1 job failed · 2 no such job · 3 still waiting · 4 runai 
 - Code work on branch `multi-object`. After each §7 bullet: commit with a 2–4 word Title Case message (e.g. `BOP Access Verified`), no `Co-Authored-By: Claude` trailer (author is PabloSarro only), and `git push origin multi-object` (fork `PabloSarro/FastPose-ViT-MO`; never push to `upstream`).
 - Job names prefixed by dataset/milestone, e.g. `lmo-m3-b1-001`.
 - RCP quirks (2026-10-20):
-  - A new job can take ~10 min to appear in `runai list`. Meanwhile `wait.sh` returns 2, so judge by `$RUN_DIR/log.txt` ("exit code" line).
+  - A new job normally appears in `runai list` within ~10 s. Once the cluster delayed new jobs by ~9 min, and `wait.sh` returned 2 in the meantime, so re-check for a few minutes before concluding a job failed. `$RUN_DIR/log.txt` ("exit code" line) is the reliable signal.
   - Put job logic in script files, not inline multi-line `python -c`, because runai strips the inner quotes.
   - Install packages with `.venv/bin/pip`: uv ignores the system site-packages.
 - Results of BOP runs go in `$RUN_DIR`, and a summary row goes in `TASKS.md` §9.

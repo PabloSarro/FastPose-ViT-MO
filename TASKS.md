@@ -115,14 +115,9 @@ Pretrained HF weights `weights/vit_b_16_384.pth` (ViT-B/16 at 384 px), evaluated
 
 ---
 
-## 4. Agent setup: CLAUDE.md vs AGENTS.md
+## 4. Agent setup
 
-- **They serve the same purpose:** project instructions loaded at session start. Codex reads `AGENTS.md`. Claude Code (≥ 2.1.277; installed 2.1.304) also reads `AGENTS.md`, **but only when no `CLAUDE.md`, `.claude/CLAUDE.md` or `CLAUDE.local.md` exists in the working directory or above it** ([docs](https://code.claude.com/docs/en/memory)).
-- **Decision: keep `AGENTS.md`, don't rename it, don't create `CLAUDE.md`.**
-  - `rcp-init` refreshes the "Running on the RCP cluster" section of `AGENTS.md`, and Codex would lose a renamed file.
-  - Project-specific notes go in the `## Project notes` section at the end of `AGENTS.md`, as the RCP tutorial recommends.
-  - This file (`TASKS.md`) is the detailed tracker. It is referenced from AGENTS.md, not imported, to keep the context small.
-- If you ever need a `CLAUDE.md` or `CLAUDE.local.md` (the latter is already in `.gitignore`), its **first line must be `@AGENTS.md`**. Otherwise Claude silently stops reading AGENTS.md and loses the RCP rules.
+- **Decided 2026-10-20: `AGENTS.md` is the only agent-instructions file; no `CLAUDE.md` is needed.**
 - **Start Claude from the repo root inside the `dev` job:** `dev`, then `cd $NAS_HOME/FastPose-ViT && claude`. The 2026-10-20 session was started from `$NAS_HOME` on what looked like the jumphost (no GPU, `RCP_JOB` unset). There, AGENTS.md is only loaded on demand and the `.claude/settings.json` permission rules don't apply.
 - **Session routine:** read §1 and §10 → work → update §1, §9, §10 → update AGENTS.md project notes if a convention changed.
 
@@ -216,7 +211,6 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 
 ### M0 — Setup and data access (W1)
 - [x] Repair `$NAS_HOME/BOP_Datasets` symlink (done 2026-10-20; `ls $NAS_HOME/BOP_Datasets/lmo` works).
-- [ ] Send Pierre the data issues from §5. *Deferred (2026-10-20): LM-O comes first and isn't affected. Send before M8 (YCB-V).*
 - [x] Create branch `multi-object`; commit `TASKS.md` and the AGENTS.md project notes (done 2026-10-20). Both were already on `main` in `6b3c430`; the branch starts there and this update is its first commit.
 - [x] Inside `dev`, create `.venv` with `uv venv --system-site-packages` and install `bop_toolkit` (`uv pip install git+https://github.com/thodan/bop_toolkit`).
   - Dry-run first so it doesn't replace the image's torch or numpy.
@@ -236,7 +230,10 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
     - `scripts/check_bop_access.py` also has a `--dataset ycbv` option, for M8.
     - `lmo-m0-access-003` (submitted by the user from the jumphost, `id; ls $DATA_DIR/BOP_Datasets/lmo`) also succeeded.
   - **Lessons (RCP quirks):**
-    - A new job can take **up to about 10 min to appear** in `runai list`. Meanwhile `wait.sh` returns 2 ("no such job"), so don't conclude a job vanished. Wait until `$RUN_DIR/log.txt` contains "exit code".
+    - Jobs submitted at 14:51 UTC only appeared in `runai list` around 15:00, after about 9 min. Meanwhile `wait.sh` returned 2 ("no such job").
+      - **This was a temporary delay on the cluster side, not the norm.** Re-test at 15:59 UTC with 5 tiny jobs (`lmo-m0-lag-001…005`, 1 GPU, 1 CPU, 1 Gi, `echo hi`): all appeared in `runai list` within **7–12 s** of submission, as Pending.
+      - They started running 0.5–2.3 min after submission, waiting for a GPU, and all exited 0. All were stopped afterwards.
+      - Rule: if a job isn't listed within ~1 min, re-check for a few minutes before concluding it failed. `$RUN_DIR/log.txt` ("exit code" line) is the reliable signal that it ran.
     - **Don't put multi-line inline Python in `train.sh` commands.** runai strips the inner `"`, which gave `lmo-m0-access-002` a SyntaxError and a restart loop. Use a script file instead.
     - **`GPUS=0` jobs went to a V100 node** and were still pulling the image after several minutes (`lmo-m0-access-001`, `lmo-m0-cpuprobe-001`). For short jobs, 1 GPU with few CPUs is faster.
   - All these test jobs were stopped, and their run folders were kept. The exception is `lmo-m0-subdebug-001`, submitted by hand: `stop.sh` refuses it and `runai delete` is blocked by permissions, so the user has to delete it.
@@ -318,6 +315,7 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 - **Exit:** first BOP-comparable LM-O AR, compared with §2.2.
 
 ### M8 — YCB-V (W11–12)
+- [ ] Send Pierre the data issues from §5 before starting YCB-V. *Moved here from M0 (2026-10-20): LM-O isn't affected by them.*
 - [ ] Symlink tree + index. Train on PBR only unless Pierre fixes `train_real`. There are two cameras, so per-sample K matters.
 - [ ] Continuous symmetries (objects 13, 18) and discrete ones (1, 16, 19, 20, 21).
 - **Exit:** YCB-V AR plus a per-object table.
@@ -379,6 +377,6 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 1. Start Claude inside `dev`, from the repo root (§4).
 2. Work on branch `multi-object` (created 2026-10-20). The §5 report to Pierre is deferred until M8.
 3. ~~Set up `.venv` + `bop_toolkit`~~ (done 2026-10-20, see §7 M0). Install with `.venv/bin/pip`, not uv.
-4. ~~Tiny `train` job that reads BOP files~~ (done 2026-10-20, `lmo-m0-access-004`). New jobs can take ~10 min to show in `runai list` (see §7 M0). Next M0 bullets: `.gitignore`/pytest, the golden SPEED eval with `.venv/bin/python`, and the GT-as-prediction bop_toolkit check.
+4. ~~Tiny `train` job that reads BOP files~~ (done 2026-10-20, `lmo-m0-access-004`). New jobs normally show in `runai list` within ~10 s; a one-off ~9 min delay happened once (see §7 M0). Next M0 bullets: `.gitignore`/pytest, the golden SPEED eval with `.venv/bin/python`, and the GT-as-prediction bop_toolkit check.
 - Way of working (decided 2026-10-20): go through §7 one bullet at a time. Do the step, update this file, then stop until the user has checked it.
 - After every bullet: commit on `multi-object` with a 2–4 word message with every word starting in a Capital Letter (e.g. `BOP Access Verified`), then `git push origin multi-object` to the fork `PabloSarro/FastPose-ViT-MO` (never to `upstream`), and don't show `claude` as the author of the pushes but myself (`PabloSarro`).

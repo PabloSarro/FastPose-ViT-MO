@@ -172,6 +172,7 @@ class FastPoseViT(nn.Module):
         dropout_rate: float = 0.0,
         use_residual: bool = True,
         no_mlp: bool = False,
+        num_objects: int = 1,
     ):
         """
         Model initialization
@@ -189,8 +190,20 @@ class FastPoseViT(nn.Module):
             dropout_rate (float, optional): Dropout rate for MLPs. Defaults to 0.0.
             use_residual (bool, optional): Whether to use residual connections in MLPs. Defaults to True.
             no_mlp (bool, optional): Whether to skip MLP layers and use direct projection only. Defaults to False.
+            num_objects (int, optional): Number of objects with their own output heads (the last
+                layers output num_objects times more values, see forward). With 1, the model is
+                identical to the single-object one, so existing weights load unchanged. Defaults to 1.
         """
         super().__init__()
+
+        if num_objects < 1:
+            raise ValueError(f"num_objects must be >= 1, got {num_objects}")
+        self.num_objects = num_objects
+        self.out_dim_translation = out_dim_translation
+        self.out_dim_rotation = out_dim_rotation
+        # One set of outputs per object; the sample's object is selected in forward
+        out_dim_translation *= num_objects
+        out_dim_rotation *= num_objects
 
         if vit_model not in VIT_MODELS:
             raise ValueError(
@@ -354,12 +367,32 @@ class FastPoseViT(nn.Module):
 
         return state_dict
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+    def _select_object(self, out: torch.Tensor, obj_idx: torch.Tensor | None) -> torch.Tensor:
+        """Keep each sample's own object outputs from the per-object heads.
+
+        Args:
+            out (torch.Tensor): Head output (B, num_objects * D)
+            obj_idx (torch.Tensor | None): Object index of each sample (B,), in [0, num_objects)
+
+        Returns:
+            torch.Tensor: (B, D) if obj_idx is given, else all objects (B, num_objects, D)
+        """
+        out = out.view(out.shape[0], self.num_objects, -1)
+        if obj_idx is None:
+            return out
+        return out[torch.arange(out.shape[0], device=out.device), obj_idx.to(out.device)]
+
+    def forward(
+        self, x: torch.Tensor, obj_idx: torch.Tensor | None = None
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """
         Forward pass of the model
 
         Args:
             x (torch.Tensor): Input image tensor
+            obj_idx (torch.Tensor, optional): Object index of each sample (B,). Only used with
+                num_objects > 1; without it, the outputs of all objects are returned with an
+                extra object dimension (B, num_objects, D).
 
         Returns:
             torch.Tensor: Output tensor
@@ -371,10 +404,19 @@ class FastPoseViT(nn.Module):
             x = self.gap(x)  # [batch, channels, 1, 1]
             x = x.flatten(1)  # [batch, channels]
 
+        if self.num_objects == 1:
+            if self.merge_outputs:
+                return self.output(x)
+            else:
+                return self.translation(x), self.rotation(x)
+
         if self.merge_outputs:
-            return self.output(x)
+            return self._select_object(self.output(x), obj_idx)
         else:
-            return self.translation(x), self.rotation(x)
+            return (
+                self._select_object(self.translation(x), obj_idx),
+                self._select_object(self.rotation(x), obj_idx),
+            )
 
     def load_from_pretrained(self, path: str) -> None:
         """

@@ -49,6 +49,56 @@ class ValidationConfig:
     merge_outputs: bool = False
     no_rotation_compensation: bool = False
     use_absolute_translation: bool = False
+    depth_mode: str = "legacy"
+
+
+# Batch fields beyond SPEED's (images, translations, rotations, bboxes); None when absent
+OPTIONAL_BATCH_KEYS = ("K", "img_wh", "obj_idx", "diameter")
+
+
+def unpack_batch(batch: tuple | list | dict) -> dict:
+    """Return a batch as a dict, whether it comes from SPEED or BOP.
+
+    Args:
+        batch: SPEED tuple (images, translations, rotations, bboxes), or a dict with those
+            keys and optionally K (B, 3, 3), img_wh (B, 2), obj_idx (B,) and diameter (B,).
+
+    Returns:
+        Dict with keys images, translations, rotations, bboxes and OPTIONAL_BATCH_KEYS.
+    """
+    if isinstance(batch, dict):
+        out = dict(batch)
+    else:
+        images, translations, rotations, bboxes = batch
+        out = {
+            "images": images,
+            "translations": translations,
+            "rotations": rotations,
+            "bboxes": bboxes,
+        }
+    for key in OPTIONAL_BATCH_KEYS:
+        out.setdefault(key, None)
+    return out
+
+
+def forward_model(
+    model: nn.Module, images: torch.Tensor, obj_idx: torch.Tensor | None, merge_outputs: bool
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Run the model and split its output into (translations, rotations).
+
+    Args:
+        model: FastPoseViT model.
+        images: Batch of images on the model's device.
+        obj_idx: Object index of each sample for per-object heads, or None.
+        merge_outputs: Whether the model has a single merged output head.
+
+    Returns:
+        Tuple of (pred_translations, pred_rotations).
+    """
+    output = model(images) if obj_idx is None else model(images, obj_idx)
+    if merge_outputs:
+        return output[:, :3], output[:, 3:]
+    return output
 
 
 class ProgressTracker:
@@ -165,11 +215,13 @@ class CoordinateTransformer:
         val_camera,
         no_rotation_compensation: bool,
         use_absolute_translation: bool = False,
+        depth_mode: str = "legacy",
     ) -> None:
         self.rotation_format = rotation_format
         self.val_camera = val_camera
         self.no_rotation_compensation = no_rotation_compensation
         self.use_absolute_translation = use_absolute_translation
+        self.depth_mode = depth_mode
         self.is_matrix_format = rotation_format == "matrix"
 
     def transform_to_absolute(
@@ -179,6 +231,9 @@ class CoordinateTransformer:
         translations: torch.Tensor,
         rotations: torch.Tensor,
         bboxes: torch.Tensor | None,
+        K: torch.Tensor | None = None,
+        img_wh: torch.Tensor | None = None,
+        diameter: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Transform predictions and targets to absolute coordinate space.
 
@@ -188,6 +243,9 @@ class CoordinateTransformer:
             translations: Ground truth translation vectors.
             rotations: Ground truth rotation tensors.
             bboxes: Bounding box tensors or None.
+            K: Per-sample intrinsics (B, 3, 3), or None for the val_camera.
+            img_wh: Per-sample image (width, height) (B, 2), for K with depth_mode "legacy".
+            diameter: Per-sample object diameters (B,), for depth_mode "site".
 
         Returns:
             Tuple of (abs_pred_translations, abs_pred_rotations, abs_translations, abs_rotations).
@@ -222,15 +280,28 @@ class CoordinateTransformer:
 
         # Convert relative translations to absolute
         if has_bbox:
+            # Per-sample camera and object values (BOP); none of them for SPEED
+            camera_kwargs = {}
+            if K is not None or self.depth_mode != "legacy":
+                camera_kwargs = {
+                    "K": K.to(device, non_blocking=True) if K is not None else None,
+                    "img_wh": img_wh.to(device, non_blocking=True) if img_wh is not None else None,
+                    "depth_mode": self.depth_mode,
+                    "diameter": (
+                        diameter.to(device, non_blocking=True) if diameter is not None else None
+                    ),
+                }
             abs_pred_translations = bbox_relative_translation_to_translation(
                 abs_pred_translations,
                 device_bboxes,
                 self.val_camera,
+                **camera_kwargs,
             )
             abs_translations = bbox_relative_translation_to_translation(
                 abs_translations,
                 device_bboxes,
                 self.val_camera,
+                **camera_kwargs,
             )
 
         # Apply rotation compensation
@@ -380,23 +451,31 @@ def train_epoch(
     current_iteration = config.global_iteration_start
     is_6d_rotation_loss = config.rotation_loss_type and "6d" in config.rotation_loss_type
 
-    for batch_idx, (images, translations, rotations, bboxes) in enumerate(train_loader):
+    for batch_idx, batch in enumerate(train_loader):
+        batch = unpack_batch(batch)
+        images, translations, rotations, bboxes = (
+            batch["images"],
+            batch["translations"],
+            batch["rotations"],
+            batch["bboxes"],
+        )
+        obj_idx = batch["obj_idx"]
+
         # Apply style augmentation
         images = apply_style_augmentation(images, style_augmentor, train_dataset, device)
 
         # Move data to device
         translations = translations.to(device, non_blocking=True)
         rotations = rotations.to(device, non_blocking=True)
+        if obj_idx is not None:
+            obj_idx = obj_idx.to(device, non_blocking=True)
 
         # Forward pass with conditional autocast
         use_amp = scaler is not None
         with autocast("cuda", enabled=use_amp):
-            if config.merge_outputs:
-                output = model(images)
-                pred_translations = output[:, :3]
-                pred_rotations = output[:, 3:]
-            else:
-                pred_translations, pred_rotations = model(images)
+            pred_translations, pred_rotations = forward_model(
+                model, images, obj_idx, config.merge_outputs
+            )
 
             # Process rotations based on loss type
             if is_6d_rotation_loss:
@@ -500,6 +579,7 @@ def val_epoch(
         val_camera,
         config.no_rotation_compensation,
         config.use_absolute_translation,
+        config.depth_mode,
     )
     progress_tracker = ProgressTracker(config.smooth_window, f"Epoch {epoch + 1} [Val]")
     total_val_batches = len(val_loader)
@@ -522,27 +602,42 @@ def val_epoch(
     )
 
     with torch.no_grad():
-        for batch_idx, (images, translations, rotations, bboxes) in enumerate(val_loader):
+        for batch_idx, batch in enumerate(val_loader):
+            batch = unpack_batch(batch)
+            images, translations, rotations, bboxes = (
+                batch["images"],
+                batch["translations"],
+                batch["rotations"],
+                batch["bboxes"],
+            )
+            obj_idx = batch["obj_idx"]
+
             # Move data to device
             images = images.to(device, non_blocking=True)
             translations = translations.to(device, non_blocking=True)
             rotations = rotations.to(device, non_blocking=True)
+            if obj_idx is not None:
+                obj_idx = obj_idx.to(device, non_blocking=True)
 
             # Forward pass with conditional autocast
             with autocast("cuda", enabled=device.type == "cuda"):
-                if config.merge_outputs:
-                    output = model(images)
-                    pred_translations = output[:, :3]
-                    pred_rotations = output[:, 3:]
-                else:
-                    pred_translations, pred_rotations = model(images)
+                pred_translations, pred_rotations = forward_model(
+                    model, images, obj_idx, config.merge_outputs
+                )
 
                 pred_rotations = process_rotation(pred_rotations, config.rotation_format)
 
             # Transform to absolute coordinate space
             abs_pred_translations, abs_pred_rotations, abs_translations, abs_rotations = (
                 coordinate_transformer.transform_to_absolute(
-                    pred_translations, pred_rotations, translations, rotations, bboxes
+                    pred_translations,
+                    pred_rotations,
+                    translations,
+                    rotations,
+                    bboxes,
+                    K=batch["K"],
+                    img_wh=batch["img_wh"],
+                    diameter=batch["diameter"],
                 )
             )
 

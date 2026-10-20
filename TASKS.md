@@ -309,10 +309,28 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
     - Argument errors are raised for an unknown `depth_mode`, a missing `img_wh` or a missing `diameter`.
   - **Measured on a synthetic LM batch** (D 100–270 mm, t_z 0.4–1.9 m): `site` U_z = 0.62–1.09, while legacy U_z = 83–321. This confirms §6.2: with legacy, U_z would dominate `RelativeTranslationLoss`.
   - Non-regression: the golden SPEED eval after the change gives 0.0093, and `results.json` is byte-identical (`$NAS_HOME/results/eval-m1-translation-param`). `tests/` now has 35 tests, all passing in 7 s.
-- [ ] Refactor:
-  - Optional `K` / `img_wh` / `depth_mode` / `diameter` in `src/utils.py` (**done**, see above) and `CoordinateTransformer` (to do).
+- [x] Refactor:
+  - Optional `K` / `img_wh` / `depth_mode` / `diameter` in `src/utils.py` (done in the bullet above) and `CoordinateTransformer`.
   - `unpack_batch` in `src/engine.py`.
   - `num_objects` in `FastPoseViT` (default 1).
+  - **Done 2026-10-20.**
+    - `FastPoseViT(..., num_objects=1)`: the last layer(s) output `num_objects × out_dim`. `forward(x, obj_idx)` returns the sample's own object block (gather), and `forward(x)` with N>1 returns every object as (B, N, D), for export.
+      - With N=1 the layers and forward are unchanged, so the published SPEED weights load strictly. Works with the merged/no-MLP and MLP heads.
+    - `src/engine.py`:
+      - `unpack_batch` takes the SPEED tuple or a BOP dict. The optional keys `K`, `img_wh`, `obj_idx`, `diameter` default to None, and other keys pass through.
+      - `forward_model(model, images, obj_idx, merge_outputs)` calls `model(images)` exactly as before when `obj_idx is None`.
+      - `ValidationConfig.depth_mode`, defaulting to legacy.
+      - `CoordinateTransformer(..., depth_mode)` and `transform_to_absolute(..., K, img_wh, diameter)`. Without K and in legacy mode, the original call is unchanged.
+      - `train_epoch` / `val_epoch` use these.
+    - Not changed: `evaluate.py`, `predict.py` and `optimization/` still use the SPEED-only path. BOP inference comes with `src/predict_bop.py` (M6).
+  - Tests:
+    - `tests/test_multi_object_heads.py`, 11 tests: N=1 layout; SPEED weights load; gather for all 4 head types; gradients reach only the sample's own object head; argument check.
+    - `tests/test_engine_batch.py`, 5 tests: tuple/dict unpacking; `forward_model` split and `obj_idx`; `CoordinateTransformer` with `K = Camera.K` equal (`torch.equal`) to legacy; `site` mode inverts the dataset transform with LM K.
+    - **51 tests pass** (21 s).
+  - Non-regression:
+    - Golden SPEED eval: 0.0093, `results.json` byte-identical (`results/eval-m1-refactor`).
+    - 2-epoch SPEED smoke run in `dev` with the `smoke-02` command (`results/smoke-m1-refactor`): train loss 0.4980 / 0.1701 vs 0.4929 / 0.1710, val score **0.1317** vs 0.1400 (smoke-01 gave 0.1379). Training is unseeded, so this is within noise.
+    - Epoch 2 took 6.7 min vs 1.8 min in `smoke-02`, while epoch 1 took 4.3 min in both. The GPU sat at 0 % at times, so it's I/O-bound: the NAS page cache was warm in `smoke-02`'s epoch 2. It isn't the code (the golden eval timing is unchanged). Keep it in mind for M2 throughput.
 - [ ] Checkpoint/resume in `src/train.py`:
   - Atomic `last.pt` in `$RUN_DIR` containing model, optimizer (Muon), scheduler/LR index, GradScaler, epoch, global iteration, best metric and RNG states.
   - `--resume auto`.
@@ -463,6 +481,8 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 | 2026-10-20 | `outputs/FastPose-ViT/runs/lmo-m0-access-004` | LM PBR / LM-O models | `scripts/check_bop_access.py` | `BOP ACCESS OK (lmo)` | BOP readable from `train` jobs |
 | 2026-10-20 | `results/eval-m0-venv-golden` | SPEED test | same as golden, `.venv/bin/python` | score **0.0093** | `results.json` byte-identical to golden |
 | 2026-10-20 | `results/bop-m0-gtpred-wrapper` | LM-O test (BOP19 targets) | GT poses as predictions, `scripts/bop_eval.sh` | AR **1.0** (VSD 1.0, MSSD 1.0, MSPD 1.0) | Eval pipeline OK; 53 s in `dev` |
+| 2026-10-20 | `results/eval-m1-refactor` | SPEED test | golden command after the M1 refactor | score **0.0093** | `results.json` byte-identical to golden |
+| 2026-10-20 | `results/smoke-m1-refactor` | SPEED val | `smoke-02` command, 2 epochs, `dev` | val score 0.1317 | vs 0.1400 (smoke-02); within noise |
 
 (Paths relative to `$NAS_HOME`.)
 
@@ -475,6 +495,6 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 3. ~~Set up `.venv` + `bop_toolkit`~~ (done 2026-10-20, see §7 M0). Install with `.venv/bin/pip`, not uv.
 4. ~~Tiny `train` job that reads BOP files~~ (done 2026-10-20, `lmo-m0-access-004`). New jobs normally show in `runai list` within ~10 s; a one-off ~9 min delay happened once (see §7 M0). ~~`.gitignore`/pytest~~ (done). ~~Golden SPEED eval with `.venv`~~ (done, byte-identical). ~~bop_toolkit GT-as-prediction check~~ (done, AR = 1.0). **M0 complete.**
 5. Image 1.60 with `libegl1`: pending, moved to M2 (first bullet, with the WSL commands). It is not blocking, since the EGL workaround works.
-6. **M1** started 2026-10-20 (while the image 1.60 build is running): ~~`tests/test_rotation_convention.py`~~ (done, 9 tests). ~~`tests/test_translation_param.py`~~ (done, 13 tests; the `src/utils.py` part of the refactor is included). Next: the rest of the Refactor bullet (`CoordinateTransformer`, `unpack_batch`, `num_objects`).
+6. **M1** started 2026-10-20 (while the image 1.60 build is running): ~~`tests/test_rotation_convention.py`~~ (done, 9 tests). ~~`tests/test_translation_param.py`~~ (done, 13 tests; the `src/utils.py` part of the refactor is included). ~~Refactor~~ (done: `num_objects`, `unpack_batch`/`forward_model`, per-sample K in `CoordinateTransformer`). Next: checkpoint/resume in `src/train.py`, the last M1 bullet.
 - Way of working (decided 2026-10-20): go through §7 one bullet at a time. Do the step, update this file, then stop until the user has checked it.
 - After every bullet: commit on `multi-object` with a 2–4 word message with every word starting in a Capital Letter (e.g. `BOP Access Verified`), then `git push origin multi-object` to the fork `PabloSarro/FastPose-ViT-MO` (never to `upstream`), and don't show `claude` as the author of the pushes but myself (`PabloSarro`).

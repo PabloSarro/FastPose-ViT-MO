@@ -41,7 +41,10 @@ __pycache__/*
 # Ignore visualization files
 # Ignore .zip files
 *.zip
-# Ignore all test folders except tests
+
+# Tests: keep JSON fixtures (overrides *.json above), ignore pytest's cache
+!tests/**/*.json
+.pytest_cache/
 
 # Compiled cuda libraries
 *.so

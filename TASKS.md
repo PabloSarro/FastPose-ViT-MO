@@ -94,7 +94,7 @@ Pretrained HF weights `weights/vit_b_16_384.pth` (ViT-B/16 at 384 px), evaluated
 | `optimization/` | ONNX/TensorRT with a fixed `(1,3,H,W)` input | Dynamic batch (one crop per object) |
 | `other_utils/` | Visualization (SPEED K hardcoded), dataset splitters, `merge_annotations.py` | Reuse projection/overlay code for BOP sanity checks |
 | `scripts/*.sh` | SPEED ablation sweeps (backbones, tokens, crop %, augs, optimizer) | Add `scripts/bop_lmo.sh` |
-| `tests/` | Empty (`__init__.py` only) | Geometry, loader, loss and SPEED-golden tests |
+| `tests/` | Import smoke test only (`test_imports.py`) | Geometry, loader, loss and SPEED-golden tests |
 | `rcp/`, `docs/RCP_*.md`, `AGENTS.md` | RCP cluster workflow | Unchanged (project notes appended to AGENTS.md) |
 
 **New files planned:**
@@ -237,9 +237,17 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
     - **Don't put multi-line inline Python in `train.sh` commands.** runai strips the inner `"`, which gave `lmo-m0-access-002` a SyntaxError and a restart loop. Use a script file instead.
     - **`GPUS=0` jobs went to a V100 node** and were still pulling the image after several minutes (`lmo-m0-access-001`, `lmo-m0-cpuprobe-001`). For short jobs, 1 GPU with few CPUs is faster.
   - All these test jobs were stopped, and their run folders were kept. The exception is `lmo-m0-subdebug-001`, submitted by hand: `stop.sh` refuses it and `runai delete` is blocked by permissions, so the user has to delete it.
-- [ ] Add `.gitignore` exceptions (`!tests/**`, and any config JSON you add); check `pytest tests/` runs.
+- [x] Add `.gitignore` exceptions (`!tests/**`, and any config JSON you add); check `pytest tests/` runs.
   - Found on 2026-10-20: `6b3c430` already removed the `test*` rule (so `tests/test_*.py` is no longer hidden), as well as the rules for `.pytest_cache`, `results`, `runs`, `checkpoints`, `temp` and `.ruff_cache`. It also added `AGENTS.md`, which has no effect because the file is tracked. `*.json` is still ignored.
   - The removals are intentional: these folders are empty for now. Add ignore rules back (e.g. `.pytest_cache`) once they start filling up.
+  - **Done 2026-10-20:**
+    - In `.gitignore`, added `!tests/**/*.json`, so JSON fixtures in `tests/` are tracked despite `*.json`. A blanket `!tests/**` would also have un-ignored `tests/__pycache__/`, so it wasn't used.
+    - Added `.pytest_cache/` back, since running pytest now creates it. This replaces the dangling comment "Ignore all test folders except tests".
+    - No config JSON exists yet. When adding one (e.g. `configs/`), add a `!configs/**/*.json` exception.
+    - `.claude/settings.json` is still ignored (left as is).
+    - Added `tests/test_imports.py`, an import smoke test for 10 `src.*` modules and `bop_toolkit_lib.{inout,misc,pose_error}`. With 0 tests, pytest exits 5 ("no tests ran").
+    - `.venv/bin/python -m pytest tests/` → **13 passed in 6.2 s**, with no `PYTHONPATH` needed (`tests/` is a package, so pytest puts the repo root on `sys.path`).
+    - Verified with `git check-ignore`: `tests/**/x.json` is tracked; `tests/__pycache__/`, `src/__pycache__/` and `.pytest_cache/` are ignored.
 - [ ] Golden SPEED eval with `.venv/bin/python` (command in `docs/RCP_WORKFLOW.md` §5). It must print score 0.0093; diff its `results.json` against `$NAS_HOME/results/eval-rcp-check/results.json`.
 - [ ] bop_toolkit sanity check:
   - Build `scripts/make_bop_tree.sh` (symlinked tree in `$NAS_HOME/datasets/bop/`).
@@ -377,6 +385,6 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 1. Start Claude inside `dev`, from the repo root (§4).
 2. Work on branch `multi-object` (created 2026-10-20). The §5 report to Pierre is deferred until M8.
 3. ~~Set up `.venv` + `bop_toolkit`~~ (done 2026-10-20, see §7 M0). Install with `.venv/bin/pip`, not uv.
-4. ~~Tiny `train` job that reads BOP files~~ (done 2026-10-20, `lmo-m0-access-004`). New jobs normally show in `runai list` within ~10 s; a one-off ~9 min delay happened once (see §7 M0). Next M0 bullets: `.gitignore`/pytest, the golden SPEED eval with `.venv/bin/python`, and the GT-as-prediction bop_toolkit check.
+4. ~~Tiny `train` job that reads BOP files~~ (done 2026-10-20, `lmo-m0-access-004`). New jobs normally show in `runai list` within ~10 s; a one-off ~9 min delay happened once (see §7 M0). ~~`.gitignore`/pytest~~ (done). Next M0 bullets: the golden SPEED eval with `.venv/bin/python`, and the GT-as-prediction bop_toolkit check.
 - Way of working (decided 2026-10-20): go through §7 one bullet at a time. Do the step, update this file, then stop until the user has checked it.
 - After every bullet: commit on `multi-object` with a 2–4 word message with every word starting in a Capital Letter (e.g. `BOP Access Verified`), then `git push origin multi-object` to the fork `PabloSarro/FastPose-ViT-MO` (never to `upstream`), and don't show `claude` as the author of the pushes but myself (`PabloSarro`).

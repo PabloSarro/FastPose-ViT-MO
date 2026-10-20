@@ -3,7 +3,7 @@
 Tracker for extending FastPose-ViT (single-object spacecraft pose) to **multi-object 6D pose estimation on BOP**.
 Keep it current: update §1 (status), §9 (results) and §10 (next steps) at the end of every work session.
 
-- Created: 2026-10-20 · Owner: Pablo Sarro · Branch for code: `multi-object` (created 2026-10-20 from `main` @ `6b3c430`, local only, not pushed yet)
+- Created: 2026-10-20 · Owner: Pablo Sarro · Branch for code: `multi-object` (created 2026-10-20 from `main` @ `6b3c430`, pushed to `origin` = `PabloSarro/FastPose-ViT-MO`)
 - Paths: `$NAS_HOME` = `/mnt/cvlab/scratch/cvlab/home/sarro`, `$DATA_DIR` = `/mnt/cvlab/scratch/cvlab/home/pvancey/datasets`
 - Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
@@ -371,3 +371,4 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 3. ~~Set up `.venv` + `bop_toolkit`~~ (done 2026-10-20, see §7 M0). Install with `.venv/bin/pip`, not uv.
 4. Next M0 bullet: a tiny `train` job that reads BOP files (access check). Then `.gitignore`/pytest, the golden SPEED eval with `.venv/bin/python`, and the GT-as-prediction bop_toolkit check.
 - Way of working (decided 2026-10-20): go through §7 one bullet at a time. Do the step, update this file, then stop until the user has checked it.
+- After every bullet: commit on `multi-object` with a 2–4 word ALL-CAPS message (e.g. `BOP ACCESS VERIFIED`), then `git push origin multi-object` to the fork `PabloSarro/FastPose-ViT-MO` (never to `upstream`).

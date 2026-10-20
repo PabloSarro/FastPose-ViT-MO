@@ -55,6 +55,14 @@ from styleaug import StyleAugmentor
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from src.utils import setup_logging
+from src.checkpoint import (
+    get_rng_state,
+    load_checkpoint,
+    resolve_resume_path,
+    save_checkpoint,
+    set_rng_state,
+    unwrap_model,
+)
 from src.scheduler import LogarithmicLR, CosineAnnealingLR, CosineAnnealingWithWarmRestarts
 
 
@@ -598,9 +606,45 @@ def train(args: argparse.Namespace, log_file: str, bbox_json_path: str) -> None:
 
     # Initialize global iteration counter for proper learning rate scheduling
     global_iteration = 0
+    start_epoch = 0
+
+    # Resume from a checkpoint (e.g. after the cluster restarted the job)
+    checkpoint_path = args.checkpoint_path or os.path.join(args.log_dir, "last.pt")
+    resume_path = resolve_resume_path(args.resume, checkpoint_path)
+    if resume_path is not None:
+        checkpoint = load_checkpoint(resume_path)
+        unwrap_model(model).load_state_dict(checkpoint["model"])
+        optimizer.load_state_dict(checkpoint["optimizer"])
+        if scheduler is not None and checkpoint["scheduler"] is not None:
+            scheduler.load_state_dict(checkpoint["scheduler"])
+        if scaler is not None and checkpoint["scaler"] is not None:
+            scaler.load_state_dict(checkpoint["scaler"])
+        set_rng_state(checkpoint["rng"])
+        start_epoch = checkpoint["epoch"] + 1
+        global_iteration = checkpoint["global_iteration"]
+        best_val_loss = checkpoint["best_val_loss"]
+        changed = {
+            k: (v, vars(args).get(k))
+            for k, v in checkpoint["args"].items()
+            if k not in ("resume", "checkpoint_path") and vars(args).get(k) != v
+        }
+        if changed:
+            logger.warning(f"Arguments differ from the checkpoint (saved, now): {changed}")
+        if writer is not None:
+            # Drop TensorBoard points logged after the checkpoint by the interrupted run
+            writer.close()
+            writer = SummaryWriter(args.log_dir, purge_step=start_epoch)
+        logger.info(
+            f"Resumed from {resume_path}: {start_epoch} epoch(s) done, global iteration "
+            f"{global_iteration}, best validation loss {best_val_loss:.4f}"
+        )
+        if start_epoch >= args.epochs:
+            logger.info(f"Nothing left to train ({args.epochs} epochs)")
+    elif args.resume is not None:
+        logger.info(f"No checkpoint at {checkpoint_path}: starting from scratch")
 
     # Training loop
-    for epoch in range(args.epochs):
+    for epoch in range(start_epoch, args.epochs):
         # Train and validate
         # Create training configuration
         train_config = TrainingConfig(
@@ -719,6 +763,23 @@ def train(args: argparse.Namespace, log_file: str, bbox_json_path: str) -> None:
                 model.save(args.model_save_path)
                 best_model_message = f"New best model saved to {args.model_save_path} with validation loss: {best_val_loss:.4f}"
                 logger.info(best_model_message)
+
+        # Save the training state to resume from (every epoch, overwritten atomically)
+        save_checkpoint(
+            checkpoint_path,
+            {
+                "model": unwrap_model(model).state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "scheduler": scheduler.state_dict() if scheduler is not None else None,
+                "scaler": scaler.state_dict() if scaler is not None else None,
+                "epoch": epoch,
+                "global_iteration": global_iteration,
+                "best_val_loss": best_val_loss,
+                "rng": get_rng_state(),
+                "args": vars(args),
+            },
+        )
+        logger.info(f"Checkpoint saved to {checkpoint_path} (epoch {epoch + 1})")
 
     # Training completed
     final_message = f"Training completed. Best validation loss: {best_val_loss:.4f}"
@@ -988,6 +1049,19 @@ if __name__ == "__main__":
         type=float,
         default=0.0,
         help="Maximum gradient norm for gradient clipping (0.0 disables clipping)",
+    )
+    parser.add_argument(
+        "--resume",
+        type=str,
+        default=None,
+        help="Resume training: 'auto' (from --checkpoint_path if it exists, else start fresh) "
+        "or the path of a checkpoint",
+    )
+    parser.add_argument(
+        "--checkpoint_path",
+        type=str,
+        default=None,
+        help="Where to save the checkpoint for resuming, every epoch (default: LOG_DIR/last.pt)",
     )
     parser.add_argument(
         "--use_per_epoch_scheduling",

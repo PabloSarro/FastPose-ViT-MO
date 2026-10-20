@@ -31,7 +31,7 @@ W9 Dec 14 · W10 Dec 21 · W11 Dec 28 · W12 Jan 4 · W13 Jan 11 · W14 Jan 18. 
 | Milestone | Weeks | Status | Exit criterion | Result |
 |---|---|---|---|---|
 | M0 Setup and data access | W1 | `[x]` | Golden SPEED eval reproduced (0.0093) and bop_toolkit gives AR ≈ 1.0 on GT-as-prediction | Golden SPEED 0.0093 reproduced (byte-identical); bop_toolkit GT-as-prediction AR = **1.0** (VSD via EGL workaround, `dev` and `train`). Image 1.60 with `libegl1` moved to M2 (not blocking) |
-| M1 Refactor and safety net | W2 | `[~]` | SPEED golden diff = 0, pytest green, smoke train OK | |
+| M1 Refactor and safety net | W2 | `[x]` | SPEED golden diff = 0, pytest green, smoke train OK | Golden byte-identical; 57 tests; smoke val 0.1317; kill/resume continues exactly (LR, losses); done 2026-10-20, a week early |
 | M2 BOP data loader (LM-O) | W3–4 | `[ ]` | Reprojection and label round-trip tests pass, throughput OK | |
 | M3 Single-object baseline B1 | W4–5 | `[ ]` | B1 metrics logged in §9 | |
 | M4 Shared 8-object model | W6–7 | `[ ]` | ≥ 90 % of B1 on B1's object; no object at 0 ADD | |
@@ -331,14 +331,47 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
     - Golden SPEED eval: 0.0093, `results.json` byte-identical (`results/eval-m1-refactor`).
     - 2-epoch SPEED smoke run in `dev` with the `smoke-02` command (`results/smoke-m1-refactor`): train loss 0.4980 / 0.1701 vs 0.4929 / 0.1710, val score **0.1317** vs 0.1400 (smoke-01 gave 0.1379). Training is unseeded, so this is within noise.
     - Epoch 2 took 6.7 min vs 1.8 min in `smoke-02`, while epoch 1 took 4.3 min in both. The GPU sat at 0 % at times, so it's I/O-bound: the NAS page cache was warm in `smoke-02`'s epoch 2. It isn't the code (the golden eval timing is unchanged). Keep it in mind for M2 throughput.
-- [ ] Checkpoint/resume in `src/train.py`:
+- [x] Checkpoint/resume in `src/train.py`:
   - Atomic `last.pt` in `$RUN_DIR` containing model, optimizer (Muon), scheduler/LR index, GradScaler, epoch, global iteration, best metric and RNG states.
   - `--resume auto`.
   - Test: kill a 3-epoch smoke run after epoch 1, resume, and check that the curve continues.
-- **Exit:** golden diff = 0 (≤ 1e-6), pytest green, 2-epoch SPEED smoke run behaves as before.
+  - **Done 2026-10-20.**
+    - `src/checkpoint.py`: `save_checkpoint` (atomic: `.tmp` then `os.replace`), `load_checkpoint`, `get_rng_state` / `set_rng_state` (python, numpy, torch, cuda), `unwrap_model` (torch.compile) and `resolve_resume_path`.
+    - `src/train.py`:
+      - `--checkpoint_path` defaults to `LOG_DIR/last.pt` (= `$RUN_DIR/last.pt` in jobs).
+      - `--resume auto` resumes if that file exists and otherwise starts fresh, so a restarted job can re-run the same command. `--resume PATH` requires the file to exist.
+      - `last.pt` is saved every epoch, after the best-model check. It holds model (unwrapped), optimizer (Muon / Adam), scheduler, GradScaler, epoch, global iteration (which indexes Muon's precomputed LRs), best val loss, RNG states and args.
+      - On resume, TensorBoard is re-opened with `purge_step` and changed args are logged as a warning.
+    - Without `--resume` the behaviour is the same as before, plus the `last.pt` write: **~690 MB**, ~1 s per epoch for ViT-B/16-384 + Muon.
+  - Unit tests `tests/test_checkpoint.py` (6):
+    - A run interrupted after 3 of 6 steps, rebuilt with a different seed, then resumed from `last.pt` gives **bit-identical** weights to the uninterrupted run, for Muon+aux-Adam and for Adam + `CosineAnnealingWithWarmRestarts`. RNG is drawn from python, numpy and torch every step.
+    - A control test shows that skipping the RNG restore diverges.
+    - Also tested: atomic replace (no `.tmp` left), the compiled-model unwrap, and `resolve_resume_path`.
+    - **57 tests pass.**
+  - **Kill/resume smoke run** in `dev` (`results/smoke-m1-resume`; driver: 3-epoch `smoke-02` command + `--resume auto`). The process group was **SIGKILLed** right after the epoch-1 checkpoint, then the identical command was re-run:
+    - Run 1 logged "No checkpoint … starting from scratch". Epoch 1: train 0.5185, val score 0.2137, LR 2.0000e-4 → 1.9516e-4.
+    - Run 2 logged "Resumed … 1 epoch(s) done, global iteration 1200, best validation loss 0.2137".
+      - Epoch 2 LR **1.9515e-4** → 1.8111e-4. This is the next step and exactly smoke-02's epoch-2 LR range, so the schedule continues.
+      - Train 0.1761, val 0.1403 (smoke-02: 0.1710 / 0.1400).
+      - Epoch 3: train 0.1215, val **0.1005** (speed-short-001, 3 epochs uninterrupted: 0.1021).
+      - Best model and checkpoint were updated each epoch. Exit 0, no `.tmp` and no stray processes left.
+- **Exit:** golden diff = 0 (≤ 1e-6), pytest green, 2-epoch SPEED smoke run behaves as before. **Met 2026-10-20:** golden byte-identical, 57 tests pass, smoke val 0.1317 (2 ep), and the kill/resume run behaves as before.
 
 ### M2 — BOP data loader for LM-O (W3–4)
-- [ ] **Pending (moved from M0 on 2026-10-20): image `fastposevit:1.60` = 1.59 + `libegl1`.** It is not blocking: the EGL workaround (`$NAS_HOME/.local/lib/egl`, used automatically by `scripts/bop_eval.sh`) works in `dev` and `train`.
+- [ ] `src/bop_dataset.py` index: one row per visible instance (`visib_fract ≥ 0.1`, valid bbox), stored as numpy arrays and cached as `.npz` under `$NAS_HOME/cache/`. Expect ≈ 343k train rows and 1,445 LM-O test targets.
+- [ ] `__getitem__`:
+  - Crop from `bbox_visib` with jitter, as a single `warpAffine` to a square crop with zero padding.
+  - Labels: allocentric R and `U` in `site` mode; also return K, `obj_idx`, diameter and ids.
+  - Pixel augs without OpticalDistortion.
+- [ ] Reprojection test: project `models_eval` points with the GT pose. The projected bbox must match `bbox_obj` with IoU ≥ 0.9, and using `Rᵀ` must clearly fail. Run it on 30 PBR and 30 LM-O instances.
+- [ ] Label round trip: dataset labels → inverse functions (K, bbox) → GT ego pose, within 1e-4.
+- [ ] Visual check: a 64-crop grid with projected axes/points saved as PNG, including eggbox and glue.
+- [ ] Loader throughput with 16 workers. If it is below about 2× GPU speed, stage the PBR RGB (~5.4 GB) to local disk or group crops per image.
+- [ ] (Optional) exact roll augmentation, off by default, tested by checking projected points stay inside the warped mask.
+- **Exit:** all tests pass and the overlays look right.
+
+### M3 — Single-object baseline B1: original architecture, GT boxes (W4–5)
+- [ ] **Pending (moved from M0 to M2, then to M3 on 2026-10-20): image `fastposevit:1.60` = 1.59 + `libegl1`.** It is not blocking: the EGL workaround (`$NAS_HOME/.local/lib/egl`, used automatically by `scripts/bop_eval.sh`) works in `dev` and `train`.
   - `Dockerfile` already lists `libegl1` (2026-10-20), so any future full rebuild includes it.
   - A thin layer on top of 1.59 keeps the Python environment bit-identical, which a full rebuild with unpinned requirements might not (golden SPEED check).
   - First attempt, 2026-10-20 from home: cancelled. The pull of 1.59 ran at ~70 KB/s.
@@ -379,19 +412,6 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
     dev
     ```
   - Then Claude checks that `ldconfig -p | grep libEGL.so.1` finds the library, that `bash scripts/bop_eval.sh` gives AR 1.0 without the workaround, and that the golden SPEED eval still gives 0.0093.
-- [ ] `src/bop_dataset.py` index: one row per visible instance (`visib_fract ≥ 0.1`, valid bbox), stored as numpy arrays and cached as `.npz` under `$NAS_HOME/cache/`. Expect ≈ 343k train rows and 1,445 LM-O test targets.
-- [ ] `__getitem__`:
-  - Crop from `bbox_visib` with jitter, as a single `warpAffine` to a square crop with zero padding.
-  - Labels: allocentric R and `U` in `site` mode; also return K, `obj_idx`, diameter and ids.
-  - Pixel augs without OpticalDistortion.
-- [ ] Reprojection test: project `models_eval` points with the GT pose. The projected bbox must match `bbox_obj` with IoU ≥ 0.9, and using `Rᵀ` must clearly fail. Run it on 30 PBR and 30 LM-O instances.
-- [ ] Label round trip: dataset labels → inverse functions (K, bbox) → GT ego pose, within 1e-4.
-- [ ] Visual check: a 64-crop grid with projected axes/points saved as PNG, including eggbox and glue.
-- [ ] Loader throughput with 16 workers. If it is below about 2× GPU speed, stage the PBR RGB (~5.4 GB) to local disk or group crops per image.
-- [ ] (Optional) exact roll augmentation, off by default, tested by checking projected points stay inside the warped mask.
-- **Exit:** all tests pass and the overlays look right.
-
-### M3 — Single-object baseline B1: original architecture, GT boxes (W4–5)
 - [ ] Overfit 256 instances of one object to near-zero loss in about 10 min. This catches label bugs.
 - [ ] Train FastPose-ViT (ViT-B/16-384, best SPEED config except pixel aug on, `site` depth) on **one object** (8 driller or 5 can) from LM PBR.
 - [ ] Evaluate on the LM real val split and on LM-O test for that object: rotation error (°), translation error (mm), ADD@0.1d, MSSD/MSPD.
@@ -483,6 +503,7 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 | 2026-10-20 | `results/bop-m0-gtpred-wrapper` | LM-O test (BOP19 targets) | GT poses as predictions, `scripts/bop_eval.sh` | AR **1.0** (VSD 1.0, MSSD 1.0, MSPD 1.0) | Eval pipeline OK; 53 s in `dev` |
 | 2026-10-20 | `results/eval-m1-refactor` | SPEED test | golden command after the M1 refactor | score **0.0093** | `results.json` byte-identical to golden |
 | 2026-10-20 | `results/smoke-m1-refactor` | SPEED val | `smoke-02` command, 2 epochs, `dev` | val score 0.1317 | vs 0.1400 (smoke-02); within noise |
+| 2026-10-20 | `results/smoke-m1-resume` | SPEED val | `smoke-02` command, 3 epochs, SIGKILL after epoch 1 + `--resume auto` | val score 0.2137 / 0.1403 / **0.1005** | Resume continues LR and losses; 3-ep uninterrupted ref 0.1021 |
 
 (Paths relative to `$NAS_HOME`.)
 
@@ -494,7 +515,8 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 2. Work on branch `multi-object` (created 2026-10-20). The §5 report to Pierre is deferred until M8.
 3. ~~Set up `.venv` + `bop_toolkit`~~ (done 2026-10-20, see §7 M0). Install with `.venv/bin/pip`, not uv.
 4. ~~Tiny `train` job that reads BOP files~~ (done 2026-10-20, `lmo-m0-access-004`). New jobs normally show in `runai list` within ~10 s; a one-off ~9 min delay happened once (see §7 M0). ~~`.gitignore`/pytest~~ (done). ~~Golden SPEED eval with `.venv`~~ (done, byte-identical). ~~bop_toolkit GT-as-prediction check~~ (done, AR = 1.0). **M0 complete.**
-5. Image 1.60 with `libegl1`: pending, moved to M2 (first bullet, with the WSL commands). It is not blocking, since the EGL workaround works.
-6. **M1** started 2026-10-20 (while the image 1.60 build is running): ~~`tests/test_rotation_convention.py`~~ (done, 9 tests). ~~`tests/test_translation_param.py`~~ (done, 13 tests; the `src/utils.py` part of the refactor is included). ~~Refactor~~ (done: `num_objects`, `unpack_batch`/`forward_model`, per-sample K in `CoordinateTransformer`). Next: checkpoint/resume in `src/train.py`, the last M1 bullet.
+5. Image 1.60 with `libegl1`: pending, moved to M3 (first bullet, with the WSL commands). It is not blocking, since the EGL workaround works.
+6. **M1** started 2026-10-20 (while the image 1.60 build is running): ~~`tests/test_rotation_convention.py`~~ (done, 9 tests). ~~`tests/test_translation_param.py`~~ (done, 13 tests; the `src/utils.py` part of the refactor is included). ~~Refactor~~ (done: `num_objects`, `unpack_batch`/`forward_model`, per-sample K in `CoordinateTransformer`). ~~Checkpoint/resume~~ (done; kill/resume verified). **M1 complete.**
+7. Next: **M2**, first bullet `src/bop_dataset.py` index. Use `--resume auto` in every training command from now on.
 - Way of working (decided 2026-10-20): go through §7 one bullet at a time. Do the step, update this file, then stop until the user has checked it.
 - After every bullet: commit on `multi-object` with a 2–4 word message with every word starting in a Capital Letter (e.g. `BOP Access Verified`), then `git push origin multi-object` to the fork `PabloSarro/FastPose-ViT-MO` (never to `upstream`), and don't show `claude` as the author of the pushes but myself (`PabloSarro`).

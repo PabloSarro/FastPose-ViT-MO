@@ -46,7 +46,7 @@ Exit codes: 0 ok · 1 job failed · 2 no such job · 3 still waiting · 4 runai 
 **Key commands** (always prefix `PYTHONPATH=.`):
 - SPEED golden eval (must print SPEED score 0.0093; reference `$NAS_HOME/results/eval-rcp-check/results.json`): see `docs/RCP_WORKFLOW.md` §5.
 - Training: `bash rcp/train.sh NAME bash -c 'PYTHONPATH=. .venv/bin/python src/train.py ...'`, with the best SPEED flags in `README.md`.
-- Tests: `.venv/bin/python -m pytest tests/`. The `.gitignore` rule `test*` hides new `tests/test_*.py` until an exception is added.
+- Tests: `.venv/bin/python -m pytest tests/`.
 
 **Conventions:**
 - Code work on branch `multi-object`.

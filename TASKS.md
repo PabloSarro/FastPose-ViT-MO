@@ -30,7 +30,7 @@ W9 Dec 14 · W10 Dec 21 · W11 Dec 28 · W12 Jan 4 · W13 Jan 11 · W14 Jan 18. 
 
 | Milestone | Weeks | Status | Exit criterion | Result |
 |---|---|---|---|---|
-| M0 Setup and data access | W1 | `[~]` | Golden SPEED eval reproduced (0.0093) and bop_toolkit gives AR ≈ 1.0 on GT-as-prediction | Golden SPEED 0.0093 reproduced with `.venv` (byte-identical); bop_toolkit check pending |
+| M0 Setup and data access | W1 | `[x]` | Golden SPEED eval reproduced (0.0093) and bop_toolkit gives AR ≈ 1.0 on GT-as-prediction | Golden SPEED 0.0093 reproduced (byte-identical); bop_toolkit GT-as-prediction AR = **1.0** (VSD via EGL workaround) |
 | M1 Refactor and safety net | W2 | `[ ]` | SPEED golden diff = 0, pytest green, smoke train OK | |
 | M2 BOP data loader (LM-O) | W3–4 | `[ ]` | Reprojection and label round-trip tests pass, throughput OK | |
 | M3 Single-object baseline B1 | W4–5 | `[ ]` | B1 metrics logged in §9 | |
@@ -253,10 +253,29 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
     - E_T 0.0221, E_R 0.0073, relative translation 0.0020, **SPEED score 0.0093**, in about 25 s wall time.
     - `results.json` is **byte-identical** to the golden `eval-rcp-check/results.json` (1,201 entries, 4,805 leaves, max abs diff 0.0).
   - Side note: the ViT builder downloads torchvision's ImageNet `vit_b_16_swag-9ac1b537.pth` (331 MB) into the container-local `TORCH_HOME=/app/tmp/torch_cache` before our weights overwrite it. That costs about 2 s per new container and doesn't affect the result. It could be skipped in M1 when full weights are loaded.
-- [ ] bop_toolkit sanity check:
+- [x] bop_toolkit sanity check:
   - Build `scripts/make_bop_tree.sh` (symlinked tree in `$NAS_HOME/datasets/bop/`).
   - Write a **GT-as-prediction** CSV for LM-O and run `eval_bop19_pose.py`. Expect AR ≈ 1.0.
   - This tests the VSD renderer. If EGL fails, try `NVIDIA_DRIVER_CAPABILITIES=all`, or OSMesa in a new image tag.
+  - **Done 2026-10-20 in `dev`: AR = 1.0** (VSD 1.0, MSSD 1.0, MSPD 1.0, all thresholds), 53 s with 8 workers. Results in `$NAS_HOME/results/bop-m0-gtpred-wrapper/`.
+  - `scripts/make_bop_tree.sh [DS ...]` (default `lmo lm`) builds `$NAS_HOME/datasets/bop/<ds>/` from directory-level symlinks.
+    - Example: `lmo/test → lmo_test_bop19/test`, `lmo/models_eval`, `lm/train_pbr`, plus the `<ds>_base/<ds>/*` files (camera.json, test_targets_bop19.json).
+    - `lmo_test_all/test` collides with `test`, so it is linked as `test_all`. The same holds for LM.
+    - Safe to re-run (`ln -sfn`). Nothing is written into `$DATA_DIR`, checked.
+  - `scripts/bop_gt_as_prediction.py --dataset lmo --out_dir DIR` writes `gtpred_lmo-test.csv`: 1,445 targets → 1,445 estimates, t in mm.
+  - **`scripts/bop_eval.sh RESULTS_DIR CSV`** is the official eval wrapper; use it from now on. Scores go to `RESULTS_DIR/eval/<method>_<ds>-<split>/scores_bop19.json`.
+  - **EGL problem and workaround:**
+    - The first VSD run failed: the image has `libglvnd0`, Mesa and the NVIDIA EGL libs (`libEGL_nvidia`, `libnvidia-eglcore`, `10_nvidia.json`), but **not `libEGL.so.1` (Ubuntu package `libegl1`)**.
+    - `NVIDIA_DRIVER_CAPABILITIES=all` would not help: it only mounts vendor libraries.
+    - Fix without root: downloaded `libegl1_1.7.0-1build1_amd64.deb` with `apt-get download`, extracted it to **`$NAS_HOME/.local/lib/egl/`**, and pointed `EGL_LIBRARY` at it (vispy uses `find_library`, which ignores `LD_LIBRARY_PATH`).
+    - Rendering then uses the A100 (`GL_RENDERER = NVIDIA A100-SXM4-80GB`).
+    - `bop_eval.sh` sets all of this up automatically, and skips it once the image has `libEGL.so.1`.
+    - **Proper fix (user):** add `libegl1` to the `apt-get install` line of `Dockerfile` in the next image tag.
+    - Not tested yet inside a `train` job: GPU nodes may lack the NVIDIA EGL libraries. If so, the eval stays in `dev`, which takes about 1 min.
+  - Other gotchas:
+    - `eval_bop19_pose.py` starts its sub-steps with a bare `python`, which isn't on PATH here, so `.venv/bin` must come first on PATH. The wrapper does this.
+    - `/usr/bin/time` is not in the image.
+    - MSSD/MSPD alone (no renderer) were also checked: 1.0 (`results/bop-m0-gtpred/eval_novsd`).
 - **Exit:** golden SPEED 0.0093 reproduced, and toolkit AR ≈ 1.0.
 
 ### M1 — Safety net and refactor, no behaviour change (W2)
@@ -380,6 +399,7 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 | 2026-10-14 | `outputs/FastPose-ViT/runs/speed-short-001` | SPEED val | 3 epochs | val score 0.1021 | ~1.8 min/epoch |
 | 2026-10-20 | `outputs/FastPose-ViT/runs/lmo-m0-access-004` | LM PBR / LM-O models | `scripts/check_bop_access.py` | `BOP ACCESS OK (lmo)` | BOP readable from `train` jobs |
 | 2026-10-20 | `results/eval-m0-venv-golden` | SPEED test | same as golden, `.venv/bin/python` | score **0.0093** | `results.json` byte-identical to golden |
+| 2026-10-20 | `results/bop-m0-gtpred-wrapper` | LM-O test (BOP19 targets) | GT poses as predictions, `scripts/bop_eval.sh` | AR **1.0** (VSD 1.0, MSSD 1.0, MSPD 1.0) | Eval pipeline OK; 53 s in `dev` |
 
 (Paths relative to `$NAS_HOME`.)
 
@@ -390,6 +410,7 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 1. Start Claude inside `dev`, from the repo root (§4).
 2. Work on branch `multi-object` (created 2026-10-20). The §5 report to Pierre is deferred until M8.
 3. ~~Set up `.venv` + `bop_toolkit`~~ (done 2026-10-20, see §7 M0). Install with `.venv/bin/pip`, not uv.
-4. ~~Tiny `train` job that reads BOP files~~ (done 2026-10-20, `lmo-m0-access-004`). New jobs normally show in `runai list` within ~10 s; a one-off ~9 min delay happened once (see §7 M0). ~~`.gitignore`/pytest~~ (done). ~~Golden SPEED eval with `.venv`~~ (done, byte-identical). Next (last) M0 bullet: `scripts/make_bop_tree.sh` + the GT-as-prediction bop_toolkit check (AR ≈ 1.0, tests the VSD renderer).
+4. ~~Tiny `train` job that reads BOP files~~ (done 2026-10-20, `lmo-m0-access-004`). New jobs normally show in `runai list` within ~10 s; a one-off ~9 min delay happened once (see §7 M0). ~~`.gitignore`/pytest~~ (done). ~~Golden SPEED eval with `.venv`~~ (done, byte-identical). ~~bop_toolkit GT-as-prediction check~~ (done, AR = 1.0). **M0 complete.**
+5. Next: **M1**, first bullet `tests/test_rotation_convention.py`. Pending for the user: add `libegl1` to the Dockerfile (new image tag) so the EGL workaround becomes unnecessary.
 - Way of working (decided 2026-10-20): go through §7 one bullet at a time. Do the step, update this file, then stop until the user has checked it.
 - After every bullet: commit on `multi-object` with a 2–4 word message with every word starting in a Capital Letter (e.g. `BOP Access Verified`), then `git push origin multi-object` to the fork `PabloSarro/FastPose-ViT-MO` (never to `upstream`), and don't show `claude` as the author of the pushes but myself (`PabloSarro`).

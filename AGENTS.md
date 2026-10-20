@@ -47,6 +47,7 @@ Exit codes: 0 ok · 1 job failed · 2 no such job · 3 still waiting · 4 runai 
 - SPEED golden eval (must print SPEED score 0.0093; reference `$NAS_HOME/results/eval-rcp-check/results.json`): see `docs/RCP_WORKFLOW.md` §5.
 - Training: `bash rcp/train.sh NAME bash -c 'PYTHONPATH=. .venv/bin/python src/train.py ...'`, with the best SPEED flags in `README.md`.
 - Tests: `.venv/bin/python -m pytest tests/`.
+- BOP tree: `bash scripts/make_bop_tree.sh` (→ `$NAS_HOME/datasets/bop`). Official BOP eval: `bash scripts/bop_eval.sh RESULTS_DIR METHOD_DS-SPLIT.csv` (handles the missing-libEGL workaround, venv PATH and `BOP_PATH`).
 
 **Conventions:**
 - Code work on branch `multi-object`. After each §7 bullet: commit with a 2–4 word Title Case message (e.g. `BOP Access Verified`), no `Co-Authored-By: Claude` trailer (author is PabloSarro only), and `git push origin multi-object` (fork `PabloSarro/FastPose-ViT-MO`; never push to `upstream`).

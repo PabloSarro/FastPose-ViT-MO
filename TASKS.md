@@ -31,7 +31,7 @@ W9 Dec 14 · W10 Dec 21 · W11 Dec 28 · W12 Jan 4 · W13 Jan 11 · W14 Jan 18. 
 | Milestone | Weeks | Status | Exit criterion | Result |
 |---|---|---|---|---|
 | M0 Setup and data access | W1 | `[~]` | Golden SPEED eval reproduced (0.0093) and bop_toolkit gives AR ≈ 1.0 on GT-as-prediction | Golden SPEED 0.0093 reproduced (byte-identical); bop_toolkit GT-as-prediction AR = **1.0** (VSD via EGL workaround, `dev` and `train`); image 1.60 with `libegl1` pending |
-| M1 Refactor and safety net | W2 | `[ ]` | SPEED golden diff = 0, pytest green, smoke train OK | |
+| M1 Refactor and safety net | W2 | `[~]` | SPEED golden diff = 0, pytest green, smoke train OK | |
 | M2 BOP data loader (LM-O) | W3–4 | `[ ]` | Reprojection and label round-trip tests pass, throughput OK | |
 | M3 Single-object baseline B1 | W4–5 | `[ ]` | B1 metrics logged in §9 | |
 | M4 Shared 8-object model | W6–7 | `[ ]` | ≥ 90 % of B1 on B1's object; no object at 0 ADD | |
@@ -285,11 +285,18 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 - **Exit:** golden SPEED 0.0093 reproduced, and toolkit AR ≈ 1.0.
 
 ### M1 — Safety net and refactor, no behaviour change (W2)
-- [ ] `tests/test_rotation_convention.py`:
+- [x] `tests/test_rotation_convention.py`:
   - `quat2dcm(q)ᵀ == quaternion_to_rotation_matrix(q)` on random q.
   - ego → allo → ego round trip.
   - `R_rel(t)·ẑ = t̂`.
   - Roll equivariance.
+  - **Done 2026-10-20: 9 tests pass, all in float64 with tolerance 1e-9.**
+    - `quat2dcm(q)ᵀ == quaternion_to_rotation_matrix(q)` on 256 random quaternions.
+    - Extra: ESA's `project_axes` equals `K(R·p + t)` with `R = quaternion_to_rotation_matrix(q)`. So SPEED's R is model→camera, the same as BOP `cam_R_m2c`, and §6.1 is now tested. A transposed R would be off by 89 px, versus 3e-13 px.
+    - `R_rel(t)·ẑ = t̂` on 256 translations, including one exactly on the optical axis (→ identity). The axis of R_rel is ⟂ ẑ, so it is the smallest rotation and adds no roll.
+    - Ego → allo → ego and allo → ego → allo round trips (`get_apparent_orientation` / `get_absolute_orientation`), plus the explicit formula `allo = R_rel(t)ᵀ·R`.
+    - Roll equivariance for 4 angles: `t' = Rz·t`, `R' = Rz·R` ⇒ `allo' = Rz·allo`.
+  - `tests/` now has 22 tests (13 import + 9 rotation), all passing in 7 s. The new file is formatted with ruff (line length 99).
 - [ ] `tests/test_translation_param.py`:
   - The new code path with `K = Camera.K` and 1920×1200 matches the old one bit for bit.
   - The `site` mode forward/inverse round trip works with the LM and YCB-V cameras.
@@ -425,6 +432,6 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
    docker push registry.rcp.epfl.ch/cvlab-pablo/fastposevit:1.60
    ```
    Then Claude switches `rcp/project.env` to 1.60. The user restarts `dev` on the jumphost (`runai delete job fastpose-dev`, then `dev`), and Claude runs the checks listed in §7 M0.
-6. Then **M1**, first bullet `tests/test_rotation_convention.py`.
+6. **M1** started 2026-10-20 (while the image 1.60 build is running): ~~`tests/test_rotation_convention.py`~~ (done, 9 tests). Next: `tests/test_translation_param.py`.
 - Way of working (decided 2026-10-20): go through §7 one bullet at a time. Do the step, update this file, then stop until the user has checked it.
 - After every bullet: commit on `multi-object` with a 2–4 word message with every word starting in a Capital Letter (e.g. `BOP Access Verified`), then `git push origin multi-object` to the fork `PabloSarro/FastPose-ViT-MO` (never to `upstream`), and don't show `claude` as the author of the pushes but myself (`PabloSarro`).

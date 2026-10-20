@@ -293,11 +293,24 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
     - Ego → allo → ego and allo → ego → allo round trips (`get_apparent_orientation` / `get_absolute_orientation`), plus the explicit formula `allo = R_rel(t)ᵀ·R`.
     - Roll equivariance for 4 angles: `t' = Rz·t`, `R' = Rz·R` ⇒ `allo' = Rz·allo`.
   - `tests/` now has 22 tests (13 import + 9 rotation), all passing in 7 s. The new file is formatted with ruff (line length 99).
-- [ ] `tests/test_translation_param.py`:
+- [x] `tests/test_translation_param.py`:
   - The new code path with `K = Camera.K` and 1920×1200 matches the old one bit for bit.
   - The `site` mode forward/inverse round trip works with the LM and YCB-V cameras.
+  - **Done 2026-10-20: 13 tests pass.** The tests needed code, so the `src/utils.py` part of the refactor bullet below was done here:
+    - `translation_to_bbox_relative_translation` and `bbox_relative_translation_to_translation` take optional keyword arguments `K` ((3,3) or per-sample (B,3,3)), `img_wh` (tuple or (B,2)), `depth_mode` (`"legacy"` | `"site"`) and `diameter` (scalar or (B,)).
+    - With `K is None` and `"legacy"`, the original code runs unchanged, so every existing caller is untouched. New helpers: `_intrinsics`, `_depth_ratio`, `DEPTH_MODES`.
+    - `site`: `U_z = t_z·s/(f̄·D)`, with `s = (w+h)/2` and `f̄ = (fx+fy)/2`. The inverse is `t_z = U_z·f̄·D/s`.
+  - What the tests show:
+    - `K = Camera.K` with `img_wh = (1920, 1200)` matches the legacy path **bit for bit** (`torch.equal`, float32), both directions. Checked with single and per-sample K, and with tuple and tensor `img_wh`.
+    - The legacy `U_z = t_z·(w+h)/(2H)` identity holds, and the legacy round trip works.
+    - `site` round trip with the LM, YCB-V uw and YCB-V cmu cameras: error < 1e-9 in float64, and < 1e-3 mm in float32.
+    - A mixed uw/cmu batch with per-sample K and diameters also round-trips. Using the wrong K for half of it breaks it, so per-sample K really matters.
+    - `site` U_z is invariant to (2·D, 2·t) scaling.
+    - Argument errors are raised for an unknown `depth_mode`, a missing `img_wh` or a missing `diameter`.
+  - **Measured on a synthetic LM batch** (D 100–270 mm, t_z 0.4–1.9 m): `site` U_z = 0.62–1.09, while legacy U_z = 83–321. This confirms §6.2: with legacy, U_z would dominate `RelativeTranslationLoss`.
+  - Non-regression: the golden SPEED eval after the change gives 0.0093, and `results.json` is byte-identical (`$NAS_HOME/results/eval-m1-translation-param`). `tests/` now has 35 tests, all passing in 7 s.
 - [ ] Refactor:
-  - Optional `K` / `img_wh` / `depth_mode` / `diameter` in `src/utils.py` and `CoordinateTransformer`.
+  - Optional `K` / `img_wh` / `depth_mode` / `diameter` in `src/utils.py` (**done**, see above) and `CoordinateTransformer` (to do).
   - `unpack_batch` in `src/engine.py`.
   - `num_objects` in `FastPoseViT` (default 1).
 - [ ] Checkpoint/resume in `src/train.py`:
@@ -462,6 +475,6 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 3. ~~Set up `.venv` + `bop_toolkit`~~ (done 2026-10-20, see §7 M0). Install with `.venv/bin/pip`, not uv.
 4. ~~Tiny `train` job that reads BOP files~~ (done 2026-10-20, `lmo-m0-access-004`). New jobs normally show in `runai list` within ~10 s; a one-off ~9 min delay happened once (see §7 M0). ~~`.gitignore`/pytest~~ (done). ~~Golden SPEED eval with `.venv`~~ (done, byte-identical). ~~bop_toolkit GT-as-prediction check~~ (done, AR = 1.0). **M0 complete.**
 5. Image 1.60 with `libegl1`: pending, moved to M2 (first bullet, with the WSL commands). It is not blocking, since the EGL workaround works.
-6. **M1** started 2026-10-20 (while the image 1.60 build is running): ~~`tests/test_rotation_convention.py`~~ (done, 9 tests). Next: `tests/test_translation_param.py`.
+6. **M1** started 2026-10-20 (while the image 1.60 build is running): ~~`tests/test_rotation_convention.py`~~ (done, 9 tests). ~~`tests/test_translation_param.py`~~ (done, 13 tests; the `src/utils.py` part of the refactor is included). Next: the rest of the Refactor bullet (`CoordinateTransformer`, `unpack_batch`, `num_objects`).
 - Way of working (decided 2026-10-20): go through §7 one bullet at a time. Do the step, update this file, then stop until the user has checked it.
 - After every bullet: commit on `multi-object` with a 2–4 word message with every word starting in a Capital Letter (e.g. `BOP Access Verified`), then `git push origin multi-object` to the fork `PabloSarro/FastPose-ViT-MO` (never to `upstream`), and don't show `claude` as the author of the pushes but myself (`PabloSarro`).

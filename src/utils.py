@@ -486,10 +486,61 @@ def rotation_matrix_to_quaternion(rotation_matrix: torch.Tensor) -> torch.Tensor
     return q.squeeze(0) if squeeze_output else q
 
 
+DEPTH_MODES = ("legacy", "site")
+
+
+def _intrinsics(
+    camera: Camera,
+    K: torch.Tensor | None,
+    img_wh: tuple | torch.Tensor | None,
+    depth_mode: str,
+    ref: torch.Tensor,
+) -> tuple:
+    """Return (fx, fy, cx, cy, width, height), from K and img_wh when K is given.
+
+    Per-sample values are (B,) tensors; a single (3, 3) K gives 0-d tensors. width and
+    height are only needed (and only returned) for depth_mode="legacy".
+    """
+    if depth_mode not in DEPTH_MODES:
+        raise ValueError(f"depth_mode must be one of {DEPTH_MODES}, got {depth_mode!r}")
+    if K is None:
+        return camera.fx, camera.fy, camera.cx, camera.cy, camera.width, camera.height
+    K = K.to(device=ref.device, dtype=ref.dtype)
+    fx, fy, cx, cy = K[..., 0, 0], K[..., 1, 1], K[..., 0, 2], K[..., 1, 2]
+    if depth_mode != "legacy":
+        return fx, fy, cx, cy, None, None
+    if img_wh is None:
+        raise ValueError('img_wh is required with K and depth_mode="legacy"')
+    if torch.is_tensor(img_wh):
+        img_wh = img_wh.to(device=ref.device, dtype=ref.dtype)
+        return fx, fy, cx, cy, img_wh[..., 0], img_wh[..., 1]
+    return fx, fy, cx, cy, img_wh[0], img_wh[1]
+
+
+def _depth_ratio(w, h, fx, fy, width, height, depth_mode, diameter):
+    """U_z / t_z for the chosen depth parameterisation.
+
+    legacy: (w * aspect / width + h / height) / 2 = (w + h) / (2 * height), as for SPEED.
+    site:   s / (f * D) with s = (w + h) / 2, f = (fx + fy) / 2 and D the object diameter,
+            so U_z is dimensionless (~1) whatever the camera and object size.
+    """
+    if depth_mode == "legacy":
+        # Use least squares solution for avg_ratio computation
+        return 0.5 * ((w * (width / height)) / width + h / height)
+    if diameter is None:
+        raise ValueError('diameter is required with depth_mode="site"')
+    diameter = torch.as_tensor(diameter, device=w.device, dtype=w.dtype)
+    return 0.5 * (w + h) / (0.5 * (fx + fy) * diameter)
+
+
 def translation_to_bbox_relative_translation(
     translation: torch.Tensor,
     bbox: torch.Tensor,
     camera: Camera,
+    K: torch.Tensor | None = None,
+    img_wh: tuple | torch.Tensor | None = None,
+    depth_mode: str = "legacy",
+    diameter: torch.Tensor | float | None = None,
 ) -> torch.Tensor:
     """
     Transform translation vectors to relative translation vectors based on bounding boxes and camera parameters.
@@ -498,7 +549,11 @@ def translation_to_bbox_relative_translation(
     Args:
         translation: torch.Tensor - Batch of translation vectors (B, 3)
         bbox: torch.Tensor - Batch of bboxes (B, 4) containing [x1, y1, x2, y2]
-        camera: Camera object with intrinsic parameters
+        camera: Camera object with intrinsic parameters (used when K is None)
+        K: Optional intrinsics, (3, 3) or per sample (B, 3, 3). Overrides camera.
+        img_wh: Image (width, height), tuple or (B, 2); needed with K in "legacy" mode
+        depth_mode: "legacy" (SPEED, U_z = t_z (w + h) / (2 H)) or "site" (see _depth_ratio)
+        diameter: Object diameter(s), scalar or (B,), same unit as translation; for "site"
 
     Returns:
         torch.Tensor - Batch of relative translations (B, 3)
@@ -509,14 +564,17 @@ def translation_to_bbox_relative_translation(
     bbox_centers = bbox[:, :2] + bbox_dims * 0.5  # Shape: (B, 2)
     bbox_center_x, bbox_center_y = bbox_centers[:, 0], bbox_centers[:, 1]
 
-    # Cache camera parameters
-    cx, cy, fx, fy = camera.cx, camera.cy, camera.fx, camera.fy
+    if K is None and depth_mode == "legacy":
+        # Original SPEED path, kept bit-identical
+        cx, cy, fx, fy = camera.cx, camera.cy, camera.fx, camera.fy
+        avg_ratio = 0.5 * ((w * camera.aspect_ratio) / camera.width + h / camera.height)
+    else:
+        fx, fy, cx, cy, width, height = _intrinsics(camera, K, img_wh, depth_mode, translation)
+        avg_ratio = _depth_ratio(w, h, fx, fy, width, height, depth_mode, diameter)
 
     # Cache translation components
     tx, ty, tz = translation[:, 0], translation[:, 1], translation[:, 2]
 
-    # Use least squares solution for avg_ratio computation
-    avg_ratio = 0.5 * ((w * camera.aspect_ratio) / camera.width + h / camera.height)
     new_target_z = tz * avg_ratio
 
     # Vectorized target computation
@@ -532,15 +590,20 @@ def bbox_relative_translation_to_translation(
     bbox_relative_translation: torch.Tensor,
     bbox: torch.Tensor,
     camera: Camera,
+    K: torch.Tensor | None = None,
+    img_wh: tuple | torch.Tensor | None = None,
+    depth_mode: str = "legacy",
+    diameter: torch.Tensor | float | None = None,
 ) -> torch.Tensor:
     """
     Transform bbox relative translation vectors to absolute translations based on bounding boxes and camera parameters.
-    Pure batched implementation.
+    Pure batched implementation. Inverse of translation_to_bbox_relative_translation.
 
     Args:
         bbox_relative_translation: torch.Tensor - Batch of relative translations (B, 3)
         bbox: torch.Tensor - Batch of bboxes (B, 4) containing [x1, y1, x2, y2]
-        camera: Camera object with intrinsic parameters
+        camera: Camera object with intrinsic parameters (used when K is None)
+        K, img_wh, depth_mode, diameter: see translation_to_bbox_relative_translation
 
     Returns:
         torch.Tensor - Batch of absolute translations (B, 3)
@@ -551,8 +614,16 @@ def bbox_relative_translation_to_translation(
     bbox_centers = bbox[:, :2] + bbox_dims * 0.5  # Shape: (B, 2)
     bbox_center_x, bbox_center_y = bbox_centers[:, 0], bbox_centers[:, 1]
 
-    # Cache camera parameters
-    cx, cy, fx, fy = camera.cx, camera.cy, camera.fx, camera.fy
+    if K is None and depth_mode == "legacy":
+        # Original SPEED path, kept bit-identical
+        cx, cy, fx, fy = camera.cx, camera.cy, camera.fx, camera.fy
+        # Use least squares solution for avg_ratio computation
+        avg_ratio = 0.5 * ((w * camera.aspect_ratio) / camera.width + h / camera.height)
+    else:
+        fx, fy, cx, cy, width, height = _intrinsics(
+            camera, K, img_wh, depth_mode, bbox_relative_translation
+        )
+        avg_ratio = _depth_ratio(w, h, fx, fy, width, height, depth_mode, diameter)
 
     # Cache relative translation components
     rel_tx, rel_ty, rel_tz = (
@@ -560,9 +631,6 @@ def bbox_relative_translation_to_translation(
         bbox_relative_translation[:, 1],
         bbox_relative_translation[:, 2],
     )
-
-    # Use least squares solution for avg_ratio computation
-    avg_ratio = 0.5 * ((w * camera.aspect_ratio) / camera.width + h / camera.height)
 
     # Compute A and B coefficients
     A = (rel_tx * w - cx + bbox_center_x) / fx

@@ -30,7 +30,7 @@ W9 Dec 14 · W10 Dec 21 · W11 Dec 28 · W12 Jan 4 · W13 Jan 11 · W14 Jan 18. 
 
 | Milestone | Weeks | Status | Exit criterion | Result |
 |---|---|---|---|---|
-| M0 Setup and data access | W1 | `[~]` | Golden SPEED eval reproduced (0.0093) and bop_toolkit gives AR ≈ 1.0 on GT-as-prediction | |
+| M0 Setup and data access | W1 | `[~]` | Golden SPEED eval reproduced (0.0093) and bop_toolkit gives AR ≈ 1.0 on GT-as-prediction | Golden SPEED 0.0093 reproduced with `.venv` (byte-identical); bop_toolkit check pending |
 | M1 Refactor and safety net | W2 | `[ ]` | SPEED golden diff = 0, pytest green, smoke train OK | |
 | M2 BOP data loader (LM-O) | W3–4 | `[ ]` | Reprojection and label round-trip tests pass, throughput OK | |
 | M3 Single-object baseline B1 | W4–5 | `[ ]` | B1 metrics logged in §9 | |
@@ -248,7 +248,11 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
     - Added `tests/test_imports.py`, an import smoke test for 10 `src.*` modules and `bop_toolkit_lib.{inout,misc,pose_error}`. With 0 tests, pytest exits 5 ("no tests ran").
     - `.venv/bin/python -m pytest tests/` → **13 passed in 6.2 s**, with no `PYTHONPATH` needed (`tests/` is a package, so pytest puts the repo root on `sys.path`).
     - Verified with `git check-ignore`: `tests/**/x.json` is tracked; `tests/__pycache__/`, `src/__pycache__/` and `.pytest_cache/` are ignored.
-- [ ] Golden SPEED eval with `.venv/bin/python` (command in `docs/RCP_WORKFLOW.md` §5). It must print score 0.0093; diff its `results.json` against `$NAS_HOME/results/eval-rcp-check/results.json`.
+- [x] Golden SPEED eval with `.venv/bin/python` (command in `docs/RCP_WORKFLOW.md` §5). It must print score 0.0093; diff its `results.json` against `$NAS_HOME/results/eval-rcp-check/results.json`.
+  - **Done 2026-10-20** in `dev`, with the §5 command, `.venv/bin/python` and output in `$NAS_HOME/results/eval-m0-venv-golden/`:
+    - E_T 0.0221, E_R 0.0073, relative translation 0.0020, **SPEED score 0.0093**, in about 25 s wall time.
+    - `results.json` is **byte-identical** to the golden `eval-rcp-check/results.json` (1,201 entries, 4,805 leaves, max abs diff 0.0).
+  - Side note: the ViT builder downloads torchvision's ImageNet `vit_b_16_swag-9ac1b537.pth` (331 MB) into the container-local `TORCH_HOME=/app/tmp/torch_cache` before our weights overwrite it. That costs about 2 s per new container and doesn't affect the result. It could be skipped in M1 when full weights are loaded.
 - [ ] bop_toolkit sanity check:
   - Build `scripts/make_bop_tree.sh` (symlinked tree in `$NAS_HOME/datasets/bop/`).
   - Write a **GT-as-prediction** CSV for LM-O and run `eval_bop19_pose.py`. Expect AR ≈ 1.0.
@@ -375,6 +379,7 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 | 2026-10-14 | `outputs/FastPose-ViT/runs/smoke-02` | SPEED val | 2 epochs, `train` job | val score 0.1400 | RCP `train` works |
 | 2026-10-14 | `outputs/FastPose-ViT/runs/speed-short-001` | SPEED val | 3 epochs | val score 0.1021 | ~1.8 min/epoch |
 | 2026-10-20 | `outputs/FastPose-ViT/runs/lmo-m0-access-004` | LM PBR / LM-O models | `scripts/check_bop_access.py` | `BOP ACCESS OK (lmo)` | BOP readable from `train` jobs |
+| 2026-10-20 | `results/eval-m0-venv-golden` | SPEED test | same as golden, `.venv/bin/python` | score **0.0093** | `results.json` byte-identical to golden |
 
 (Paths relative to `$NAS_HOME`.)
 
@@ -385,6 +390,6 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 1. Start Claude inside `dev`, from the repo root (§4).
 2. Work on branch `multi-object` (created 2026-10-20). The §5 report to Pierre is deferred until M8.
 3. ~~Set up `.venv` + `bop_toolkit`~~ (done 2026-10-20, see §7 M0). Install with `.venv/bin/pip`, not uv.
-4. ~~Tiny `train` job that reads BOP files~~ (done 2026-10-20, `lmo-m0-access-004`). New jobs normally show in `runai list` within ~10 s; a one-off ~9 min delay happened once (see §7 M0). ~~`.gitignore`/pytest~~ (done). Next M0 bullets: the golden SPEED eval with `.venv/bin/python`, and the GT-as-prediction bop_toolkit check.
+4. ~~Tiny `train` job that reads BOP files~~ (done 2026-10-20, `lmo-m0-access-004`). New jobs normally show in `runai list` within ~10 s; a one-off ~9 min delay happened once (see §7 M0). ~~`.gitignore`/pytest~~ (done). ~~Golden SPEED eval with `.venv`~~ (done, byte-identical). Next (last) M0 bullet: `scripts/make_bop_tree.sh` + the GT-as-prediction bop_toolkit check (AR ≈ 1.0, tests the VSD renderer).
 - Way of working (decided 2026-10-20): go through §7 one bullet at a time. Do the step, update this file, then stop until the user has checked it.
 - After every bullet: commit on `multi-object` with a 2–4 word message with every word starting in a Capital Letter (e.g. `BOP Access Verified`), then `git push origin multi-object` to the fork `PabloSarro/FastPose-ViT-MO` (never to `upstream`), and don't show `claude` as the author of the pushes but myself (`PabloSarro`).

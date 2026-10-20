@@ -31,3 +31,29 @@ Exit codes: 0 ok · 1 job failed · 2 no such job · 3 still waiting · 4 runai 
 - The cluster can stop and restart training jobs: save checkpoints in `$RUN_DIR` and resume from the latest one.
 - Python: use `.venv/bin/python` (no activation needed). Install packages with `uv pip install PACKAGE`, from this job, and not while a training job uses the environment.
 - Keep your own notes (what you changed, jobs running, where results are) in a separate `## Project notes` section of this file, not in this one: this section is replaced when the RCP scripts are updated. The session ends after 12 hours and the next one starts from your notes.
+
+## Project notes
+
+**What this is:** FastPose-ViT is a ViT that directly regresses the 6D pose of one spacecraft from a bbox crop of one RGB image (SPEED/SPEED+). The current project extends it to **multi-object 6D pose estimation on BOP** (LM-O first, then YCB-V), measured with bop_toolkit BOP19 AR.
+- Constraints: RGB only, direct regression (no PnP or refinement), Jetson real-time, and SPEED must keep working.
+- **Read `TASKS.md` §1 (status) and §10 (next steps) at the start of every session, and update §1, §9 (results) and §10 before ending.**
+
+**Data** (read only):
+- `$DATA_DIR/SPEED_FIXED` etc.
+- BOP datasets in `$DATA_DIR/BOP_Datasets/<ds>/<ds>_<split>/<split>/<scene>` (nested layout; build symlinked standard trees under `$NAS_HOME/datasets/bop/`, never inside `$DATA_DIR`).
+- Pretrained weights: `weights/vit_b_16_384.pth` (git-ignored, so not in `train` snapshots: pass absolute paths).
+
+**Key commands** (always prefix `PYTHONPATH=.`):
+- SPEED golden eval (must print SPEED score 0.0093; reference `$NAS_HOME/results/eval-rcp-check/results.json`): see `docs/RCP_WORKFLOW.md` §5.
+- Training: `bash rcp/train.sh NAME bash -c 'PYTHONPATH=. .venv/bin/python src/train.py ...'`, with the best SPEED flags in `README.md`.
+- Tests: `.venv/bin/python -m pytest tests/`. The `.gitignore` rule `test*` hides new `tests/test_*.py` until an exception is added.
+
+**Conventions:**
+- Code work on branch `multi-object`.
+- Job names prefixed by dataset/milestone, e.g. `lmo-m3-b1-001`.
+- Results of BOP runs go in `$RUN_DIR`, and a summary row goes in `TASKS.md` §9.
+- Geometry conventions:
+  - BOP `cam_R_m2c` is used as is: it is the same R model→camera as SPEED's `quaternion_to_rotation_matrix(q_vbs2tango)`.
+  - BOP translations are in mm.
+  - The image-rotation augmentation is invalid for BOP, because the principal point is not the image centre.
+- Keep this file as the only agent-instructions file. Don't add `CLAUDE.md`/`CLAUDE.local.md` unless its first line is `@AGENTS.md`.

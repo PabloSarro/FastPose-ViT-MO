@@ -368,6 +368,18 @@ def pixel_transform(pixel_aug: str) -> A.Compose:
     )
 
 
+def nearest_rotation(R: np.ndarray) -> np.ndarray:
+    """Closest rotation matrix (Frobenius norm) to a 3x3 matrix, via SVD.
+
+    LM-O test GT rotations are slightly non-orthonormal (|RRᵀ - I| up to 0.01). The quaternion
+    conversion behind the labels would project them onto a rotation up to ~0.2° away from the
+    nearest one; snapping first keeps labels and GT within 1e-6. PBR and LM GT change by ~1e-6.
+    """
+    U, _, Vt = np.linalg.svd(R)
+    D = np.diag([1.0, 1.0, np.sign(np.linalg.det(U @ Vt))])
+    return U @ D @ Vt
+
+
 def bop_bbox_to_xyxy(bbox) -> list[float]:
     """BOP [x, y, w, h] (first pixel, last - first) to [x1, y1, x2, y2] in K coordinates.
 
@@ -527,7 +539,7 @@ class BOPDataset(Dataset):
 
     def labels(self, row: int, bbox) -> tuple[torch.Tensor, torch.Tensor]:
         """(U, rotation) for a row and crop bbox, computed in float64."""
-        R = torch.from_numpy(self.index["R"][row]).unsqueeze(0)
+        R = torch.from_numpy(nearest_rotation(self.index["R"][row])).unsqueeze(0)
         t = torch.from_numpy(self.index["t"][row]).unsqueeze(0)
         K = torch.from_numpy(self.index["K"][row])
         U = translation_to_bbox_relative_translation(

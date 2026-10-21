@@ -32,7 +32,7 @@ W9 Dec 14 · W10 Dec 21 · W11 Dec 28 · W12 Jan 4 · W13 Jan 11 · W14 Jan 18. 
 |---|---|---|---|---|
 | M0 Setup and data access | W1 | `[x]` | Golden SPEED eval reproduced (0.0093) and bop_toolkit gives AR ≈ 1.0 on GT-as-prediction | Golden SPEED 0.0093 reproduced (byte-identical); bop_toolkit GT-as-prediction AR = **1.0** (VSD via EGL workaround, `dev` and `train`). Image 1.60 with `libegl1` done 2026-10-21 (M3 first bullet; AR 1.0 and golden 0.0093 without the workaround) |
 | M1 Refactor and safety net | W2 | `[x]` | SPEED golden diff = 0, pytest green, smoke train OK | Golden byte-identical; 57 tests; smoke val 0.1317; kill/resume continues exactly (LR, losses); done 2026-10-20, a week early |
-| M2 BOP data loader (LM-O) | W3–4 | `[~]` | Reprojection and label round-trip tests pass, throughput OK | Started 2026-10-21. Index done: train 320,959 rows (LM PBR 0–47), test 1,445 (= BOP19 targets). `BOPDataset.__getitem__` done |
+| M2 BOP data loader (LM-O) | W3–4 | `[~]` | Reprojection and label round-trip tests pass, throughput OK | Started 2026-10-21. Index done: train 320,959 rows (LM PBR 0–47), test 1,445 (= BOP19 targets). `BOPDataset.__getitem__`, reprojection and label round-trip tests done |
 | M3 Single-object baseline B1 | W4–5 | `[ ]` | B1 metrics logged in §9 | |
 | M4 Shared 8-object model | W6–7 | `[ ]` | ≥ 90 % of B1 on B1's object; no object at 0 ADD | |
 | M5 Symmetries | W7–8 | `[ ]` | Eggbox/glue improve, others unchanged | |
@@ -402,7 +402,18 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
     - Use `bop_bbox_to_xyxy` for every BOP box, including the detections in M7.
   - **75 tests pass.**
 - **Visualisations (added 2026-10-21, on request between bullets):** `vis/` has one script per figure and `vis/README.md` explains each one and what to look for; `bash vis/run_all.sh` regenerates all 11 PNGs in `vis/figures/` in ~50 s. Covers M0/M1 (golden SPEED errors, refactor and kill/resume runs) and M2 so far (objects, full scenes with both boxes, model-input crops with GT points and the pose decoded from the labels, augmentations, reprojection and the +1 px convention, index statistics incl. legacy vs site U_z). Observations: LM-O test is more occluded than PBR and in a narrower distance range (~600–1,300 mm vs 300–1,900 mm); site U_z peaks around 0.8 for both. `vis/crops.py --per_object 8` already gives the 64-crop grid of the visual-check bullet below.
-- [ ] Label round trip: dataset labels → inverse functions (K, bbox) → GT ego pose, within 1e-4.
+- [x] Label round trip: dataset labels → inverse functions (K, bbox) → GT ego pose, within 1e-4. **Done 2026-10-21.**
+  - Decoded with `CoordinateTransformer.transform_to_absolute`, the exact path the model's predictions take in validation, on collated **float32** batches as in training (labels in place of predictions).
+  - Results (max over the samples; t relative error, R max |ΔR| entry vs the GT rotation):
+    | samples | t | R |
+    |---|---|---|
+    | 256 PBR, jitter on every crop, `site` | 5.3e-7 | 9.7e-7 |
+    | same, `legacy` depth | 6.4e-7 | 1.3e-6 |
+    | same, `site`, no rotation compensation | 4.8e-7 | 4.0e-7 |
+    | all 1,445 LM-O test targets | 2.4e-7 | 7.4e-6 |
+    | all 1,600 LM real val | 2.5e-7 | 6.0e-6 |
+  - **Finding and fix:** before the fix, LM-O test rotations came back up to **2.9e-3** from the nearest valid rotation (~0.2°). Their GT is slightly non-orthonormal (index bullet), and the quaternion conversion behind the labels projects such a matrix onto *a* rotation, not the nearest one. `nearest_rotation` (SVD) now snaps R before the labels are built; it changes PBR/LM rotations by ~1e-6. The index keeps the raw GT (`R_m2c`), which is what BOP evaluates against.
+  - Tests: 5 new (3 training-crop variants, LM-O test, `nearest_rotation`). **80 tests pass.**
 - [ ] Visual check: a 64-crop grid with projected axes/points saved as PNG, including eggbox and glue.
 - [ ] Loader throughput with 16 workers. If it is below about 2× GPU speed, stage the PBR RGB (~5.4 GB) to local disk or group crops per image.
 - [ ] (Optional) exact roll augmentation, off by default, tested by checking projected points stay inside the warped mask.
@@ -579,6 +590,6 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 4. ~~Tiny `train` job that reads BOP files~~ (done 2026-10-20, `lmo-m0-access-004`). New jobs normally show in `runai list` within ~10 s; a one-off ~9 min delay happened once (see §7 M0). ~~`.gitignore`/pytest~~ (done). ~~Golden SPEED eval with `.venv`~~ (done, byte-identical). ~~bop_toolkit GT-as-prediction check~~ (done, AR = 1.0). **M0 complete.**
 5. ~~Image 1.60 with `libegl1`~~ (done 2026-10-21: `dev` and `train` run 1.60; AR 1.0 and golden 0.0093 without the EGL workaround, see M3 first bullet).
 6. **M1** started 2026-10-20 (while the image 1.60 build is running): ~~`tests/test_rotation_convention.py`~~ (done, 9 tests). ~~`tests/test_translation_param.py`~~ (done, 13 tests; the `src/utils.py` part of the refactor is included). ~~Refactor~~ (done: `num_objects`, `unpack_batch`/`forward_model`, per-sample K in `CoordinateTransformer`). ~~Checkpoint/resume~~ (done; kill/resume verified). **M1 complete.**
-7. **M2** started 2026-10-21: ~~`src/bop_dataset.py` index~~ (done; train 320,959 rows, test 1,445). ~~`__getitem__`~~ (done: `BOPDataset`, single-warp crop, site/allocentric labels, `standard` pixel aug by default). ~~Reprojection test~~ (done; found and fixed BOP's +1 px box convention, see M2). Visualisations in `vis/` (see `vis/README.md`; rerun `bash vis/run_all.sh` after data/label changes). Next: M2 label round trip. Use `--resume auto` in every training command from now on.
+7. **M2** started 2026-10-21: ~~`src/bop_dataset.py` index~~ (done; train 320,959 rows, test 1,445). ~~`__getitem__`~~ (done: `BOPDataset`, single-warp crop, site/allocentric labels, `standard` pixel aug by default). ~~Reprojection test~~ (done; found and fixed BOP's +1 px box convention, see M2). Visualisations in `vis/` (see `vis/README.md`; rerun `bash vis/run_all.sh` after data/label changes). ~~Label round trip~~ (done: ≤ 1e-6 on PBR, 7e-6 on LM-O test after snapping GT R to the nearest rotation). Next: M2 visual check (64-crop grid; `vis/crops.py` already does most of it). Use `--resume auto` in every training command from now on.
 - Way of working (decided 2026-10-20): go through §7 one bullet at a time. Do the step, update this file, then stop until the user has checked it.
 - After every bullet: commit on `multi-object` with a 2–4 word message with every word starting in a Capital Letter (e.g. `BOP Access Verified`), then `git push origin multi-object` to the fork `PabloSarro/FastPose-ViT-MO` (never to `upstream`), and don't show `claude` as the author of the pushes but myself (`PabloSarro`).

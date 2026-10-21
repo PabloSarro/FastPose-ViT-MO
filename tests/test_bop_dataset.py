@@ -325,3 +325,82 @@ def test_reprojected_models_match_bbox_obj(which, pbr_spread_index, test_index, 
     assert transposed.mean() < 0.8, transposed.mean()
     assert (transposed < 0.9).mean() >= 0.6, transposed
     assert good.mean() - transposed.mean() > 0.2
+
+
+# --- Label round trip: dataset labels -> engine inverse transforms -> GT pose -------------------
+
+from src.bop_dataset import nearest_rotation  # noqa: E402
+from src.camera import Camera  # noqa: E402
+from src.engine import CoordinateTransformer  # noqa: E402
+from src.utils import quaternion_to_rotation_matrix  # noqa: E402
+
+ROUND_TRIP_TOL = 1e-4
+
+
+def round_trip_errors(dataset, rows, depth_mode, no_rotation_compensation=False):
+    """Max relative t error and max |ΔR| entry after decoding collated float32 labels.
+
+    Uses CoordinateTransformer.transform_to_absolute, the path the model's predictions take in
+    validation, with the labels in place of the predictions.
+    """
+    loader = torch.utils.data.DataLoader(torch.utils.data.Subset(dataset, rows), batch_size=64)
+    ct = CoordinateTransformer("matrix", Camera, no_rotation_compensation, depth_mode=depth_mode)
+    t_err, R_err = [], []
+    for raw in loader:
+        b = unpack_batch(raw)
+        _, _, t, q = ct.transform_to_absolute(
+            b["translations"],
+            b["rotations"],
+            b["translations"],
+            b["rotations"],
+            b["bboxes"],
+            K=b["K"],
+            img_wh=b["img_wh"],
+            diameter=b["diameter"],
+        )
+        t_gt = b["t_m2c"].double()
+        R_gt = torch.from_numpy(
+            np.stack([nearest_rotation(R) for R in b["R_m2c"].double().numpy()])
+        )
+        t_err.append(((t.double() - t_gt).norm(dim=1) / t_gt.norm(dim=1)).max().item())
+        R_err.append((quaternion_to_rotation_matrix(q).double() - R_gt).abs().max().item())
+    return max(t_err), max(R_err)
+
+
+@pytest.mark.parametrize(
+    "depth_mode,no_rotation_compensation", [("site", False), ("legacy", False), ("site", True)]
+)
+def test_label_round_trip_training_crops(pbr_spread_index, depth_mode, no_rotation_compensation):
+    """Jittered training crops: labels are relative to the jittered box and still invert."""
+    np.random.seed(0)
+    ds = BOPDataset(
+        index=pbr_spread_index,
+        img_size=32,
+        augment=True,
+        pixel_aug="none",
+        bbox_jitter_prob=1.0,
+        depth_mode=depth_mode,
+        no_rotation_compensation=no_rotation_compensation,
+    )
+    rows = np.random.default_rng(1).choice(len(ds), 256, replace=False)
+    t_err, R_err = round_trip_errors(ds, rows, depth_mode, no_rotation_compensation)
+    assert t_err < ROUND_TRIP_TOL and R_err < ROUND_TRIP_TOL, (t_err, R_err)
+
+
+def test_label_round_trip_lmo_test(test_index):
+    """All 1,445 LM-O test targets (whose GT rotations are slightly non-orthonormal)."""
+    ds = BOPDataset(split="test", index=test_index, img_size=32)
+    t_err, R_err = round_trip_errors(ds, np.arange(len(ds)), "site")
+    assert t_err < ROUND_TRIP_TOL and R_err < ROUND_TRIP_TOL, (t_err, R_err)
+
+
+def test_nearest_rotation():
+    rng = np.random.default_rng(0)
+    q = rng.normal(size=4)
+    R = quaternion_to_rotation_matrix(torch.tensor(q / np.linalg.norm(q)).unsqueeze(0))[0].numpy()
+    np.testing.assert_allclose(nearest_rotation(R), R, atol=1e-12)
+    noisy = R + 0.005 * rng.normal(size=(3, 3))
+    snapped = nearest_rotation(noisy)
+    np.testing.assert_allclose(snapped @ snapped.T, np.eye(3), atol=1e-12)
+    assert np.linalg.det(snapped) == pytest.approx(1.0)
+    assert np.abs(snapped - R).max() < 0.02

@@ -198,7 +198,8 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
    - The LR is auto-scaled linearly from base batch 4. Check this with Muon at batch 32.
    - Add checkpoint/resume: jobs are limited to 12 h and can be preempted, and today only `model.pth` (best) is saved.
 8. **Deployment.** Multi-object means one crop per object, so ONNX and TensorRT need a **dynamic batch** (today the export is fixed at `(1,3,H,W)`).
-9. **Risks.**
+9. **Pixel convention (found in M2, 2026-10-21).** BOP pixel i is centred at i + 0.5 in K coordinates, and `[x, y, w, h]` spans [x, x+w+1]. Convert every BOP or detector box with `bop_bbox_to_xyxy`; `crop_warp_matrix` handles the half-pixel offsets.
+10. **Risks.**
    - VSD needs a headless renderer (EGL or OSMesa in the container). It is tested in M0.
    - NAS I/O: each PBR image is decoded about 7 times per pass.
    - PBR→real domain gap.
@@ -388,7 +389,18 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
   - **Finding: `domain_gap` is far too strong for LM.** Eleven transforms at p = 0.5 each (incl. solarize, sun flare, tone curve, gray) made most crops in a preview grid unrecognizable. Hence `standard` as default; compare both in the M3 ablations (new decision D5 in §8).
   - Speed: one sample in ~3–30 ms (single process, warm cache); a first 32-sample batch with 8 workers in 2.2 s (cold). Proper throughput measurement is a later M2 bullet.
   - Tests: 9 new in `tests/test_bop_dataset.py`: the warp maps the bbox centre to the crop centre with one scale; black bands vs context; augmentations are photometric only (no OpticalDistortion/Resize); fields, dtypes and an orthonormal label R; eval samples are deterministic; the projected 3D centre lands in the crop exactly where U_x, U_y say (1e-5); `site` and `legacy` U_z match their formulas; jitter stays inside the image and is applied about half of the time; a collated batch passes `unpack_batch`. **73 tests pass.**
-- [ ] Reprojection test: project `models_eval` points with the GT pose. The projected bbox must match `bbox_obj` with IoU ≥ 0.9, and using `Rᵀ` must clearly fail. Run it on 30 PBR and 30 LM-O instances.
+- [x] Reprojection test: project `models_eval` points with the GT pose. The projected bbox must match `bbox_obj` with IoU ≥ 0.9, and using `Rᵀ` must clearly fail. Run it on 30 PBR and 30 LM-O instances. **Done 2026-10-21.**
+  - `tests/test_bop_dataset.py::test_reprojected_models_match_bbox_obj`, on 30 random instances from PBR scenes 0, 17, 33 and 47, and 30 from LM-O test. Only boxes fully inside the image are sampled, because BOP clips `bbox_obj` at the border.
+    | | IoU with R: min / mean | mean edge offset (x1, y1, x2, y2), px | IoU with Rᵀ: mean, how many < 0.9, max |
+    |---|---|---|---|
+    | PBR | 0.964 / 0.982 | −0.02, 0.03, 0.07, 0.05 | 0.724, 25/30, 0.986 |
+    | LM-O test | 0.971 / 0.988 | 0.06, 0.03, 0.03, −0.04 | 0.709, 27/30, 0.988 |
+  - Rᵀ fails clearly on average, but a few instances still overlap well: a box is a weak cue for rotations near the identity or near a box-preserving turn. The test therefore asserts mean IoU < 0.8, at least 60 % below 0.9, and a gap > 0.2 to the correct R. The pose-level check is the label round trip (next bullet).
+  - **Finding: BOP's pixel convention, fixed in `src/bop_dataset.py`.** The first run had the left/top edges matching to 0.03 px but the right/bottom edges exactly **+1.0 px** off (200 instances each, both datasets). So in BOP, pixel i covers [i, i+1) in the coordinates K projects to (centre at i + 0.5), and `[x, y, w, h]` spans [x, x+w+1] × [y, y+h+1].
+    - `bop_bbox_to_xyxy` now returns `[x, y, x+w+1, y+h+1]`, and `crop_warp_matrix` maps those K coordinates to the crop with the half-pixel offsets. The bbox centre lands on the crop centre, and the object's projected centre lands exactly where U says (tested to 1e-5 px).
+    - Before the fix, the U labels were shifted by about half a pixel from where the object appears in the crop: ~0.008 in U_x for a 63 px box, about 1 mm laterally. Small but systematic. IoU went from a mean of 0.957 to 0.982 with the fix.
+    - Use `bop_bbox_to_xyxy` for every BOP box, including the detections in M7.
+  - **75 tests pass.**
 - [ ] Label round trip: dataset labels → inverse functions (K, bbox) → GT ego pose, within 1e-4.
 - [ ] Visual check: a 64-crop grid with projected axes/points saved as PNG, including eggbox and glue.
 - [ ] Loader throughput with 16 workers. If it is below about 2× GPU speed, stage the PBR RGB (~5.4 GB) to local disk or group crops per image.
@@ -552,6 +564,6 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 4. ~~Tiny `train` job that reads BOP files~~ (done 2026-10-20, `lmo-m0-access-004`). New jobs normally show in `runai list` within ~10 s; a one-off ~9 min delay happened once (see §7 M0). ~~`.gitignore`/pytest~~ (done). ~~Golden SPEED eval with `.venv`~~ (done, byte-identical). ~~bop_toolkit GT-as-prediction check~~ (done, AR = 1.0). **M0 complete.**
 5. ~~Image 1.60 with `libegl1`~~ (done 2026-10-21: `dev` and `train` run 1.60; AR 1.0 and golden 0.0093 without the EGL workaround, see M3 first bullet).
 6. **M1** started 2026-10-20 (while the image 1.60 build is running): ~~`tests/test_rotation_convention.py`~~ (done, 9 tests). ~~`tests/test_translation_param.py`~~ (done, 13 tests; the `src/utils.py` part of the refactor is included). ~~Refactor~~ (done: `num_objects`, `unpack_batch`/`forward_model`, per-sample K in `CoordinateTransformer`). ~~Checkpoint/resume~~ (done; kill/resume verified). **M1 complete.**
-7. **M2** started 2026-10-21: ~~`src/bop_dataset.py` index~~ (done; train 320,959 rows, test 1,445). ~~`__getitem__`~~ (done: `BOPDataset`, single-warp crop, site/allocentric labels, `standard` pixel aug by default). Next: M2 reprojection test. Use `--resume auto` in every training command from now on.
+7. **M2** started 2026-10-21: ~~`src/bop_dataset.py` index~~ (done; train 320,959 rows, test 1,445). ~~`__getitem__`~~ (done: `BOPDataset`, single-warp crop, site/allocentric labels, `standard` pixel aug by default). ~~Reprojection test~~ (done; found and fixed BOP's +1 px box convention, see M2). Next: M2 label round trip. Use `--resume auto` in every training command from now on.
 - Way of working (decided 2026-10-20): go through §7 one bullet at a time. Do the step, update this file, then stop until the user has checked it.
 - After every bullet: commit on `multi-object` with a 2–4 word message with every word starting in a Capital Letter (e.g. `BOP Access Verified`), then `git push origin multi-object` to the fork `PabloSarro/FastPose-ViT-MO` (never to `upstream`), and don't show `claude` as the author of the pushes but myself (`PabloSarro`).

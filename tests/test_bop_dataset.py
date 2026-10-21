@@ -135,7 +135,8 @@ from src.engine import unpack_batch  # noqa: E402
 
 
 def apply(M, x, y):
-    return M[0, 0] * x + M[0, 2], M[1, 1] * y + M[1, 2]
+    """Crop pixel index of the point (x, y) in K coordinates (image pixel i is centred at i + 0.5)."""
+    return M[0, 0] * (x - 0.5) + M[0, 2], M[1, 1] * (y - 0.5) + M[1, 2]
 
 
 def test_crop_warp_maps_bbox_to_centred_square():
@@ -145,10 +146,10 @@ def test_crop_warp_maps_bbox_to_centred_square():
         np.testing.assert_allclose(apply(M, (x1 + x2) / 2, (y1 + y2) / 2), (191.5, 191.5))
         side = max(x2 - x1, y2 - y1)
         assert M[0, 0] == M[1, 1] == pytest.approx(384 / side)  # same scale on both axes
-        # the long side spans the crop exactly
+        # the long side spans the crop exactly: its edges land on the crop edges -0.5 and 383.5
         lo, hi = apply(M, x1, y1), apply(M, x2, y2)
         long_axis = 0 if x2 - x1 >= y2 - y1 else 1
-        assert hi[long_axis] - lo[long_axis] == pytest.approx(384)
+        assert (lo[long_axis], hi[long_axis]) == pytest.approx((-0.5, 383.5))
 
 
 def test_crop_black_bands_and_context():
@@ -196,7 +197,7 @@ def test_sample_fields_and_types(test_dataset):
         assert s[k].dtype == torch.float32, k
     idx = test_dataset.index
     x, y, w, h = idx["bbox_visib"][5].tolist()
-    assert s["bboxes"].tolist() == [x, y, x + w, y + h]  # no jitter outside training
+    assert s["bboxes"].tolist() == [x, y, x + w + 1, y + h + 1]  # K coordinates, no jitter
     assert s["obj_id"] == idx["obj_id"][5] and s["obj_idx"] == idx["obj_idx"][5]
     assert s["diameter"].item() == pytest.approx(idx["diameters"][idx["obj_idx"][5]], rel=1e-6)
     R = s["rotations"].double()
@@ -247,7 +248,7 @@ def test_training_jitter_stays_valid(pbr_index):
         x, y, w, h = pbr_index["bbox_visib"][row].tolist()
         assert 0 <= bbox[0] < bbox[2] <= 640 and 0 <= bbox[1] < bbox[3] <= 480
         assert bbox[2] - bbox[0] >= 0.5 * w and bbox[3] - bbox[1] >= 0.5 * h
-        changed += bbox != [x, y, x + w, y + h]
+        changed += bbox != [x, y, x + w + 1, y + h + 1]
     assert 25 < changed < 75  # jitter applied about half of the time
 
 
@@ -257,3 +258,70 @@ def test_collated_batch_goes_through_unpack_batch(test_dataset):
     assert batch["images"].shape == (4, 3, 128, 128)
     assert batch["K"].shape == (4, 3, 3) and batch["obj_idx"].dtype == torch.int64
     assert batch["diameter"].shape == (4,) and batch["img_wh"].shape == (4, 2)
+
+
+# --- Reprojection: GT poses, K and bboxes agree (and R^T does not) ------------------------------
+
+from bop_toolkit_lib import inout  # noqa: E402
+
+from src.bop_dataset import bop_bbox_to_xyxy  # noqa: E402
+
+N_REPROJ = 30
+
+
+@pytest.fixture(scope="module")
+def model_points():
+    return {
+        o: inout.load_ply(os.path.join(BOP_ROOT, "lmo", "models_eval", f"obj_{o:06d}.ply"))["pts"]
+        for o in LMO_OBJ_IDS
+    }
+
+
+def projected_box(points, R, t, K):
+    x = K @ (R @ points.T + t[:, None])
+    u, v = x[0] / x[2], x[1] / x[2]
+    return np.array([u.min(), v.min(), u.max(), v.max()])
+
+
+def iou(a, b):
+    w = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
+    h = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+    inter = w * h
+    return inter / ((a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter)
+
+
+def reprojection_sample(index, seed=0):
+    """N_REPROJ random rows whose bbox_obj lies inside the image (BOP clips it at the border)."""
+    x, y, w, h = index["bbox_obj"].T
+    inside = np.flatnonzero((x > 0) & (y > 0) & (x + w + 1 < 640) & (y + h + 1 < 480))
+    return np.random.default_rng(seed).choice(inside, N_REPROJ, replace=False)
+
+
+@pytest.fixture(scope="module")
+def pbr_spread_index():
+    """PBR rows from scenes across the training set."""
+    return build_index(BOP_ROOT, (Source("lm", "train_pbr", (0, 17, 33, 47)),), LMO_OBJ_IDS, "lmo")
+
+
+@pytest.mark.parametrize("which", ["pbr", "lmo_test"])
+def test_reprojected_models_match_bbox_obj(which, pbr_spread_index, test_index, model_points):
+    index = pbr_spread_index if which == "pbr" else test_index
+    good, transposed, edges = [], [], []
+    for row in reprojection_sample(index):
+        points = model_points[int(index["obj_id"][row])]
+        R, t, K = index["R"][row], index["t"][row], index["K"][row]
+        box = bop_bbox_to_xyxy(index["bbox_obj"][row])
+        proj = projected_box(points, R, t, K)
+        good.append(iou(proj, box))
+        edges.append(proj - box)
+        transposed.append(iou(projected_box(points, R.T, t, K), box))
+    good, transposed, edges = np.array(good), np.array(transposed), np.array(edges)
+    # The GT pose reproduces bbox_obj: every IoU >= 0.9, and no systematic offset on any edge
+    # (this is what fixes the +1 in bop_bbox_to_xyxy).
+    assert good.min() >= 0.9, good.min()
+    assert np.abs(edges.mean(axis=0)).max() < 0.15, edges.mean(axis=0)
+    # Using R^T (camera -> model) clearly fails. A few instances still overlap well, since a
+    # box is a weak cue for rotations near the identity or near a box-preserving turn.
+    assert transposed.mean() < 0.8, transposed.mean()
+    assert (transposed < 0.9).mean() >= 0.6, transposed
+    assert good.mean() - transposed.mean() > 0.2

@@ -368,23 +368,35 @@ def pixel_transform(pixel_aug: str) -> A.Compose:
     )
 
 
+def bop_bbox_to_xyxy(bbox) -> list[float]:
+    """BOP [x, y, w, h] (first pixel, last - first) to [x1, y1, x2, y2] in K coordinates.
+
+    In BOP, pixel i covers [i, i + 1) in the coordinates K projects to (its centre is at
+    i + 0.5): projecting a model with its GT pose gives a box whose left/top edges match x, y and
+    whose right/bottom edges match x + w + 1, y + h + 1 (measured on LM PBR and LM-O test, see
+    tests/test_bop_dataset.py). So the box covers [x, x + w + 1] x [y, y + h + 1].
+    """
+    x, y, w, h = (float(v) for v in bbox)
+    return [x, y, x + w + 1.0, y + h + 1.0]
+
+
 def crop_warp_matrix(bbox, out_size: int) -> np.ndarray:
-    """2x3 affine map from image pixels to a square crop of side out_size.
+    """2x3 affine map (cv2 pixel indices) from the image to a square crop of side out_size.
 
     The square has side max(w, h) and the same centre as bbox, so the object keeps its aspect
-    ratio (as SPEEDDataset.crop_image + padding + resize, in one interpolation step).
-    Coordinates are pixel indices (pixel centres at integers), the convention of BOP bboxes and
-    of K, so the bbox centre lands exactly on the crop centre (out_size - 1) / 2.
+    ratio (as SPEEDDataset.crop_image + padding + resize, in one interpolation step). bbox is in
+    K coordinates, where image pixel i is centred at i + 0.5: point u maps to crop coordinate
+    scale * (u - bbox centre) + out_size / 2, also with crop pixel j centred at j + 0.5.
 
     Args:
-        bbox: [x1, y1, x2, y2] in pixels.
+        bbox: [x1, y1, x2, y2] in K coordinates.
         out_size: Side of the output crop in pixels.
     """
     x1, y1, x2, y2 = (float(v) for v in bbox)
     scale = out_size / max(x2 - x1, y2 - y1)
-    half = 0.5 * (out_size - 1)
-    tx = half - scale * 0.5 * (x1 + x2)
-    ty = half - scale * 0.5 * (y1 + y2)
+    # pixel index i -> u = i + 0.5 -> crop coordinate -> crop index (- 0.5)
+    tx = 0.5 * out_size - 0.5 + scale * (0.5 - 0.5 * (x1 + x2))
+    ty = 0.5 * out_size - 0.5 + scale * (0.5 - 0.5 * (y1 + y2))
     return np.array([[scale, 0.0, tx], [0.0, scale, ty]], dtype=np.float64)
 
 
@@ -393,7 +405,7 @@ def crop_image(image: np.ndarray, bbox, out_size: int, context: bool = False) ->
 
     Args:
         image: H x W x C image.
-        bbox: [x1, y1, x2, y2].
+        bbox: [x1, y1, x2, y2] in K coordinates (see bop_bbox_to_xyxy).
         out_size: Output side in pixels.
         context: If False (default, as SPEEDDataset), the bands of the square outside bbox are
             black; if True they show the surrounding image.
@@ -409,11 +421,11 @@ def crop_image(image: np.ndarray, bbox, out_size: int, context: bool = False) ->
     )
     if not context:
         x1, y1, x2, y2 = (float(v) for v in bbox)
-        scale, half = M[0, 0], 0.5 * (out_size - 1)
-        # Keep the crop pixels whose centre falls inside bbox (edge pixels included: +-0.5 px)
-        rx, ry = scale * (0.5 * (x2 - x1) + 0.5), scale * (0.5 * (y2 - y1) + 0.5)
-        lo_x, hi_x = int(np.ceil(half - rx)), int(np.floor(half + rx))
-        lo_y, hi_y = int(np.ceil(half - ry)), int(np.floor(half + ry))
+        scale, half = M[0, 0], 0.5 * out_size
+        # bbox spans [half - r, half + r] in crop coordinates; keep pixels whose centre is inside
+        rx, ry = 0.5 * scale * (x2 - x1), 0.5 * scale * (y2 - y1)
+        lo_x, hi_x = int(np.ceil(half - rx - 0.5)), int(np.floor(half + rx - 0.5))
+        lo_y, hi_y = int(np.ceil(half - ry - 0.5)), int(np.floor(half + ry - 0.5))
         crop[:, : max(lo_x, 0)] = 0
         crop[:, hi_x + 1 :] = 0
         crop[: max(lo_y, 0)] = 0
@@ -428,7 +440,8 @@ class BOPDataset(Dataset):
     - images: (3, S, S) normalized crop.
     - translations: U = (U_x, U_y, U_z) relative to the crop bbox, U_z in `depth_mode`.
     - rotations: allocentric rotation R_relᵀ·R (3x3, or a quaternion), as SPEEDDataset.
-    - bboxes: the crop bbox [x1, y1, x2, y2] (after jitter), needed to undo U.
+    - bboxes: the crop bbox [x1, y1, x2, y2] in K coordinates (bop_bbox_to_xyxy, after
+      jitter), needed to undo U.
     - K, img_wh, obj_idx, diameter: per-sample camera and object, for the inverse transforms.
     - R_m2c, t_m2c: the original BOP pose (egocentric, t in mm), and obj_id, scene_id, im_id,
       gt_id, row: to trace a sample back to its files.
@@ -504,8 +517,7 @@ class BOPDataset(Dataset):
 
     def crop_bbox(self, row: int) -> list[float]:
         """The [x1, y1, x2, y2] bbox the crop and labels use, jittered when augmenting."""
-        x, y, w, h = (float(v) for v in self.index[self.bbox_key][row])
-        bbox = [x, y, x + w, y + h]
+        bbox = bop_bbox_to_xyxy(self.index[self.bbox_key][row])
         if self.augment and self.bbox_jitter > 0 and np.random.random() < self.bbox_jitter_prob:
             width, height = (int(v) for v in self.index["img_wh"][row])
             bbox = [

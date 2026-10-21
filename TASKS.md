@@ -32,8 +32,8 @@ W9 Dec 14 · W10 Dec 21 · W11 Dec 28 · W12 Jan 4 · W13 Jan 11 · W14 Jan 18. 
 |---|---|---|---|---|
 | M0 Setup and data access | W1 | `[x]` | Golden SPEED eval reproduced (0.0093) and bop_toolkit gives AR ≈ 1.0 on GT-as-prediction | Golden SPEED 0.0093 reproduced (byte-identical); bop_toolkit GT-as-prediction AR = **1.0** (VSD via EGL workaround, `dev` and `train`). Image 1.60 with `libegl1` done 2026-10-21 (M3 first bullet; AR 1.0 and golden 0.0093 without the workaround) |
 | M1 Refactor and safety net | W2 | `[x]` | SPEED golden diff = 0, pytest green, smoke train OK | Golden byte-identical; 57 tests; smoke val 0.1317; kill/resume continues exactly (LR, losses); done 2026-10-20, a week early |
-| M2 BOP data loader (LM-O) | W3–4 | `[~]` | Reprojection and label round-trip tests pass, throughput OK | Started 2026-10-21. Index done: train 320,959 rows (LM PBR 0–47), test 1,445 (= BOP19 targets). `BOPDataset.__getitem__`, reprojection and label round-trip tests and visual check done. Loader 730 samples/s = 2.8× GPU (257) |
-| M3 Single-object baseline B1 | W4–5 | `[ ]` | B1 metrics logged in §9 | |
+| M2 BOP data loader (LM-O) | W3–4 | `[x]` | Reprojection and label round-trip tests pass, throughput OK | Started 2026-10-21. Index done: train 320,959 rows (LM PBR 0–47), test 1,445 (= BOP19 targets). `BOPDataset.__getitem__`, reprojection and label round-trip tests and visual check done. Loader 730 samples/s = 2.8× GPU (257). **Closed 2026-10-21**; the optional roll augmentation is deferred |
+| M3 Single-object baseline B1 | W4–5 | `[~]` | B1 metrics logged in §9 | Started 2026-10-21. Image 1.60 done; `train.py --dataset LMO` works; overfit check passed (256 driller instances: 0.43 mm, 0.017°) |
 | M4 Shared 8-object model | W6–7 | `[ ]` | ≥ 90 % of B1 on B1's object; no object at 0 ADD | |
 | M5 Symmetries | W7–8 | `[ ]` | Eggbox/glue improve, others unchanged | |
 | M6 Official BOP eval (GT boxes) | W8–9 | `[ ]` | Official LM-O AR (oracle) | |
@@ -436,8 +436,8 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
   - Implications:
     - A full pass over the 321k training crops takes ~21 min. The 310-epoch warm-restart schedule with 25k-sample virtual epochs (7.75M samples) takes ~8.5 h on one A100, so it fits in one 12 h job.
     - For multi-GPU (M6): 2 GPUs need ~515 samples/s. 16 CPUs give 730/s, only 1.4× that, so request about 16 CPUs per GPU (32 for 2 GPUs) to keep the loader from becoming the limit.
-- [ ] (Optional) exact roll augmentation, off by default, tested by checking projected points stay inside the warped mask.
-- **Exit:** all tests pass and the overlays look right.
+- [ ] (Optional, **deferred 2026-10-21** by the user: revisit if M3/M4 overfit to viewpoints) exact roll augmentation, off by default, tested by checking projected points stay inside the warped mask.
+- **Exit:** all tests pass and the overlays look right. **Met 2026-10-21:** 81 tests pass, 64-crop grids look right, loader 2.8× GPU speed. M2 closed (optional roll augmentation deferred).
 
 ### M3 — Single-object baseline B1: original architecture, GT boxes (W4–5)
 - [x] **Image `fastposevit:1.60` = 1.59 + `libegl1` (moved from M0 to M2, then to M3 on 2026-10-20; done 2026-10-21).** It is not blocking: the EGL workaround (`$NAS_HOME/.local/lib/egl`, used automatically by `scripts/bop_eval.sh`) works in `dev` and `train`.
@@ -489,7 +489,21 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
     dev
     ```
   - Then Claude checks that `ldconfig -p | grep libEGL.so.1` finds the library, that `bash scripts/bop_eval.sh` gives AR 1.0 without the workaround, and that the golden SPEED eval still gives 0.0093.
-- [ ] Overfit 256 instances of one object to near-zero loss in about 10 min. This catches label bugs.
+- [x] Overfit 256 instances of one object to near-zero loss in about 10 min. This catches label bugs. **Done 2026-10-21: passed.**
+  - **`src/train.py` now trains on BOP** (additive; the SPEED path is unchanged):
+    - `--dataset LMO` builds `BOPDataset` train/val from the cached index, with one head per LM-O object (`num_objects=8`).
+    - `--bop_obj_ids 8` restricts both splits to some objects (heads keep their LM-O positions). `--bop_val_split val|val_pbr|val_real` (never test). `--max_val_samples N` for a fixed random val subset.
+    - `--depth_mode` (default `site` for BOP, `legacy` for SPEED), `--bop_pixel_aug standard|domain_gap`, `--crop_context`. The existing `--no_pixel_augmentation`, `--no_spatial_augmentation`/`--no_bbox_augmentation` and `--bbox_crop_percent` map onto BOP's pixel augmentation and jitter.
+    - `--bop_overfit N [--bop_overfit_seed S]`: N fixed training instances, no augmentation, validated on the same instances.
+    - Helpers `select_rows`/`rows_for_objects` in `src/bop_dataset.py` (+1 test, **81 pass**). `BOPDataset.camera` exists because `val_epoch` reads it (samples carry their own K).
+  - Run `results/lmo-m3-overfit` (in `dev`, 633 s incl. ~100 s compile): driller (8), 256 instances, README best SPEED config (6D relative Frobenius + relative translation, Muon, max_lr 1e-4 → 8e-4 after the batch scaling, warm restarts T0 = 10, Tmult = 2) at batch 32, 150 epochs = 1,200 steps.
+    | epoch | train loss | val translation error | val rotation error |
+    |---|---|---|---|
+    | 1 | 2.93 | 856 mm (rel 0.81) | 98° |
+    | 10 (end of cycle 1) | 0.13 | 33 mm | 3.3° |
+    | 70 (end of cycle 3) | 0.004 | 1.1 mm | 0.04° |
+    | **150 (end)** | **0.0015** | **0.43 mm (rel 4e-4)** | **0.017°** |
+  - Each warm restart (epochs 10, 30, 70) briefly raises the error, and each cycle ends lower than the one before: the labels are learnable and consistent, and crop → labels → model → inverse transforms → metrics work end to end. Figure: `vis/figures/10_lmo_m3_overfit.png` (`vis/training_curves.py RUN_DIR ...` plots any run).
 - [ ] Train FastPose-ViT (ViT-B/16-384, best SPEED config except pixel aug on, `site` depth) on **one object** (8 driller or 5 can) from LM PBR.
 - [ ] Evaluate on the LM real val split and on LM-O test for that object: rotation error (°), translation error (mm), ADD@0.1d, MSSD/MSPD.
 - [ ] Short ablations at 224: legacy vs `site` depth; relative vs decoupled translation loss.
@@ -597,6 +611,7 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 | 2026-10-20 | `results/smoke-m1-refactor` | SPEED val | `smoke-02` command, 2 epochs, `dev` | val score 0.1317 | vs 0.1400 (smoke-02); within noise |
 | 2026-10-20 | `results/smoke-m1-resume` | SPEED val | `smoke-02` command, 3 epochs, SIGKILL after epoch 1 + `--resume auto` | val score 0.2137 / 0.1403 / **0.1005** | Resume continues LR and losses; 3-ep uninterrupted ref 0.1021 |
 | 2026-10-21 | `results/eval-m3-image160` + `lmo-m3-image160-001` | LM-O test (GT as prediction) + SPEED val | Image 1.60 checks: BOP eval in `dev` and in a train job, golden eval | AR **1.0** (dev and train); SPEED **0.0093** byte-identical | Native libEGL, no workaround; 57 tests pass |
+| 2026-10-21 | `results/lmo-m3-overfit` | 256 fixed LM PBR driller instances (train = val) | Overfit check, best SPEED config, batch 32, 150 epochs, no aug | translation 0.43 mm, rotation 0.017° (train loss 0.0015) | Pipeline learns its labels end to end; 10.5 min in dev |
 
 (Paths relative to `$NAS_HOME`.)
 
@@ -610,6 +625,6 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 4. ~~Tiny `train` job that reads BOP files~~ (done 2026-10-20, `lmo-m0-access-004`). New jobs normally show in `runai list` within ~10 s; a one-off ~9 min delay happened once (see §7 M0). ~~`.gitignore`/pytest~~ (done). ~~Golden SPEED eval with `.venv`~~ (done, byte-identical). ~~bop_toolkit GT-as-prediction check~~ (done, AR = 1.0). **M0 complete.**
 5. ~~Image 1.60 with `libegl1`~~ (done 2026-10-21: `dev` and `train` run 1.60; AR 1.0 and golden 0.0093 without the EGL workaround, see M3 first bullet).
 6. **M1** started 2026-10-20 (while the image 1.60 build is running): ~~`tests/test_rotation_convention.py`~~ (done, 9 tests). ~~`tests/test_translation_param.py`~~ (done, 13 tests; the `src/utils.py` part of the refactor is included). ~~Refactor~~ (done: `num_objects`, `unpack_batch`/`forward_model`, per-sample K in `CoordinateTransformer`). ~~Checkpoint/resume~~ (done; kill/resume verified). **M1 complete.**
-7. **M2** started 2026-10-21: ~~`src/bop_dataset.py` index~~ (done; train 320,959 rows, test 1,445). ~~`__getitem__`~~ (done: `BOPDataset`, single-warp crop, site/allocentric labels, `standard` pixel aug by default). ~~Reprojection test~~ (done; found and fixed BOP's +1 px box convention, see M2). Visualisations in `vis/` (see `vis/README.md`; rerun `bash vis/run_all.sh` after data/label changes). ~~Label round trip~~ (done: ≤ 1e-6 on PBR, 7e-6 on LM-O test after snapping GT R to the nearest rotation). ~~Visual check~~ (done: 64-crop grids for train, test and val_real look right). ~~Loader throughput~~ (done: loader 730 samples/s vs GPU 257 at batch 32 with compile; no staging; use batch 32). Next: M2 optional exact roll augmentation (or skip to M3 if the user prefers). Use `--resume auto` in every training command from now on.
+7. **M2** started 2026-10-21: ~~`src/bop_dataset.py` index~~ (done; train 320,959 rows, test 1,445). ~~`__getitem__`~~ (done: `BOPDataset`, single-warp crop, site/allocentric labels, `standard` pixel aug by default). ~~Reprojection test~~ (done; found and fixed BOP's +1 px box convention, see M2). Visualisations in `vis/` (see `vis/README.md`; rerun `bash vis/run_all.sh` after data/label changes). ~~Label round trip~~ (done: ≤ 1e-6 on PBR, 7e-6 on LM-O test after snapping GT R to the nearest rotation). ~~Visual check~~ (done: 64-crop grids for train, test and val_real look right). ~~Loader throughput~~ (done: loader 730 samples/s vs GPU 257 at batch 32 with compile; no staging; use batch 32). **M2 closed 2026-10-21** (optional roll augmentation deferred). **M3** started: ~~image 1.60~~, ~~overfit 256 driller instances~~ (passed: 0.43 mm / 0.017°; `train.py --dataset LMO` works). Next: M3 single-object training (driller) on LM PBR, as a `train` job. Use `--resume auto` in every training command from now on.
 - Way of working (decided 2026-10-20): go through §7 one bullet at a time. Do the step, update this file, then stop until the user has checked it.
 - After every bullet: commit on `multi-object` with a 2–4 word message with every word starting in a Capital Letter (e.g. `BOP Access Verified`), then `git push origin multi-object` to the fork `PabloSarro/FastPose-ViT-MO` (never to `upstream`), and don't show `claude` as the author of the pushes but myself (`PabloSarro`).

@@ -404,3 +404,20 @@ def test_nearest_rotation():
     np.testing.assert_allclose(snapped @ snapped.T, np.eye(3), atol=1e-12)
     assert np.linalg.det(snapped) == pytest.approx(1.0)
     assert np.abs(snapped - R).max() < 0.02
+
+
+# --- Row selection (train.py --bop_obj_ids / --bop_overfit) -------------------------------------
+
+from src.bop_dataset import TABLE_KEYS, rows_for_objects, select_rows  # noqa: E402
+
+
+def test_select_rows_keeps_tables(test_index):
+    rows = rows_for_objects(test_index, [8, 10])
+    assert set(test_index["obj_id"][rows].tolist()) == {8, 10} and len(rows) == 200 + 180
+    sub = select_rows(test_index, rows)
+    assert len(sub["source"]) == len(rows)
+    for k in TABLE_KEYS:
+        np.testing.assert_array_equal(sub[k], test_index[k])
+    np.testing.assert_array_equal(sub["R"], test_index["R"][rows])
+    ds = BOPDataset(index=sub, img_size=32)
+    assert ds[0]["obj_id"] in (8, 10) and ds[0]["obj_idx"] in (3, 5)  # heads keep LM-O positions

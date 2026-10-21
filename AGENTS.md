@@ -46,6 +46,7 @@ Exit codes: 0 ok · 1 job failed · 2 no such job · 3 still waiting · 4 runai 
 **Key commands** (always prefix `PYTHONPATH=.`):
 - SPEED golden eval (must print SPEED score 0.0093; reference `$NAS_HOME/results/eval-rcp-check/results.json`): see `docs/RCP_WORKFLOW.md` §5.
 - Training: `bash rcp/train.sh NAME bash -c 'PYTHONPATH=. .venv/bin/python src/train.py ... --log_dir $RUN_DIR/ --model_save_path $RUN_DIR/model.pth --resume auto'`, with the best SPEED flags in `README.md`. With `--resume auto`, a preempted/restarted job continues from `$RUN_DIR/last.pt` (~690 MB, saved every epoch).
+- BOP training: same command with `--dataset LMO` (data from the cached index; `--bop_obj_ids 8` for one object, `--bop_overfit 256` for the sanity check, batch 32). Plot curves: `.venv/bin/python vis/training_curves.py RUN_DIR`.
 - Tests: `.venv/bin/python -m pytest tests/`.
 - Figures: `bash vis/run_all.sh` → `vis/figures/` (see `vis/README.md`). Regenerate after changing data or label code.
 - BOP tree: `bash scripts/make_bop_tree.sh` (→ `$NAS_HOME/datasets/bop`). Official BOP eval: `bash scripts/bop_eval.sh RESULTS_DIR METHOD_DS-SPLIT.csv` (handles the missing-libEGL workaround, venv PATH and `BOP_PATH`).

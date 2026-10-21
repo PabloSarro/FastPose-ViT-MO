@@ -18,6 +18,7 @@ from torch.amp import GradScaler
 from src.optimizer import SingleDeviceMuonWithAuxAdam
 import torch._inductor.config
 from src.datasets import SPEEDDataset, get_dataset_config
+from src.bop_dataset import LMO_OBJ_IDS, BOPDataset, load_index, rows_for_objects, select_rows
 from src.engine import train_epoch, val_epoch, TrainingConfig, ValidationConfig
 from src.losses import (
     QuaternionGeodesicLoss,
@@ -54,7 +55,7 @@ from styleaug import StyleAugmentor
 
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from src.utils import setup_logging
+from src.utils import DEPTH_MODES, setup_logging
 from src.checkpoint import (
     get_rng_state,
     load_checkpoint,
@@ -64,6 +65,58 @@ from src.checkpoint import (
     unwrap_model,
 )
 from src.scheduler import LogarithmicLR, CosineAnnealingLR, CosineAnnealingWithWarmRestarts
+
+# Datasets read through src/bop_dataset.py (lower-cased name = key in its SPLITS)
+BOP_DATASETS = ("LMO",)
+
+
+def is_bop(args: argparse.Namespace) -> bool:
+    """True for the BOP datasets (src/bop_dataset.py), False for SPEED."""
+    return args.dataset in BOP_DATASETS
+
+
+def create_bop_datasets(args: argparse.Namespace, img_size: int, logger) -> tuple:
+    """Train and validation BOPDataset for --dataset LMO, from the cached index.
+
+    --bop_obj_ids restricts both splits to some objects (heads stay one per LM-O object).
+    --bop_overfit N trains on N fixed training instances without augmentation and validates on
+    the same instances: a label/pipeline sanity check that must reach near-zero error.
+    """
+    dataset = args.dataset.lower()
+    train_index = load_index(dataset, "train")
+    val_index = load_index(dataset, args.bop_val_split)
+    obj_ids = args.bop_obj_ids or list(LMO_OBJ_IDS)
+    train_rows = rows_for_objects(train_index, obj_ids)
+    common = dict(
+        img_size=img_size,
+        rotation_format=args.rotation_format,
+        depth_mode=args.depth_mode,
+        no_rotation_compensation=args.no_rotation_compensation,
+        crop_context=args.crop_context,
+    )
+    if args.bop_overfit:
+        rng = np.random.default_rng(args.bop_overfit_seed)
+        rows = np.sort(rng.choice(train_rows, args.bop_overfit, replace=False))
+        subset = select_rows(train_index, rows)
+        train_dataset = BOPDataset(index=subset, augment=False, **common)
+        val_dataset = BOPDataset(index=subset, augment=False, **common)
+        logger.info(f"Overfit mode: {len(rows)} training instances of objects {obj_ids}, validated on the same")
+        return train_dataset, val_dataset
+    no_jitter = args.no_spatial_augmentation or args.no_bbox_augmentation
+    train_dataset = BOPDataset(
+        index=select_rows(train_index, train_rows),
+        augment=True,
+        bbox_jitter_percent=0.0 if no_jitter else args.bbox_crop_percent,
+        pixel_aug="none" if args.no_pixel_augmentation else args.bop_pixel_aug,
+        **common,
+    )
+    val_rows = rows_for_objects(val_index, obj_ids)
+    if args.max_val_samples and len(val_rows) > args.max_val_samples:
+        rng = np.random.default_rng(0)
+        val_rows = np.sort(rng.choice(val_rows, args.max_val_samples, replace=False))
+    val_dataset = BOPDataset(index=select_rows(val_index, val_rows), augment=False, **common)
+    logger.info(f"BOP {args.dataset}: objects {obj_ids}, val split {args.bop_val_split}")
+    return train_dataset, val_dataset
 
 
 def train(args: argparse.Namespace, log_file: str, bbox_json_path: str) -> None:
@@ -217,6 +270,7 @@ def train(args: argparse.Namespace, log_file: str, bbox_json_path: str) -> None:
         dropout_rate=args.dropout_rate,
         use_residual=args.use_residual,
         no_mlp=args.no_mlp,
+        num_objects=len(LMO_OBJ_IDS) if is_bop(args) else 1,
     ).to(device)
 
     # Set basic torch inductor optimization flags (always applied for better performance)
@@ -307,24 +361,27 @@ def train(args: argparse.Namespace, log_file: str, bbox_json_path: str) -> None:
             # Continue with uncompiled model
 
     # Create datasets and data loaders
-    train_dataset = SPEEDDataset(
-        dataset_root_dir=args.dataset_root_dir,
-        split="train",
-        rotation_format=args.rotation_format,
-        img_size=image_size,
-        bbox_json_path=bbox_json_path,
-        args=args,
-        dataset_name=args.dataset,
-    )
-    val_dataset = SPEEDDataset(
-        dataset_root_dir=args.dataset_root_dir,
-        split="val",
-        rotation_format=args.rotation_format,
-        img_size=image_size,
-        bbox_json_path=bbox_json_path,
-        args=args,
-        dataset_name=args.dataset,
-    )
+    if is_bop(args):
+        train_dataset, val_dataset = create_bop_datasets(args, image_size[0], logger)
+    else:
+        train_dataset = SPEEDDataset(
+            dataset_root_dir=args.dataset_root_dir,
+            split="train",
+            rotation_format=args.rotation_format,
+            img_size=image_size,
+            bbox_json_path=bbox_json_path,
+            args=args,
+            dataset_name=args.dataset,
+        )
+        val_dataset = SPEEDDataset(
+            dataset_root_dir=args.dataset_root_dir,
+            split="val",
+            rotation_format=args.rotation_format,
+            img_size=image_size,
+            bbox_json_path=bbox_json_path,
+            args=args,
+            dataset_name=args.dataset,
+        )
     logger.info(
         f"Datasets created. Train set size: {len(train_dataset)}, Val set size: {len(val_dataset)}"
     )
@@ -681,6 +738,7 @@ def train(args: argparse.Namespace, log_file: str, bbox_json_path: str) -> None:
             merge_outputs=args.merge_outputs,
             no_rotation_compensation=args.no_rotation_compensation,
             use_absolute_translation=args.use_absolute_translation,
+            depth_mode=args.depth_mode,
         )
 
         val_loss, val_loss_translation, val_loss_rotation, val_metrics = val_epoch(
@@ -799,7 +857,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dataset",
         type=str,
-        choices=["SPEED", "SPEED_PLUS_SYNTHETIC", "SPEED_PLUS"],
+        choices=["SPEED", "SPEED_PLUS_SYNTHETIC", "SPEED_PLUS", *BOP_DATASETS],
         default="SPEED",
         help="Dataset to use for training",
     )
@@ -1069,20 +1127,73 @@ if __name__ == "__main__":
         help="Use per-epoch learning rate scheduling instead of per-iteration (more conservative, may help convergence)",
     )
 
+    # BOP datasets (src/bop_dataset.py; data from $BOP_PATH or $NAS_HOME/datasets/bop)
+    parser.add_argument(
+        "--depth_mode",
+        type=str,
+        choices=DEPTH_MODES,
+        default=None,
+        help="Depth parameterisation of U_z (default: site for BOP, legacy for SPEED)",
+    )
+    parser.add_argument(
+        "--bop_obj_ids",
+        type=int,
+        nargs="+",
+        default=None,
+        help="BOP object ids to train/validate on (default: all LM-O objects)",
+    )
+    parser.add_argument(
+        "--bop_val_split",
+        type=str,
+        default="val",
+        choices=["val", "val_pbr", "val_real"],
+        help="Validation split (never the test split)",
+    )
+    parser.add_argument(
+        "--max_val_samples",
+        type=int,
+        default=None,
+        help="Validate on a fixed random subset of this size (BOP)",
+    )
+    parser.add_argument(
+        "--bop_pixel_aug",
+        type=str,
+        default="standard",
+        choices=["standard", "domain_gap"],
+        help="BOP pixel augmentation (off with --no_pixel_augmentation)",
+    )
+    parser.add_argument(
+        "--crop_context",
+        action="store_true",
+        help="BOP: fill the square crop around the bbox with image instead of black",
+    )
+    parser.add_argument(
+        "--bop_overfit",
+        type=int,
+        default=0,
+        help="BOP sanity check: train on this many fixed instances, no augmentation, val on the same",
+    )
+    parser.add_argument("--bop_overfit_seed", type=int, default=0)
+
     args = parser.parse_args()
+    if args.depth_mode is None:
+        args.depth_mode = "site" if args.dataset in BOP_DATASETS else "legacy"
 
     # Validate bbox_crop_percent
     if not (0.0 <= args.bbox_crop_percent <= 50.0):
         parser.error("--bbox_crop_percent must be between 0 and 50 (inclusive)")
 
-    # Set dataset_root_dir based on dataset choice if not specified
-    if args.dataset_root_dir is None:
-        dataset_config = get_dataset_config(args.dataset)
-        args.dataset_root_dir = f"./{dataset_config['folder']}"
+    if args.dataset in BOP_DATASETS:
+        bbox_json_path = None  # BOP boxes come from the index
+    else:
+        # Set dataset_root_dir based on dataset choice if not specified
+        if args.dataset_root_dir is None:
+            dataset_config = get_dataset_config(args.dataset)
+            args.dataset_root_dir = f"./{dataset_config['folder']}"
 
-    # Automatically determine bbox_json_path based on dataset
-    dataset_config = get_dataset_config(args.dataset)
-    bbox_json_path = os.path.join(args.dataset_root_dir, dataset_config["bbox_annotations"])
+        # Automatically determine bbox_json_path based on dataset
+        dataset_config = get_dataset_config(args.dataset)
+        bbox_json_path = os.path.join(args.dataset_root_dir, dataset_config["bbox_annotations"])
 
     # Set up logging
     logger, log_file = setup_logging(args)

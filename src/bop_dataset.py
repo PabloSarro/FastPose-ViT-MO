@@ -75,6 +75,23 @@ SPLITS = {
 }
 
 INT_COLUMNS = ("source", "scene_id", "im_id", "gt_id", "obj_id", "obj_idx")
+# Per-source and per-object tables (not per row)
+TABLE_KEYS = ("source_dirs", "source_exts", "obj_ids", "diameters", "symmetric")
+
+
+def select_rows(index: dict, rows) -> dict:
+    """Index restricted to the given rows (per-object and per-source tables are kept)."""
+    rows = np.asarray(rows)
+    n = len(index["source"])
+    return {
+        k: (v[rows] if v.ndim and len(v) == n and k not in TABLE_KEYS else v)
+        for k, v in index.items()
+    }
+
+
+def rows_for_objects(index: dict, obj_ids) -> np.ndarray:
+    """Rows of the given BOP object ids."""
+    return np.flatnonzero(np.isin(index["obj_id"], np.asarray(obj_ids)))
 
 
 def default_bop_root() -> str:
@@ -515,6 +532,9 @@ class BOPDataset(Dataset):
         self.crop_context = crop_context
         self.no_rotation_compensation = no_rotation_compensation
         self.transform = pixel_transform(pixel_aug if self.augment else "none")
+
+    # The engine reads val_dataset.camera; BOP samples carry their own K, so it is only a fallback
+    camera = Camera
 
     def __len__(self) -> int:
         return len(self.index["source"])

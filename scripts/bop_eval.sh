@@ -6,8 +6,8 @@
 # Scores go to RESULTS_DIR/eval/<method>_<dataset>-<split>/scores_bop19.json.
 #
 # Needs: the tree from scripts/make_bop_tree.sh, and bop_toolkit cloned next to this repo.
-# The image (fastposevit:1.59) lacks libEGL.so.1 (Ubuntu package libegl1), which the VSD
-# renderer needs. Until the image installs it, a copy extracted from the .deb lives in
+# The VSD renderer needs libEGL.so.1 (Ubuntu package libegl1). Image fastposevit:1.60 has it;
+# 1.59 does not, so as a fallback a copy extracted from the .deb lives in
 # $NAS_HOME/.local/lib/egl; vispy finds it through EGL_LIBRARY (it ignores LD_LIBRARY_PATH).
 set -euo pipefail
 (( $# >= 2 )) || { sed -n '4,5p' "$0" >&2; exit 2; }

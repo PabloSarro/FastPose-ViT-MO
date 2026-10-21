@@ -30,7 +30,7 @@ W9 Dec 14 · W10 Dec 21 · W11 Dec 28 · W12 Jan 4 · W13 Jan 11 · W14 Jan 18. 
 
 | Milestone | Weeks | Status | Exit criterion | Result |
 |---|---|---|---|---|
-| M0 Setup and data access | W1 | `[x]` | Golden SPEED eval reproduced (0.0093) and bop_toolkit gives AR ≈ 1.0 on GT-as-prediction | Golden SPEED 0.0093 reproduced (byte-identical); bop_toolkit GT-as-prediction AR = **1.0** (VSD via EGL workaround, `dev` and `train`). Image 1.60 with `libegl1` moved to M3 (built and pushed 2026-10-21, checks pending) |
+| M0 Setup and data access | W1 | `[x]` | Golden SPEED eval reproduced (0.0093) and bop_toolkit gives AR ≈ 1.0 on GT-as-prediction | Golden SPEED 0.0093 reproduced (byte-identical); bop_toolkit GT-as-prediction AR = **1.0** (VSD via EGL workaround, `dev` and `train`). Image 1.60 with `libegl1` done 2026-10-21 (M3 first bullet; AR 1.0 and golden 0.0093 without the workaround) |
 | M1 Refactor and safety net | W2 | `[x]` | SPEED golden diff = 0, pytest green, smoke train OK | Golden byte-identical; 57 tests; smoke val 0.1317; kill/resume continues exactly (LR, losses); done 2026-10-20, a week early |
 | M2 BOP data loader (LM-O) | W3–4 | `[ ]` | Reprojection and label round-trip tests pass, throughput OK | |
 | M3 Single-object baseline B1 | W4–5 | `[ ]` | B1 metrics logged in §9 | |
@@ -371,11 +371,18 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 - **Exit:** all tests pass and the overlays look right.
 
 ### M3 — Single-object baseline B1: original architecture, GT boxes (W4–5)
-- [ ] **Pending (moved from M0 to M2, then to M3 on 2026-10-20): image `fastposevit:1.60` = 1.59 + `libegl1`.** It is not blocking: the EGL workaround (`$NAS_HOME/.local/lib/egl`, used automatically by `scripts/bop_eval.sh`) works in `dev` and `train`.
+- [x] **Image `fastposevit:1.60` = 1.59 + `libegl1` (moved from M0 to M2, then to M3 on 2026-10-20; done 2026-10-21).** It is not blocking: the EGL workaround (`$NAS_HOME/.local/lib/egl`, used automatically by `scripts/bop_eval.sh`) works in `dev` and `train`.
   - `Dockerfile` already lists `libegl1` (2026-10-20), so any future full rebuild includes it.
   - A thin layer on top of 1.59 keeps the Python environment bit-identical, which a full rebuild with unpinned requirements might not (golden SPEED check).
   - First attempt, 2026-10-20 from home: cancelled. The pull of 1.59 ran at ~70 KB/s.
-  - **Built and pushed 2026-10-21** (digest `sha256:8683fbb3…`). The overnight pull took ~2 h 20 min; the first build then failed with a Docker Desktop snapshotter error (`failed call to UtimesNanoAt … snapshots/…/fs/etc: no such file or directory`), and simply re-running `docker build` worked (cached layers, `apt-get` ~62 s). The push uploaded only the new layer. `rcp/project.env` now points to 1.60. **Still to do:** restart `dev` on 1.60 and run the checks below.
+  - **Built and pushed 2026-10-21** (digest `sha256:8683fbb3…`). The overnight pull took ~2 h 20 min; the first build then failed with a Docker Desktop snapshotter error (`failed call to UtimesNanoAt … snapshots/…/fs/etc: no such file or directory`), and simply re-running `docker build` worked (cached layers, `apt-get` ~62 s). The push uploaded only the new layer. `rcp/project.env` now points to 1.60.
+  - **Verified 2026-10-21** (`dev` restarted on 1.60, A100; results in `results/eval-m3-image160/`):
+    - `ldconfig -p` lists `/usr/lib/x86_64-linux-gnu/libEGL.so.1`, so `bop_eval.sh` no longer uses the workaround (kept as a fallback for 1.59).
+    - BOP GT-as-prediction on LM-O test: AR = **1.0** (VSD, MSSD, MSPD), 50 s in `dev`.
+    - Golden SPEED eval: **0.0093**, `results.json` byte-identical to `eval-rcp-check`.
+    - `pytest tests/`: 57 passed.
+    - Train job `lmo-m3-image160-001` (1.60, 4 CPUs): libEGL found, AR = 1.0, eval 77 s, exit 0; job stopped.
+    - The leftover jobs `lmo-m0-access-003` and `lmo-m0-subdebug-001` were deleted by the user.
   - Steps for the user, in a **WSL terminal** with Docker Desktop's WSL integration on. Run them **on the EPFL network**: at home the pull ran at ~70 KB/s, which means more than a day for 1.59's ~7 GB. Run each command separately:
     1. Log in, with the username `sarro` and the **Harbor CLI secret** from registry.rcp.epfl.ch → your name → User Profile (not the EPFL password):
        ```bash
@@ -505,6 +512,7 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 | 2026-10-20 | `results/eval-m1-refactor` | SPEED test | golden command after the M1 refactor | score **0.0093** | `results.json` byte-identical to golden |
 | 2026-10-20 | `results/smoke-m1-refactor` | SPEED val | `smoke-02` command, 2 epochs, `dev` | val score 0.1317 | vs 0.1400 (smoke-02); within noise |
 | 2026-10-20 | `results/smoke-m1-resume` | SPEED val | `smoke-02` command, 3 epochs, SIGKILL after epoch 1 + `--resume auto` | val score 0.2137 / 0.1403 / **0.1005** | Resume continues LR and losses; 3-ep uninterrupted ref 0.1021 |
+| 2026-10-21 | `results/eval-m3-image160` + `lmo-m3-image160-001` | LM-O test (GT as prediction) + SPEED val | Image 1.60 checks: BOP eval in `dev` and in a train job, golden eval | AR **1.0** (dev and train); SPEED **0.0093** byte-identical | Native libEGL, no workaround; 57 tests pass |
 
 (Paths relative to `$NAS_HOME`.)
 
@@ -516,7 +524,7 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 2. Work on branch `multi-object` (created 2026-10-20). The §5 report to Pierre is deferred until M8.
 3. ~~Set up `.venv` + `bop_toolkit`~~ (done 2026-10-20, see §7 M0). Install with `.venv/bin/pip`, not uv.
 4. ~~Tiny `train` job that reads BOP files~~ (done 2026-10-20, `lmo-m0-access-004`). New jobs normally show in `runai list` within ~10 s; a one-off ~9 min delay happened once (see §7 M0). ~~`.gitignore`/pytest~~ (done). ~~Golden SPEED eval with `.venv`~~ (done, byte-identical). ~~bop_toolkit GT-as-prediction check~~ (done, AR = 1.0). **M0 complete.**
-5. **Image 1.60 with `libegl1`: built and pushed 2026-10-21, and `rcp/project.env` points to it.** First thing in the new `dev`: check that it runs 1.60 (`ldconfig -p | grep libEGL` lists `libEGL.so.1`), then do the M3 first-bullet checks: `bash scripts/bop_eval.sh` GT-as-prediction AR 1.0 without the workaround (new results folder), golden SPEED 0.0093, `pytest tests/` 57 passed, one short `train` job running the same BOP eval. Then tick the bullet, add §9 row `eval-m3-image160`, commit `Image 1.60 Verified`.
+5. ~~Image 1.60 with `libegl1`~~ (done 2026-10-21: `dev` and `train` run 1.60; AR 1.0 and golden 0.0093 without the EGL workaround, see M3 first bullet).
 6. **M1** started 2026-10-20 (while the image 1.60 build is running): ~~`tests/test_rotation_convention.py`~~ (done, 9 tests). ~~`tests/test_translation_param.py`~~ (done, 13 tests; the `src/utils.py` part of the refactor is included). ~~Refactor~~ (done: `num_objects`, `unpack_batch`/`forward_model`, per-sample K in `CoordinateTransformer`). ~~Checkpoint/resume~~ (done; kill/resume verified). **M1 complete.**
 7. Next: **M2**, first bullet `src/bop_dataset.py` index. Use `--resume auto` in every training command from now on.
 - Way of working (decided 2026-10-20): go through §7 one bullet at a time. Do the step, update this file, then stop until the user has checked it.

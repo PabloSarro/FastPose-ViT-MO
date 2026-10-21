@@ -32,7 +32,7 @@ W9 Dec 14 · W10 Dec 21 · W11 Dec 28 · W12 Jan 4 · W13 Jan 11 · W14 Jan 18. 
 |---|---|---|---|---|
 | M0 Setup and data access | W1 | `[x]` | Golden SPEED eval reproduced (0.0093) and bop_toolkit gives AR ≈ 1.0 on GT-as-prediction | Golden SPEED 0.0093 reproduced (byte-identical); bop_toolkit GT-as-prediction AR = **1.0** (VSD via EGL workaround, `dev` and `train`). Image 1.60 with `libegl1` done 2026-10-21 (M3 first bullet; AR 1.0 and golden 0.0093 without the workaround) |
 | M1 Refactor and safety net | W2 | `[x]` | SPEED golden diff = 0, pytest green, smoke train OK | Golden byte-identical; 57 tests; smoke val 0.1317; kill/resume continues exactly (LR, losses); done 2026-10-20, a week early |
-| M2 BOP data loader (LM-O) | W3–4 | `[ ]` | Reprojection and label round-trip tests pass, throughput OK | |
+| M2 BOP data loader (LM-O) | W3–4 | `[~]` | Reprojection and label round-trip tests pass, throughput OK | Started 2026-10-21. Index done: train 320,959 rows (LM PBR 0–47), test 1,445 (= BOP19 targets) |
 | M3 Single-object baseline B1 | W4–5 | `[ ]` | B1 metrics logged in §9 | |
 | M4 Shared 8-object model | W6–7 | `[ ]` | ≥ 90 % of B1 on B1's object; no object at 0 ADD | |
 | M5 Symmetries | W7–8 | `[ ]` | Eggbox/glue improve, others unchanged | |
@@ -358,7 +358,24 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 - **Exit:** golden diff = 0 (≤ 1e-6), pytest green, 2-epoch SPEED smoke run behaves as before. **Met 2026-10-20:** golden byte-identical, 57 tests pass, smoke val 0.1317 (2 ep), and the kill/resume run behaves as before.
 
 ### M2 — BOP data loader for LM-O (W3–4)
-- [ ] `src/bop_dataset.py` index: one row per visible instance (`visib_fract ≥ 0.1`, valid bbox), stored as numpy arrays and cached as `.npz` under `$NAS_HOME/cache/`. Expect ≈ 343k train rows and 1,445 LM-O test targets.
+- [x] `src/bop_dataset.py` index: one row per visible instance (`visib_fract ≥ 0.1`, valid bbox), stored as numpy arrays and cached as `.npz` under `$NAS_HOME/cache/`. Expect ≈ 343k train rows and 1,445 LM-O test targets. **Done 2026-10-21.**
+  - API: `load_index(dataset, split)` builds the index on first use and caches it in `$NAS_HOME/cache/bop_index/<ds>_<split>_<hash>.npz`. The hash covers the sources, objects, threshold, BOP root and `INDEX_VERSION`, so changed settings never reuse a stale file. The save is atomic. `image_path(index, row)` gives the RGB path. CLI: `PYTHONPATH=. .venv/bin/python -m src.bop_dataset` builds and summarizes all splits.
+  - Row fields: `source, scene_id, im_id, gt_id, obj_id, obj_idx` (head index = position in `LMO_OBJ_IDS`), `R` (3×3 `cam_R_m2c`), `t` (mm), `K` (per image), `img_wh`, `bbox_obj`, `bbox_visib` (xywh), `visib_fract`, `px_count_visib`. Per-object tables: `obj_ids`, `diameters` (from `lmo/models_eval`), `symmetric`.
+  - Splits in `SPLITS['lmo']`: `train` = LM PBR scenes 0–47; `val_pbr` = PBR 48–49; `val_real` = LM `test` (bop19) scenes 1, 5, 6, 8, 9, 10, 11, 12 via their targets; `val` = both; `test` = LM-O bop19 targets. Target-based splits keep exactly the targets (no visibility filter) and fail loudly if any target is missing from `scene_gt`.
+  - Counts:
+    | split | rows | images | per object (1, 5, 6, 8, 9, 10, 11, 12) |
+    |---|---|---|---|
+    | train | **320,959** | 47,987 | 38,238 · 41,561 · 40,133 · 42,214 · 38,673 · 40,108 · 40,140 · 39,892 |
+    | val_pbr | 13,484 | 1,998 | 1,582 · 1,748 · 1,722 · 1,788 · 1,597 · 1,709 · 1,686 · 1,652 |
+    | val_real | 1,600 | 1,600 | 200 each |
+    | test | **1,445** | 200 | 175 · 199 · 171 · 200 · 180 · 180 · 140 · 200 |
+  - The ≈ 343k estimate was for all 50 PBR scenes; 48 training scenes give 321k (about 6.7k per scene), well balanced across objects (38k–42k).
+  - Building all splits takes about 12 s from the NAS; loading the 77 MB train cache takes 0.2 s.
+  - Findings:
+    - **LM-O test GT rotations are not exactly orthonormal** (max |RRᵀ − I| = 0.0096, det up to 1.014; PBR and LM test are within 2e-6). Keep this in mind for the label round-trip tolerance and for any test that assumes `R⁻¹ = Rᵀ` on LM-O test.
+    - LM-O test targets include instances that are barely visible (`visib_fract` down to 0.003). The index keeps them, since BOP scores every target.
+    - `val_real` instances are all well visible (`visib_fract` ≥ 0.66): it is an easy real-image check, not a stand-in for occlusion.
+  - Tests: `tests/test_bop_dataset.py` (7) recounts PBR scene 0 from the raw JSON (6,866 rows), checks the test rows equal the 1,445 targets, compares 20 random rows per split field by field with the raw files, checks the object table, the cache round trip and that val excludes the LM-O test scene. **64 tests pass.**
 - [ ] `__getitem__`:
   - Crop from `bbox_visib` with jitter, as a single `warpAffine` to a square crop with zero padding.
   - Labels: allocentric R and `U` in `site` mode; also return K, `obj_idx`, diameter and ids.
@@ -526,6 +543,6 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 4. ~~Tiny `train` job that reads BOP files~~ (done 2026-10-20, `lmo-m0-access-004`). New jobs normally show in `runai list` within ~10 s; a one-off ~9 min delay happened once (see §7 M0). ~~`.gitignore`/pytest~~ (done). ~~Golden SPEED eval with `.venv`~~ (done, byte-identical). ~~bop_toolkit GT-as-prediction check~~ (done, AR = 1.0). **M0 complete.**
 5. ~~Image 1.60 with `libegl1`~~ (done 2026-10-21: `dev` and `train` run 1.60; AR 1.0 and golden 0.0093 without the EGL workaround, see M3 first bullet).
 6. **M1** started 2026-10-20 (while the image 1.60 build is running): ~~`tests/test_rotation_convention.py`~~ (done, 9 tests). ~~`tests/test_translation_param.py`~~ (done, 13 tests; the `src/utils.py` part of the refactor is included). ~~Refactor~~ (done: `num_objects`, `unpack_batch`/`forward_model`, per-sample K in `CoordinateTransformer`). ~~Checkpoint/resume~~ (done; kill/resume verified). **M1 complete.**
-7. Next: **M2**, first bullet `src/bop_dataset.py` index. Use `--resume auto` in every training command from now on.
+7. **M2** started 2026-10-21: ~~`src/bop_dataset.py` index~~ (done; train 320,959 rows, test 1,445). Next: M2 `__getitem__` (crop warp, labels, pixel augs). Use `--resume auto` in every training command from now on.
 - Way of working (decided 2026-10-20): go through §7 one bullet at a time. Do the step, update this file, then stop until the user has checked it.
 - After every bullet: commit on `multi-object` with a 2–4 word message with every word starting in a Capital Letter (e.g. `BOP Access Verified`), then `git push origin multi-object` to the fork `PabloSarro/FastPose-ViT-MO` (never to `upstream`), and don't show `claude` as the author of the pushes but myself (`PabloSarro`).

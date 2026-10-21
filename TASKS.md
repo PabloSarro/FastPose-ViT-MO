@@ -30,7 +30,7 @@ W9 Dec 14 · W10 Dec 21 · W11 Dec 28 · W12 Jan 4 · W13 Jan 11 · W14 Jan 18. 
 
 | Milestone | Weeks | Status | Exit criterion | Result |
 |---|---|---|---|---|
-| M0 Setup and data access | W1 | `[x]` | Golden SPEED eval reproduced (0.0093) and bop_toolkit gives AR ≈ 1.0 on GT-as-prediction | Golden SPEED 0.0093 reproduced (byte-identical); bop_toolkit GT-as-prediction AR = **1.0** (VSD via EGL workaround, `dev` and `train`). Image 1.60 with `libegl1` moved to M2 (not blocking) |
+| M0 Setup and data access | W1 | `[x]` | Golden SPEED eval reproduced (0.0093) and bop_toolkit gives AR ≈ 1.0 on GT-as-prediction | Golden SPEED 0.0093 reproduced (byte-identical); bop_toolkit GT-as-prediction AR = **1.0** (VSD via EGL workaround, `dev` and `train`). Image 1.60 with `libegl1` moved to M3 (built and pushed 2026-10-21, checks pending) |
 | M1 Refactor and safety net | W2 | `[x]` | SPEED golden diff = 0, pytest green, smoke train OK | Golden byte-identical; 57 tests; smoke val 0.1317; kill/resume continues exactly (LR, losses); done 2026-10-20, a week early |
 | M2 BOP data loader (LM-O) | W3–4 | `[ ]` | Reprojection and label round-trip tests pass, throughput OK | |
 | M3 Single-object baseline B1 | W4–5 | `[ ]` | B1 metrics logged in §9 | |
@@ -375,6 +375,7 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
   - `Dockerfile` already lists `libegl1` (2026-10-20), so any future full rebuild includes it.
   - A thin layer on top of 1.59 keeps the Python environment bit-identical, which a full rebuild with unpinned requirements might not (golden SPEED check).
   - First attempt, 2026-10-20 from home: cancelled. The pull of 1.59 ran at ~70 KB/s.
+  - **Built and pushed 2026-10-21** (digest `sha256:8683fbb3…`). The overnight pull took ~2 h 20 min; the first build then failed with a Docker Desktop snapshotter error (`failed call to UtimesNanoAt … snapshots/…/fs/etc: no such file or directory`), and simply re-running `docker build` worked (cached layers, `apt-get` ~62 s). The push uploaded only the new layer. `rcp/project.env` now points to 1.60. **Still to do:** restart `dev` on 1.60 and run the checks below.
   - Steps for the user, in a **WSL terminal** with Docker Desktop's WSL integration on. Run them **on the EPFL network**: at home the pull ran at ~70 KB/s, which means more than a day for 1.59's ~7 GB. Run each command separately:
     1. Log in, with the username `sarro` and the **Harbor CLI secret** from registry.rcp.epfl.ch → your name → User Profile (not the EPFL password):
        ```bash
@@ -515,7 +516,7 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 2. Work on branch `multi-object` (created 2026-10-20). The §5 report to Pierre is deferred until M8.
 3. ~~Set up `.venv` + `bop_toolkit`~~ (done 2026-10-20, see §7 M0). Install with `.venv/bin/pip`, not uv.
 4. ~~Tiny `train` job that reads BOP files~~ (done 2026-10-20, `lmo-m0-access-004`). New jobs normally show in `runai list` within ~10 s; a one-off ~9 min delay happened once (see §7 M0). ~~`.gitignore`/pytest~~ (done). ~~Golden SPEED eval with `.venv`~~ (done, byte-identical). ~~bop_toolkit GT-as-prediction check~~ (done, AR = 1.0). **M0 complete.**
-5. Image 1.60 with `libegl1`: pending, moved to M3 (first bullet, with the WSL commands). It is not blocking, since the EGL workaround works.
+5. **Image 1.60 with `libegl1`: built and pushed 2026-10-21, and `rcp/project.env` points to it.** First thing in the new `dev`: check that it runs 1.60 (`ldconfig -p | grep libEGL` lists `libEGL.so.1`), then do the M3 first-bullet checks: `bash scripts/bop_eval.sh` GT-as-prediction AR 1.0 without the workaround (new results folder), golden SPEED 0.0093, `pytest tests/` 57 passed, one short `train` job running the same BOP eval. Then tick the bullet, add §9 row `eval-m3-image160`, commit `Image 1.60 Verified`.
 6. **M1** started 2026-10-20 (while the image 1.60 build is running): ~~`tests/test_rotation_convention.py`~~ (done, 9 tests). ~~`tests/test_translation_param.py`~~ (done, 13 tests; the `src/utils.py` part of the refactor is included). ~~Refactor~~ (done: `num_objects`, `unpack_batch`/`forward_model`, per-sample K in `CoordinateTransformer`). ~~Checkpoint/resume~~ (done; kill/resume verified). **M1 complete.**
 7. Next: **M2**, first bullet `src/bop_dataset.py` index. Use `--resume auto` in every training command from now on.
 - Way of working (decided 2026-10-20): go through §7 one bullet at a time. Do the step, update this file, then stop until the user has checked it.

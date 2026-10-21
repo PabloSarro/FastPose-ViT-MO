@@ -32,7 +32,7 @@ W9 Dec 14 · W10 Dec 21 · W11 Dec 28 · W12 Jan 4 · W13 Jan 11 · W14 Jan 18. 
 |---|---|---|---|---|
 | M0 Setup and data access | W1 | `[x]` | Golden SPEED eval reproduced (0.0093) and bop_toolkit gives AR ≈ 1.0 on GT-as-prediction | Golden SPEED 0.0093 reproduced (byte-identical); bop_toolkit GT-as-prediction AR = **1.0** (VSD via EGL workaround, `dev` and `train`). Image 1.60 with `libegl1` done 2026-10-21 (M3 first bullet; AR 1.0 and golden 0.0093 without the workaround) |
 | M1 Refactor and safety net | W2 | `[x]` | SPEED golden diff = 0, pytest green, smoke train OK | Golden byte-identical; 57 tests; smoke val 0.1317; kill/resume continues exactly (LR, losses); done 2026-10-20, a week early |
-| M2 BOP data loader (LM-O) | W3–4 | `[~]` | Reprojection and label round-trip tests pass, throughput OK | Started 2026-10-21. Index done: train 320,959 rows (LM PBR 0–47), test 1,445 (= BOP19 targets) |
+| M2 BOP data loader (LM-O) | W3–4 | `[~]` | Reprojection and label round-trip tests pass, throughput OK | Started 2026-10-21. Index done: train 320,959 rows (LM PBR 0–47), test 1,445 (= BOP19 targets). `BOPDataset.__getitem__` done |
 | M3 Single-object baseline B1 | W4–5 | `[ ]` | B1 metrics logged in §9 | |
 | M4 Shared 8-object model | W6–7 | `[ ]` | ≥ 90 % of B1 on B1's object; no object at 0 ADD | |
 | M5 Symmetries | W7–8 | `[ ]` | Eggbox/glue improve, others unchanged | |
@@ -376,10 +376,18 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
     - LM-O test targets include instances that are barely visible (`visib_fract` down to 0.003). The index keeps them, since BOP scores every target.
     - `val_real` instances are all well visible (`visib_fract` ≥ 0.66): it is an easy real-image check, not a stand-in for occlusion.
   - Tests: `tests/test_bop_dataset.py` (7) recounts PBR scene 0 from the raw JSON (6,866 rows), checks the test rows equal the 1,445 targets, compares 20 random rows per split field by field with the raw files, checks the object table, the cache round trip and that val excludes the LM-O test scene. **64 tests pass.**
-- [ ] `__getitem__`:
+- [x] `__getitem__`: **Done 2026-10-21** (`BOPDataset` in `src/bop_dataset.py`).
   - Crop from `bbox_visib` with jitter, as a single `warpAffine` to a square crop with zero padding.
   - Labels: allocentric R and `U` in `site` mode; also return K, `obj_idx`, diameter and ids.
   - Pixel augs without OpticalDistortion.
+  - Crop: `crop_warp_matrix` + `crop_image`, one `cv2.warpAffine` (bilinear) of the square of side max(w, h) centred on the bbox, straight to the model size. Coordinates are pixel indices, the convention of BOP bboxes and K, so the bbox centre maps exactly to the crop centre (S−1)/2. As in SPEED, the bands of the square outside the bbox are black (`crop_context=True` fills them with the image instead: possible ablation). Outside the image is zero.
+  - Bbox: `bbox_visib` by default (`bbox_source="obj"` for `bbox_obj`). Training jitter reuses SPEED's `random_bbox_augmentation` (±10 % per side, with probability 0.5, as `SpatialDataAugmenter`). Labels are computed from the jittered bbox, as in SPEED. No rotation augmentation (§6.3).
+  - Labels: `U` from `translation_to_bbox_relative_translation` with per-sample K, `depth_mode="site"` (default) and the object diameter; rotation = SPEED's allocentric conversion (`rotation_matrix_to_quaternion` → `get_apparent_orientation` → matrix), so `CoordinateTransformer` inverts it unchanged. Computed in float64, returned as float32.
+  - Sample dict (goes straight through `unpack_batch`): `images, translations, rotations, bboxes, K, img_wh, obj_idx, diameter`, plus `R_m2c, t_m2c` (original BOP pose) and `obj_id, scene_id, im_id, gt_id, row` for tracing.
+  - Pixel augs: `pixel_aug="standard"` (default: SPEED's standard pipeline without Resize), `"domain_gap"` (SPEED's domain-gap pipeline without Resize and **without OpticalDistortion**) or `"none"`. Only used when augmenting (default: split `train` only).
+  - **Finding: `domain_gap` is far too strong for LM.** Eleven transforms at p = 0.5 each (incl. solarize, sun flare, tone curve, gray) made most crops in a preview grid unrecognizable. Hence `standard` as default; compare both in the M3 ablations (new decision D5 in §8).
+  - Speed: one sample in ~3–30 ms (single process, warm cache); a first 32-sample batch with 8 workers in 2.2 s (cold). Proper throughput measurement is a later M2 bullet.
+  - Tests: 9 new in `tests/test_bop_dataset.py`: the warp maps the bbox centre to the crop centre with one scale; black bands vs context; augmentations are photometric only (no OpticalDistortion/Resize); fields, dtypes and an orthonormal label R; eval samples are deterministic; the projected 3D centre lands in the crop exactly where U_x, U_y say (1e-5); `site` and `legacy` U_z match their formulas; jitter stays inside the image and is applied about half of the time; a collated batch passes `unpack_batch`. **73 tests pass.**
 - [ ] Reprojection test: project `models_eval` points with the GT pose. The projected bbox must match `bbox_obj` with IoU ≥ 0.9, and using `Rᵀ` must clearly fail. Run it on 30 PBR and 30 LM-O instances.
 - [ ] Label round trip: dataset labels → inverse functions (K, bbox) → GT ego pose, within 1e-4.
 - [ ] Visual check: a 64-crop grid with projected axes/points saved as PNG, including eggbox and glue.
@@ -503,6 +511,7 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 | D2 | Object conditioning: per-object heads vs class tokens (vs both) | M4 |
 | D3 | Crop source for training: `bbox_visib` vs `bbox_obj` | M2 / M7 |
 | D4 | `visib_fract` threshold for training instances (default 0.1) | M2 |
+| D5 | BOP pixel augmentation: `standard` (default) vs `domain_gap` (too strong in the preview); black bands vs `crop_context` | M3 |
 | D5 | Backbone resolution for real time: 224 vs 384 | M3 / M9 |
 | D6 | Several instances of the same object (T-LESS) | M10 |
 
@@ -543,6 +552,6 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 4. ~~Tiny `train` job that reads BOP files~~ (done 2026-10-20, `lmo-m0-access-004`). New jobs normally show in `runai list` within ~10 s; a one-off ~9 min delay happened once (see §7 M0). ~~`.gitignore`/pytest~~ (done). ~~Golden SPEED eval with `.venv`~~ (done, byte-identical). ~~bop_toolkit GT-as-prediction check~~ (done, AR = 1.0). **M0 complete.**
 5. ~~Image 1.60 with `libegl1`~~ (done 2026-10-21: `dev` and `train` run 1.60; AR 1.0 and golden 0.0093 without the EGL workaround, see M3 first bullet).
 6. **M1** started 2026-10-20 (while the image 1.60 build is running): ~~`tests/test_rotation_convention.py`~~ (done, 9 tests). ~~`tests/test_translation_param.py`~~ (done, 13 tests; the `src/utils.py` part of the refactor is included). ~~Refactor~~ (done: `num_objects`, `unpack_batch`/`forward_model`, per-sample K in `CoordinateTransformer`). ~~Checkpoint/resume~~ (done; kill/resume verified). **M1 complete.**
-7. **M2** started 2026-10-21: ~~`src/bop_dataset.py` index~~ (done; train 320,959 rows, test 1,445). Next: M2 `__getitem__` (crop warp, labels, pixel augs). Use `--resume auto` in every training command from now on.
+7. **M2** started 2026-10-21: ~~`src/bop_dataset.py` index~~ (done; train 320,959 rows, test 1,445). ~~`__getitem__`~~ (done: `BOPDataset`, single-warp crop, site/allocentric labels, `standard` pixel aug by default). Next: M2 reprojection test. Use `--resume auto` in every training command from now on.
 - Way of working (decided 2026-10-20): go through §7 one bullet at a time. Do the step, update this file, then stop until the user has checked it.
 - After every bullet: commit on `multi-object` with a 2–4 word message with every word starting in a Capital Letter (e.g. `BOP Access Verified`), then `git push origin multi-object` to the fork `PabloSarro/FastPose-ViT-MO` (never to `upstream`), and don't show `claude` as the author of the pushes but myself (`PabloSarro`).

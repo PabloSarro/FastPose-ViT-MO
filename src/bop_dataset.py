@@ -1,4 +1,5 @@
-# This file contains the BOP dataset index: one row per object instance used for training or evaluation
+# This file contains the BOP dataset: an index with one row per object instance, and BOPDataset,
+# which turns a row into a square crop with pose labels
 #
 # The index is built from the standard BOP tree (scripts/make_bop_tree.sh) and cached as a single
 # .npz of numpy arrays, so DataLoader workers share it without per-sample JSON parsing.
@@ -11,7 +12,25 @@ import os
 import time
 from dataclasses import asdict, dataclass
 
+import albumentations as A
+import cv2
 import numpy as np
+import torch
+from albumentations.pytorch import ToTensorV2
+from torch.utils.data import Dataset
+
+from src.camera import Camera
+from src.datasets import random_bbox_augmentation
+from src.utils import (
+    DEPTH_MODES,
+    get_apparent_orientation,
+    quaternion_to_rotation_matrix,
+    rotation_matrix_to_quaternion,
+    translation_to_bbox_relative_translation,
+)
+
+# Fix OpenCV threading conflicts with PyTorch DataLoader workers (as src/datasets.py)
+cv2.setNumThreads(0)
 
 INDEX_VERSION = 1
 
@@ -299,6 +318,247 @@ def summarize(index: dict) -> str:
         f"{o}: {c}" for o, c in zip(index["obj_ids"].tolist(), per_obj.tolist())
     )
     return f"{n} rows from {images} images; per object {{{per_obj_txt}}}"
+
+
+PIXEL_AUGS = ("none", "standard", "domain_gap")
+IMAGENET_MEAN = (0.485, 0.456, 0.406)
+IMAGENET_STD = (0.229, 0.224, 0.225)
+
+
+def pixel_transform(pixel_aug: str) -> A.Compose:
+    """Photometric augmentations + ImageNet normalization, for crops already at model size.
+
+    "standard" and "domain_gap" are the SPEEDDataset pipelines without Resize (the crop warp
+    already outputs the model size) and, for "domain_gap", without OpticalDistortion: it is a
+    geometric warp, so it would make the pose labels wrong.
+    """
+    if pixel_aug not in PIXEL_AUGS:
+        raise ValueError(f"pixel_aug must be one of {PIXEL_AUGS}, got {pixel_aug!r}")
+    augs = []
+    if pixel_aug == "standard":
+        augs = [
+            A.OneOf(
+                [A.RandomBrightnessContrast(p=1.0), A.RandomGamma(p=1.0), A.CLAHE(p=1.0)], p=0.5
+            ),
+            A.OneOf(
+                [
+                    A.ImageCompression(quality_range=(40, 90), p=1.0),
+                    A.Downscale(scale_range=(0.7, 0.95), p=1.0),
+                ],
+                p=0.5,
+            ),
+        ]
+    elif pixel_aug == "domain_gap":
+        augs = [
+            A.ToGray(p=0.5),
+            A.RandomToneCurve(p=0.5),
+            A.RandomGamma(p=0.5),
+            A.CLAHE(p=0.5),
+            A.RandomBrightnessContrast(p=0.5),
+            A.Solarize(p=0.5),
+            A.RandomSunFlare(flare_roi=(0, 0, 1, 1), p=0.5),
+            A.ISONoise(p=0.5),
+            A.MotionBlur(p=0.5),
+            A.Defocus(p=0.5),
+            A.OneOf([A.ImageCompression(p=1.0), A.Downscale(p=1.0)], p=0.5),
+        ]
+    return A.Compose(
+        augs
+        + [A.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD, max_pixel_value=1.0), ToTensorV2()]
+    )
+
+
+def crop_warp_matrix(bbox, out_size: int) -> np.ndarray:
+    """2x3 affine map from image pixels to a square crop of side out_size.
+
+    The square has side max(w, h) and the same centre as bbox, so the object keeps its aspect
+    ratio (as SPEEDDataset.crop_image + padding + resize, in one interpolation step).
+    Coordinates are pixel indices (pixel centres at integers), the convention of BOP bboxes and
+    of K, so the bbox centre lands exactly on the crop centre (out_size - 1) / 2.
+
+    Args:
+        bbox: [x1, y1, x2, y2] in pixels.
+        out_size: Side of the output crop in pixels.
+    """
+    x1, y1, x2, y2 = (float(v) for v in bbox)
+    scale = out_size / max(x2 - x1, y2 - y1)
+    half = 0.5 * (out_size - 1)
+    tx = half - scale * 0.5 * (x1 + x2)
+    ty = half - scale * 0.5 * (y1 + y2)
+    return np.array([[scale, 0.0, tx], [0.0, scale, ty]], dtype=np.float64)
+
+
+def crop_image(image: np.ndarray, bbox, out_size: int, context: bool = False) -> np.ndarray:
+    """Square crop of bbox at out_size, as one warpAffine; zeros outside the image.
+
+    Args:
+        image: H x W x C image.
+        bbox: [x1, y1, x2, y2].
+        out_size: Output side in pixels.
+        context: If False (default, as SPEEDDataset), the bands of the square outside bbox are
+            black; if True they show the surrounding image.
+    """
+    M = crop_warp_matrix(bbox, out_size)
+    crop = cv2.warpAffine(
+        image,
+        M,
+        (out_size, out_size),
+        flags=cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=0,
+    )
+    if not context:
+        x1, y1, x2, y2 = (float(v) for v in bbox)
+        scale, half = M[0, 0], 0.5 * (out_size - 1)
+        # Keep the crop pixels whose centre falls inside bbox (edge pixels included: +-0.5 px)
+        rx, ry = scale * (0.5 * (x2 - x1) + 0.5), scale * (0.5 * (y2 - y1) + 0.5)
+        lo_x, hi_x = int(np.ceil(half - rx)), int(np.floor(half + rx))
+        lo_y, hi_y = int(np.ceil(half - ry)), int(np.floor(half + ry))
+        crop[:, : max(lo_x, 0)] = 0
+        crop[:, hi_x + 1 :] = 0
+        crop[: max(lo_y, 0)] = 0
+        crop[hi_y + 1 :] = 0
+    return crop
+
+
+class BOPDataset(Dataset):
+    """One sample per index row: the object's square crop and its pose labels.
+
+    Returns a dict (src/engine.py unpack_batch) with:
+    - images: (3, S, S) normalized crop.
+    - translations: U = (U_x, U_y, U_z) relative to the crop bbox, U_z in `depth_mode`.
+    - rotations: allocentric rotation R_relᵀ·R (3x3, or a quaternion), as SPEEDDataset.
+    - bboxes: the crop bbox [x1, y1, x2, y2] (after jitter), needed to undo U.
+    - K, img_wh, obj_idx, diameter: per-sample camera and object, for the inverse transforms.
+    - R_m2c, t_m2c: the original BOP pose (egocentric, t in mm), and obj_id, scene_id, im_id,
+      gt_id, row: to trace a sample back to its files.
+    """
+
+    def __init__(
+        self,
+        dataset: str = "lmo",
+        split: str = "train",
+        img_size: int = 384,
+        rotation_format: str = "matrix",
+        depth_mode: str = "site",
+        bbox_source: str = "visib",
+        augment: bool | None = None,
+        bbox_jitter_percent: float = 10.0,
+        bbox_jitter_prob: float = 0.5,
+        pixel_aug: str = "standard",
+        crop_context: bool = False,
+        no_rotation_compensation: bool = False,
+        index: dict | None = None,
+        bop_root: str | None = None,
+        cache_dir: str | None = None,
+    ):
+        """
+        Args:
+            dataset, split: Index to use (see SPLITS), unless `index` is given.
+            img_size: Side of the square crop (the model input size).
+            rotation_format: "matrix" or "quaternion".
+            depth_mode: "site" (BOP default) or "legacy"; see src/utils.py.
+            bbox_source: "visib" (bbox_visib, what a detector sees) or "obj" (bbox_obj).
+            augment: Bbox jitter + pixel augmentations; default True for split "train" only.
+            bbox_jitter_percent, bbox_jitter_prob: As SPEED's --bbox_crop_percent, applied with
+                this probability (SPEED: 0.5).
+            pixel_aug: "none", "standard" or "domain_gap" (used only when augmenting).
+                "domain_gap" (SPEED+ lighting) makes many LM crops unrecognizable: ablate in M3.
+            crop_context: Fill the square around the bbox with image instead of black.
+            no_rotation_compensation: Regress the egocentric rotation instead.
+            index: A prebuilt index (dict of arrays), e.g. for tests.
+            bop_root, cache_dir: Passed to load_index.
+        """
+        if rotation_format not in ("matrix", "quaternion"):
+            raise ValueError(
+                f"rotation_format must be matrix or quaternion, got {rotation_format!r}"
+            )
+        if depth_mode not in DEPTH_MODES:
+            raise ValueError(f"depth_mode must be one of {DEPTH_MODES}, got {depth_mode!r}")
+        if bbox_source not in ("visib", "obj"):
+            raise ValueError(f"bbox_source must be visib or obj, got {bbox_source!r}")
+        self.index = (
+            index if index is not None else load_index(dataset, split, bop_root, cache_dir)
+        )
+        self.img_size = img_size
+        self.rotation_format = rotation_format
+        self.depth_mode = depth_mode
+        self.bbox_key = f"bbox_{bbox_source}"
+        self.augment = (split == "train") if augment is None else augment
+        self.bbox_jitter = bbox_jitter_percent / 100.0
+        self.bbox_jitter_prob = bbox_jitter_prob
+        self.crop_context = crop_context
+        self.no_rotation_compensation = no_rotation_compensation
+        self.transform = pixel_transform(pixel_aug if self.augment else "none")
+
+    def __len__(self) -> int:
+        return len(self.index["source"])
+
+    def load_image(self, row: int) -> np.ndarray:
+        """RGB uint8 image of a row."""
+        path = image_path(self.index, row)
+        image = cv2.imread(path, cv2.IMREAD_COLOR)
+        if image is None:
+            raise FileNotFoundError(f"Could not load image: {path}")
+        return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+    def crop_bbox(self, row: int) -> list[float]:
+        """The [x1, y1, x2, y2] bbox the crop and labels use, jittered when augmenting."""
+        x, y, w, h = (float(v) for v in self.index[self.bbox_key][row])
+        bbox = [x, y, x + w, y + h]
+        if self.augment and self.bbox_jitter > 0 and np.random.random() < self.bbox_jitter_prob:
+            width, height = (int(v) for v in self.index["img_wh"][row])
+            bbox = [
+                float(v) for v in random_bbox_augmentation(bbox, width, height, self.bbox_jitter)
+            ]
+        return bbox
+
+    def labels(self, row: int, bbox) -> tuple[torch.Tensor, torch.Tensor]:
+        """(U, rotation) for a row and crop bbox, computed in float64."""
+        R = torch.from_numpy(self.index["R"][row]).unsqueeze(0)
+        t = torch.from_numpy(self.index["t"][row]).unsqueeze(0)
+        K = torch.from_numpy(self.index["K"][row])
+        U = translation_to_bbox_relative_translation(
+            t,
+            torch.tensor([bbox], dtype=torch.float64),
+            Camera,
+            K=K,
+            img_wh=tuple(int(v) for v in self.index["img_wh"][row]),
+            depth_mode=self.depth_mode,
+            diameter=float(self.index["diameters"][self.index["obj_idx"][row]]),
+        )
+        q = get_apparent_orientation(
+            t,
+            rotation_matrix_to_quaternion(R),
+            no_rotation_compensation=self.no_rotation_compensation,
+        )
+        rotation = quaternion_to_rotation_matrix(q) if self.rotation_format == "matrix" else q
+        return U.squeeze(0), rotation.squeeze(0)
+
+    def __getitem__(self, row: int) -> dict:
+        index = self.index
+        bbox = self.crop_bbox(row)
+        crop = crop_image(self.load_image(row), bbox, self.img_size, self.crop_context)
+        image = self.transform(image=crop.astype(np.float32) / 255.0)["image"]
+        U, rotation = self.labels(row, bbox)
+        obj_idx = int(index["obj_idx"][row])
+        return {
+            "images": image,
+            "translations": U.float(),
+            "rotations": rotation.float(),
+            "bboxes": torch.tensor(bbox, dtype=torch.float32),
+            "K": torch.from_numpy(index["K"][row]).float(),
+            "img_wh": torch.from_numpy(index["img_wh"][row]).float(),
+            "obj_idx": obj_idx,
+            "diameter": torch.tensor(index["diameters"][obj_idx], dtype=torch.float32),
+            "R_m2c": torch.from_numpy(index["R"][row]).float(),
+            "t_m2c": torch.from_numpy(index["t"][row]).float(),
+            "obj_id": int(index["obj_id"][row]),
+            "scene_id": int(index["scene_id"][row]),
+            "im_id": int(index["im_id"][row]),
+            "gt_id": int(index["gt_id"][row]),
+            "row": row,
+        }
 
 
 if __name__ == "__main__":

@@ -435,7 +435,7 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
   - Batch 8 (the SPEED default) wastes the A100: about 2.6× slower per sample than batch 32. The fixed per-step cost (Muon's orthogonalisation) dominates at small batch. Use batch 32 for BOP and check the LR scaling (§6.7).
   - Implications:
     - A full pass over the 321k training crops takes ~21 min. The 310-epoch warm-restart schedule with 25k-sample virtual epochs (7.75M samples) takes ~8.5 h on one A100, so it fits in one 12 h job.
-    - For multi-GPU (M6): 2 GPUs need ~515 samples/s, which is about what 16 CPUs give with margin to spare only at 16+ workers. So request 32 CPUs for 2 GPUs, or the loader becomes the limit.
+    - For multi-GPU (M6): 2 GPUs need ~515 samples/s. 16 CPUs give 730/s, only 1.4× that, so request about 16 CPUs per GPU (32 for 2 GPUs) to keep the loader from becoming the limit.
 - [ ] (Optional) exact roll augmentation, off by default, tested by checking projected points stay inside the warped mask.
 - **Exit:** all tests pass and the overlays look right.
 

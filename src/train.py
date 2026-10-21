@@ -43,6 +43,7 @@ from src.losses import (
     TranslationMSELoss,
     TranslationMAELoss,
     TranslationFrobeniusLoss,
+    DecoupledTranslationLoss,
     RelativeTranslationLoss,
     RelativeTranslationFrobeniusLoss,
     TranslationRelativeMSELoss,
@@ -155,6 +156,8 @@ def train(args: argparse.Namespace, log_file: str, bbox_json_path: str) -> None:
             translation_criterion = TranslationNuclearLoss()
         case "relative_translation":
             translation_criterion = RelativeTranslationLoss()
+        case "decoupled":
+            translation_criterion = DecoupledTranslationLoss(args.decoupled_lambda)
         case _:
             raise ValueError(f"Invalid translation loss: {args.translation_loss}")
 
@@ -948,9 +951,16 @@ if __name__ == "__main__":
             "lp_norm_inf",
             "nuclear",
             "relative_translation",
+            "decoupled",
         ],
         default="mse",
         help="Loss function for translation",
+    )
+    parser.add_argument(
+        "--decoupled_lambda",
+        type=float,
+        default=1.0,
+        help="Weight of the U_z term in --translation_loss decoupled",
     )
     parser.add_argument(
         "--rotation_format",

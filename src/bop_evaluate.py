@@ -24,7 +24,7 @@ from src.bop_dataset import (
     select_rows,
 )
 from src.engine import CoordinateTransformer, forward_model
-from src.models import FastPoseViT
+from src.models import VIT_MODELS, FastPoseViT
 from src.utils import process_rotation, quaternion_to_rotation_matrix
 
 # BOP19 error thresholds: MSSD in fractions of the diameter, MSPD in pixels at 640 px width
@@ -46,7 +46,9 @@ def build_model(args: argparse.Namespace, device: torch.device) -> FastPoseViT:
         no_mlp=True,
         num_objects=len(LMO_OBJ_IDS),
     )
-    model.load_state_dict(torch.load(args.model_weights, map_location="cpu", weights_only=True))
+    # model.pth is a state dict; last.pt (train.py checkpoint) holds it under "model"
+    state = torch.load(args.model_weights, map_location="cpu", weights_only=False)
+    model.load_state_dict(state["model"] if "model" in state else state)
     return model.to(device).eval()
 
 
@@ -164,7 +166,11 @@ def main() -> None:
         rows = rows_for_objects(index, [args.obj_id])
         sub = select_rows(index, rows)
         dataset = BOPDataset(
-            index=sub, augment=False, bbox_source="visib", depth_mode=args.depth_mode
+            index=sub,
+            augment=False,
+            bbox_source="visib",
+            depth_mode=args.depth_mode,
+            img_size=VIT_MODELS[args.vit_model][3][0],
         )
         pred = predict(model, dataset, args, device)
         errs = instance_errors(sub, pred, args.obj_id, bop_root)

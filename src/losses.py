@@ -78,6 +78,37 @@ class RelativeTranslationLoss(nn.Module):
         return relative_errors.mean()
 
 
+class DecoupledTranslationLoss(nn.Module):
+    """
+    Decoupled translation loss on U = (U_x, U_y, U_z): L1(U_x, U_y) + lambda_z * L1(U_z)
+
+    The relative translation loss is dominated by U_z (about 1 with the "site" depth), because
+    U_x and U_y are small fractions of the box size. Here the in-plane and depth errors are
+    weighted separately.
+    """
+
+    def __init__(self, lambda_z: float = 1.0) -> None:
+        super().__init__()
+        self.lambda_z = lambda_z
+
+    def forward(
+        self, pred: torch.Tensor, target: torch.Tensor, bbox: torch.Tensor = None
+    ) -> torch.Tensor:
+        """
+        Compute the decoupled translation loss
+
+        Args:
+            pred (torch.Tensor): Predicted U (B, 3)
+            target (torch.Tensor): Ground truth U (B, 3)
+            bbox (torch.Tensor): Bounding box tensor (unused)
+
+        Returns:
+            torch.Tensor: Mean over the batch of |dU_x| + |dU_y| + lambda_z * |dU_z|
+        """
+        diff = (pred - target).abs()
+        return (diff[:, :2].sum(dim=1) + self.lambda_z * diff[:, 2]).mean()
+
+
 class TranslationFrobeniusLoss(nn.Module):
     """
     Frobenius norm loss for translation vectors (equivalent to L2 norm for vectors)

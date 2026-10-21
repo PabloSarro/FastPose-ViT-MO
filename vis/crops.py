@@ -139,4 +139,5 @@ if __name__ == "__main__":
     for split in [args.split] if args.split else ["train", "test"]:
         augment = None if not args.no_augment else False
         fig = grid(split, args.per_object, args.size, args.seed, augment)
-        save(fig, f"03_crops_{split}.png", args.out_dir)
+        suffix = "" if args.per_object == 4 else f"_{8 * args.per_object}"
+        save(fig, f"03_crops_{split}{suffix}.png", args.out_dir)

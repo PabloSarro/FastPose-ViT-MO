@@ -483,7 +483,21 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
   - File name `fastposevitmo_lmo-test.csv` (no `_` inside the method name).
   - Columns `scene_id,im_id,obj_id,score,R,t,time`; R row-major, **t in mm**.
 - [ ] Run `eval_bop19_pose.py` and report AR_VSD, AR_MSSD, AR_MSPD and AR.
-- **Exit:** official LM-O AR with oracle boxes, with in-loop MSSD/MSPD within ±0.01 of the official values.
+- [ ] **Multi-GPU training (DDP)**, added 2026-10-21 at the user's request (the supervisor runs multi-GPU jobs). Placed here because from M6 on the whole pipeline exists (train → predict → official AR), so 1 vs N GPUs can be compared on the final metric.
+  - Today `src/train.py` is single-GPU: one `cuda` device, no `torch.distributed`, and `SingleDeviceMuonWithAuxAdam`. A job started with `GPUS=2` leaves the second GPU idle.
+  - Implement:
+    - Launch with `torchrun --nproc_per_node=$GPUS` inside `rcp/train.sh`; the user says how many GPUs a run gets (`GPUS=N bash rcp/train.sh ...`, with `CPUS`/`MEMORY` scaled accordingly).
+    - `DistributedDataParallel`, a `DistributedSampler` (with `set_epoch`) for train, validation on rank 0 or sharded + all-reduced.
+    - Logging, TensorBoard, `model.pth` and `last.pt` on rank 0 only; resume loads on every rank; per-rank RNG states.
+    - Muon's distributed variant (`MuonWithAuxAdam`) instead of `SingleDeviceMuonWithAuxAdam`.
+    - Effective batch = per-GPU batch × N: check the linear LR auto-scaling (§6.7) still fits.
+    - `torch.compile` and AMP under DDP.
+  - Tests and checks:
+    - With N = 1 the results stay identical to the single-GPU code (SPEED golden and a short smoke run).
+    - A 2-GPU unit test on CPU (gloo backend) checking that ranks see disjoint data and end with identical weights.
+  - Measure (one short run per setting, same total batch): images/s and GPU utilisation for 1, 2 and 4 GPUs, and the AR of 1 vs 2 GPUs at equal epochs. Keep multi-GPU as an option only if the speed-up is real (≥ 1.6× on 2 GPUs); if the M2 throughput bullet showed the run is limited by data loading from the NAS, fix that first (local copy of the PBR images), since more GPUs would just wait together.
+  - Estimated effort: about 1 day.
+- **Exit:** official LM-O AR with oracle boxes, with in-loop MSSD/MSPD within ±0.01 of the official values. Multi-GPU: N = 1 identical to before, and a measured 1 vs N speed-up table in §9.
 
 ### M7 — Real detections (W9–11)
 - [ ] Download the BOP default detections for seen objects: [`bop23_default_detections_for_task1.zip`](https://bop.felk.cvut.cz/media/data/bop_datasets_extra/bop23_default_detections_for_task1.zip) (GDRNPPDet).
@@ -512,7 +526,7 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
   - Latency.
 - [ ] README "BOP" section, `scripts/bop_*.sh`, merge `multi-object` into `main`.
 
-**GPU budget (A100, one job at a time):** about 50–65 GPU-h for the core path, 85–100 with stretch goals. Long runs are chained with resume across 12 h jobs.
+**GPU budget (A100, one job at a time):** about 50–65 GPU-h for the core path, 85–100 with stretch goals. Long runs are chained with resume across 12 h jobs. Multi-GPU (DDP) is planned in M6; before that every training run uses 1 GPU.
 
 ---
 

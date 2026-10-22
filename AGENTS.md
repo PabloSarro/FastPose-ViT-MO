@@ -54,6 +54,8 @@ Exit codes: 0 ok · 1 job failed · 2 no such job · 3 still waiting · 4 runai 
 **Conventions:**
 - Code work on branch `multi-object`. After each §7 bullet: commit with a 2–4 word Title Case message (e.g. `BOP Access Verified`), no `Co-Authored-By: Claude` trailer (author is PabloSarro only), and `git push origin multi-object` (fork `PabloSarro/FastPose-ViT-MO`; never push to `upstream`).
 - Job names prefixed by dataset/milestone, e.g. `lmo-m3-b1-001`.
+- Experiments (user, 2026-10-22): treat training GPUs as effectively unlimited. Don't pick one config by assumption: when a choice is open, launch one train job per candidate config in parallel (same budget as the baseline, e.g. 384 px / 150 epochs), include repeats of the baseline to measure run-to-run noise, and decide from the results. Precedent: M3 ablations (`scripts/m3_ablations.sh`, one variant per job).
+- New work found along the way (a prerequisite, a fix, an extra check): add it as a new bullet in `TASKS.md` §7 under the right milestone (with a date) instead of doing it silently or skipping it.
 - RCP quirks (2026-10-20):
   - A new job normally appears in `runai list` within ~10 s. Once the cluster delayed new jobs by ~9 min, and `wait.sh` returned 2 in the meantime, so re-check for a few minutes before concluding a job failed. `$RUN_DIR/log.txt` ("exit code" line) is the reliable signal.
   - Put job logic in script files, not inline multi-line `python -c`, because runai strips the inner quotes.

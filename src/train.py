@@ -18,7 +18,14 @@ from torch.amp import GradScaler
 from src.optimizer import SingleDeviceMuonWithAuxAdam
 import torch._inductor.config
 from src.datasets import SPEEDDataset, get_dataset_config
-from src.bop_dataset import LMO_OBJ_IDS, BOPDataset, load_index, rows_for_objects, select_rows
+from src.bop_dataset import (
+    LMO_OBJ_IDS,
+    BOPDataset,
+    ObjectBalancedSampler,
+    load_index,
+    rows_for_objects,
+    select_rows,
+)
 from src.engine import train_epoch, val_epoch, TrainingConfig, ValidationConfig
 from src.losses import (
     QuaternionGeodesicLoss,
@@ -396,10 +403,21 @@ def train(args: argparse.Namespace, log_file: str, bbox_json_path: str) -> None:
     # Increase prefetch factor for better pipeline efficiency
     optimal_prefetch = min(4, max(2, args.num_workers))
 
+    # BOP with --bop_epoch_samples: virtual epochs with the same number of samples per object
+    train_sampler = None
+    if is_bop(args) and args.bop_epoch_samples and not args.bop_overfit:
+        train_sampler = ObjectBalancedSampler(
+            train_dataset.index["obj_idx"], args.bop_epoch_samples, seed=args.bop_sampler_seed
+        )
+        logger.info(
+            f"Object-balanced virtual epochs: {train_sampler.per_object} samples x "
+            f"{len(train_sampler.groups)} objects = {len(train_sampler)} per epoch"
+        )
     train_loader = DataLoader(
         train_dataset,
         batch_size=args.batch_size,
-        shuffle=True,
+        shuffle=train_sampler is None,
+        sampler=train_sampler,
         num_workers=args.num_workers,
         pin_memory=device.type == "cuda",  # Only pin memory when using GPU
         persistent_workers=use_persistent_workers,
@@ -705,6 +723,8 @@ def train(args: argparse.Namespace, log_file: str, bbox_json_path: str) -> None:
 
     # Training loop
     for epoch in range(start_epoch, args.epochs):
+        if train_sampler is not None:
+            train_sampler.set_epoch(epoch)
         # Train and validate
         # Create training configuration
         train_config = TrainingConfig(
@@ -1184,6 +1204,19 @@ if __name__ == "__main__":
         help="BOP sanity check: train on this many fixed instances, no augmentation, val on the same",
     )
     parser.add_argument("--bop_overfit_seed", type=int, default=0)
+    parser.add_argument(
+        "--bop_epoch_samples",
+        type=int,
+        default=0,
+        help="BOP: virtual epochs of this many samples, the same number per object "
+        "(default 0: one shuffled pass over all training rows)",
+    )
+    parser.add_argument(
+        "--bop_sampler_seed",
+        type=int,
+        default=0,
+        help="Seed of the --bop_epoch_samples order (the order depends only on seed and epoch)",
+    )
 
     args = parser.parse_args()
     if args.depth_mode is None:

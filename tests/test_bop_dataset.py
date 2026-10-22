@@ -421,3 +421,36 @@ def test_select_rows_keeps_tables(test_index):
     np.testing.assert_array_equal(sub["R"], test_index["R"][rows])
     ds = BOPDataset(index=sub, img_size=32)
     assert ds[0]["obj_id"] in (8, 10) and ds[0]["obj_idx"] in (3, 5)  # heads keep LM-O positions
+
+
+# --- Object-balanced virtual epochs (train.py --bop_epoch_samples) ------------------------------
+
+from src.bop_dataset import ObjectBalancedSampler  # noqa: E402
+
+
+def test_balanced_sampler_counts_and_coverage():
+    obj_idx = np.repeat([0, 3, 5], [10, 25, 7])  # unbalanced pools
+    s = ObjectBalancedSampler(obj_idx, samples_per_epoch=31, seed=0)
+    assert len(s) == 30
+    counts = np.zeros(len(obj_idx), dtype=int)
+    for epoch in range(7):  # 70 draws per object: several passes over the small pools
+        s.set_epoch(epoch)
+        idx = np.array(list(s))
+        assert len(idx) == 30
+        assert np.bincount(obj_idx[idx], minlength=6)[[0, 3, 5]].tolist() == [10, 10, 10]
+        np.add.at(counts, idx, 1)
+        for o in (0, 3, 5):  # no row drawn twice before all rows of its object were drawn
+            c = counts[obj_idx == o]
+            assert c.max() - c.min() <= 1
+
+def test_balanced_sampler_depends_only_on_seed_and_epoch():
+    obj_idx = np.repeat([0, 1], [50, 60])
+    a, b = ObjectBalancedSampler(obj_idx, 40), ObjectBalancedSampler(obj_idx, 40)
+    a.set_epoch(0)
+    list(a)
+    a.set_epoch(3)
+    b.set_epoch(3)  # a "resumed" sampler jumps straight to epoch 3
+    assert list(a) == list(b)
+    c = ObjectBalancedSampler(obj_idx, 40, seed=1)
+    c.set_epoch(3)
+    assert list(c) != list(b)

@@ -17,7 +17,7 @@ import cv2
 import numpy as np
 import torch
 from albumentations.pytorch import ToTensorV2
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, Sampler
 
 from src.camera import Camera
 from src.datasets import random_bbox_augmentation
@@ -92,6 +92,48 @@ def select_rows(index: dict, rows) -> dict:
 def rows_for_objects(index: dict, obj_ids) -> np.ndarray:
     """Rows of the given BOP object ids."""
     return np.flatnonzero(np.isin(index["obj_id"], np.asarray(obj_ids)))
+
+
+class ObjectBalancedSampler(Sampler):
+    """Virtual epochs with the same number of samples of every object.
+
+    Each epoch draws samples_per_epoch // n_objects instances of every object, then shuffles them
+    all. Every object walks through its own random permutations, so an instance comes back only
+    after all instances of its object were seen. The order depends only on (seed, epoch): call
+    set_epoch before each epoch, and a resumed run continues with the same samples.
+    """
+
+    def __init__(self, obj_idx, samples_per_epoch: int, seed: int = 0):
+        obj_idx = np.asarray(obj_idx)
+        self.groups = [np.flatnonzero(obj_idx == o) for o in np.unique(obj_idx)]
+        self.per_object = samples_per_epoch // len(self.groups)
+        if self.per_object < 1:
+            raise ValueError(f"samples_per_epoch {samples_per_epoch} < {len(self.groups)} objects")
+        self.seed = seed
+        self.epoch = 0
+
+    def set_epoch(self, epoch: int) -> None:
+        self.epoch = epoch
+
+    def __len__(self) -> int:
+        return self.per_object * len(self.groups)
+
+    def _draw(self, g: int, rows: np.ndarray) -> np.ndarray:
+        """This epoch's slice of object g's endless sequence of permutations."""
+        n, pos, parts = len(rows), self.epoch * self.per_object, []
+        end = pos + self.per_object
+        while pos < end:
+            p, off = divmod(pos, n)
+            take = min(n - off, end - pos)
+            perm = np.random.default_rng((self.seed, 1 + g, p)).permutation(n)
+            parts.append(rows[perm[off : off + take]])
+            pos += take
+        return np.concatenate(parts)
+
+    def __iter__(self):
+        idx = np.concatenate([self._draw(g, rows) for g, rows in enumerate(self.groups)])
+        np.random.default_rng((self.seed, 0, self.epoch)).shuffle(idx)
+        return iter(idx.tolist())
 
 
 def default_bop_root() -> str:

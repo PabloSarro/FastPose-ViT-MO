@@ -11,7 +11,7 @@ import os
 
 import numpy as np
 import torch
-from bop_toolkit_lib import inout, pose_error
+from bop_toolkit_lib import inout, misc, pose_error
 from torch.amp import autocast
 from torch.utils.data import DataLoader
 
@@ -93,23 +93,32 @@ def rotation_error_deg(R_est: np.ndarray, R_gt: np.ndarray) -> float:
 
 
 def instance_errors(index: dict, pred: dict, obj_id: int, bop_root: str) -> dict:
-    """Per-instance errors of one object (no symmetries: the driller and can are asymmetric)."""
+    """Per-instance errors of one object.
+
+    For a symmetric object (LM-O eggbox 10, glue 11), "add" is ADD-S, "rot_deg" is the smallest
+    angle to any symmetric GT pose, and MSSD/MSPD use the BOP19 symmetry set (models_info.json,
+    continuous symmetries discretised at 1 % of the diameter). "trans_mm" is always plain.
+    """
     obj_idx = int(np.flatnonzero(index["obj_ids"] == obj_id)[0])
     diameter = float(index["diameters"][obj_idx])
-    if index["symmetric"][obj_idx]:
-        raise NotImplementedError("symmetric objects need the symmetry table (M7)")
     models_dir = os.path.join(bop_root, "lmo", "models_eval")
     pts = inout.load_ply(os.path.join(models_dir, f"obj_{obj_id:06d}.ply"))["pts"]
-    syms = [{"R": np.eye(3), "t": np.zeros((3, 1))}]
+    symmetric = bool(index["symmetric"][obj_idx])
+    if symmetric:
+        info = inout.load_json(os.path.join(models_dir, "models_info.json"), keys_to_int=True)
+        syms = misc.get_symmetry_transformations(info[obj_id], max_sym_disc_step=0.01)
+    else:
+        syms = [{"R": np.eye(3), "t": np.zeros((3, 1))}]
 
     errs = {k: [] for k in ("rot_deg", "trans_mm", "add", "mssd", "mspd")}
     for i in range(len(pred["R"])):
         R_est, t_est = pred["R"][i].astype(np.float64), pred["t"][i].astype(np.float64)[:, None]
         R_gt, t_gt = index["R"][i].astype(np.float64), index["t"][i].astype(np.float64)[:, None]
         K = index["K"][i].astype(np.float64)
-        errs["rot_deg"].append(rotation_error_deg(R_est, R_gt))
+        errs["rot_deg"].append(min(rotation_error_deg(R_est, R_gt @ sym["R"]) for sym in syms))
         errs["trans_mm"].append(float(np.linalg.norm(t_est - t_gt)))
-        errs["add"].append(pose_error.add(R_est, t_est, R_gt, t_gt, pts))
+        add = pose_error.adi if symmetric else pose_error.add
+        errs["add"].append(add(R_est, t_est, R_gt, t_gt, pts))
         errs["mssd"].append(pose_error.mssd(R_est, t_est, R_gt, t_gt, pts, syms))
         errs["mspd"].append(pose_error.mspd(R_est, t_est, R_gt, t_gt, K, pts, syms))
     errs = {k: np.array(v) for k, v in errs.items()}

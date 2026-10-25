@@ -1,8 +1,9 @@
 # This file evaluates a trained FastPoseViT on a BOP split with ground-truth boxes: per-instance
 # rotation (deg), translation (mm), ADD, MSSD and MSPD errors, plus a BOP19-style results CSV.
 #
-# The metrics are computed per instance with bop_toolkit_lib.pose_error. They are not the BOP19
-# AR (which needs all objects of the dataset in the results file); see scripts/bop_eval.sh.
+# The metrics are computed per instance with bop_toolkit_lib.pose_error, per object, and gathered
+# in a per-object table (table_<split>.md). They are not the BOP19 AR, which needs VSD and the
+# renderer: run scripts/bop_eval.sh on the CSV, which holds every evaluated object.
 
 import argparse
 import json
@@ -150,12 +151,94 @@ def summarize(errs: dict) -> dict:
     }
 
 
+# LM-O objects evaluated with symmetries (ADD-S): eggbox and glue (models_info.json)
+LMO_SYMMETRIC_IDS = (10, 11)
+
+# Per-object table: (summary key, column title, format)
+TABLE_COLUMNS = (
+    ("n", "n", "{:d}"),
+    ("ADD@0.1d", "ADD(-S)@0.1d", "{:.3f}"),
+    ("ADD@0.05d", "ADD(-S)@0.05d", "{:.3f}"),
+    ("recall_MSSD", "MSSD recall", "{:.3f}"),
+    ("recall_MSPD", "MSPD recall", "{:.3f}"),
+    ("trans_mm_mean", "trans mean (mm)", "{:.1f}"),
+    ("trans_mm_median", "trans median (mm)", "{:.1f}"),
+    ("rot_deg_mean", "rot mean (°)", "{:.2f}"),
+    ("rot_lt_5deg", "rot < 5°", "{:.3f}"),
+)
+
+
+def per_object_table(per_obj: dict, symmetric_ids=()) -> tuple[str, dict]:
+    """Markdown table of per-object summaries, plus the mean over objects and over instances.
+
+    The mean over objects is the LM literature's average; the mean over instances weights each
+    object by its number of instances (as BOP19 recalls do). Returns (markdown, the two means).
+    """
+    keys = [k for k, _, _ in TABLE_COLUMNS if k != "n"]
+    n = np.array([per_obj[o]["n"] for o in per_obj], dtype=np.float64)
+    means = {
+        "mean over objects": {k: float(np.mean([per_obj[o][k] for o in per_obj])) for k in keys},
+        "mean over instances": {
+            k: float(np.average([per_obj[o][k] for o in per_obj], weights=n)) for k in keys
+        },
+    }
+    for m in means.values():
+        m["n"] = int(n.sum())
+    lines = [
+        "| object | " + " | ".join(t for _, t, _ in TABLE_COLUMNS) + " |",
+        "|---" * (len(TABLE_COLUMNS) + 1) + "|",
+    ]
+    rows = [(f"{o}{' (sym.)' if int(o) in symmetric_ids else ''}", per_obj[o]) for o in per_obj]
+    rows += [(f"**{name}**", m) for name, m in means.items()]
+    for name, d in rows:
+        lines.append(
+            f"| {name} | " + " | ".join(f.format(d[k]) for k, _, f in TABLE_COLUMNS) + " |"
+        )
+    return "\n".join(lines) + "\n", means
+
+
+def write_tables(out_dir: str, splits) -> dict:
+    """table_<split>.md and summary.json from the per-object obj_<id>/summary.json files."""
+    obj_dirs = sorted(
+        (d for d in os.listdir(out_dir) if d.startswith("obj_")), key=lambda d: int(d[4:])
+    )
+    per_obj = {}
+    for d in obj_dirs:
+        with open(os.path.join(out_dir, d, "summary.json")) as f:
+            per_obj[d[4:]] = json.load(f)
+    summary = {}
+    for split in splits:
+        objs = {o: v[split] for o, v in per_obj.items() if split in v}
+        sym = set(LMO_SYMMETRIC_IDS)
+        table, means = per_object_table(objs, sym)
+        with open(os.path.join(out_dir, f"table_{split}.md"), "w") as f:
+            f.write(f"{split}, GT boxes; ADD-S for symmetric objects\n\n{table}")
+        logging.info(f"{split}:\n{table}")
+        summary[split] = {**objs, **means}
+    summary["note"] = VSD_SKIPPED
+    with open(os.path.join(out_dir, "summary.json"), "w") as f:
+        json.dump(summary, f, indent=2)
+    return summary
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate FastPoseViT on BOP (GT boxes)")
-    parser.add_argument("--model_weights", required=True)
+    parser.add_argument("--model_weights", help="model.pth or last.pt (not with --table_only)")
     parser.add_argument("--out_dir", required=True)
     parser.add_argument("--splits", nargs="+", default=["val_real", "test"])
-    parser.add_argument("--obj_id", type=int, required=True)
+    parser.add_argument(
+        "--obj_ids",
+        "--obj_id",
+        type=int,
+        nargs="+",
+        default=list(LMO_OBJ_IDS),
+        help="BOP object ids (default: all LM-O objects); results in OUT_DIR/obj_<id>/",
+    )
+    parser.add_argument(
+        "--table_only",
+        action="store_true",
+        help="Only rebuild table_<split>.md and summary.json from existing OUT_DIR/obj_<id>/",
+    )
     parser.add_argument("--vit_model", default="vit_b_16_384")
     parser.add_argument("--depth_mode", default="site")
     parser.add_argument("--batch_size", type=int, default=32)
@@ -163,56 +246,70 @@ def main() -> None:
     parser.add_argument("--method", default="fpvit", help="BOP method name (no '_')")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+    if args.table_only:
+        write_tables(args.out_dir, args.splits)
+        return
+    if not args.model_weights:
+        parser.error("--model_weights is required (unless --table_only)")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = build_model(args, device)
     bop_root = default_bop_root()
     os.makedirs(args.out_dir, exist_ok=True)
 
-    summary = {}
+    per_obj = {o: {} for o in args.obj_ids}
     for split in args.splits:
         index = load_index("lmo", split)
-        rows = rows_for_objects(index, [args.obj_id])
-        sub = select_rows(index, rows)
+        # One pass over all requested objects, then the errors object by object
+        all_rows = rows_for_objects(index, args.obj_ids)
+        split_index = select_rows(index, all_rows)
         dataset = BOPDataset(
-            index=sub,
+            index=split_index,
             augment=False,
             bbox_source="visib",
             depth_mode=args.depth_mode,
             img_size=VIT_MODELS[args.vit_model][3][0],
         )
-        pred = predict(model, dataset, args, device)
-        errs = instance_errors(sub, pred, args.obj_id, bop_root)
-        summary[split] = summarize(errs)
-        logging.info(f"{split}: {json.dumps(summary[split])}")
+        pred_all = predict(model, dataset, args, device)
+        results = []
+        for obj_id in args.obj_ids:
+            rows = rows_for_objects(split_index, [obj_id])
+            sub = select_rows(split_index, rows)
+            pred = {k: v[rows] for k, v in pred_all.items()}
+            errs = instance_errors(sub, pred, obj_id, bop_root)
+            per_obj[obj_id][split] = summarize(errs)
 
-        np.savez(
-            os.path.join(args.out_dir, f"errors_{split}.npz"),
-            scene_id=sub["scene_id"],
-            im_id=sub["im_id"],
-            gt_id=sub["gt_id"],
-            R_est=pred["R"],
-            t_est=pred["t"],
-            **{k: v for k, v in errs.items() if k not in ("diameter", "img_w")},
-        )
-        results = [
-            {
-                "scene_id": int(sub["scene_id"][i]),
-                "im_id": int(sub["im_id"][i]),
-                "obj_id": args.obj_id,
-                "score": 1.0,
-                "R": pred["R"][i],
-                "t": pred["t"][i],
-            }
-            for i in range(len(rows))
-        ]
+            obj_dir = os.path.join(args.out_dir, f"obj_{obj_id}")
+            os.makedirs(obj_dir, exist_ok=True)
+            np.savez(
+                os.path.join(obj_dir, f"errors_{split}.npz"),
+                scene_id=sub["scene_id"],
+                im_id=sub["im_id"],
+                gt_id=sub["gt_id"],
+                R_est=pred["R"],
+                t_est=pred["t"],
+                **{k: v for k, v in errs.items() if k not in ("diameter", "img_w")},
+            )
+            results += [
+                {
+                    "scene_id": int(sub["scene_id"][i]),
+                    "im_id": int(sub["im_id"][i]),
+                    "obj_id": obj_id,
+                    "score": 1.0,
+                    "R": pred["R"][i],
+                    "t": pred["t"][i],
+                }
+                for i in range(len(rows))
+            ]
+        # One BOP results file per split with every evaluated object (scripts/bop_eval.sh)
         inout.save_bop_results(
             os.path.join(args.out_dir, f"{args.method}_lmo-{split}.csv"), results
         )
 
-    summary["note"] = VSD_SKIPPED
-    with open(os.path.join(args.out_dir, "summary.json"), "w") as f:
-        json.dump(summary, f, indent=2)
+    for obj_id, d in per_obj.items():
+        with open(os.path.join(args.out_dir, f"obj_{obj_id}", "summary.json"), "w") as f:
+            json.dump(d, f, indent=2)
+    write_tables(args.out_dir, args.splits)
 
 
 if __name__ == "__main__":

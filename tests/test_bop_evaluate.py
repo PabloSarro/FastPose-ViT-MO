@@ -54,3 +54,22 @@ def test_asymmetric_object_uses_plain_add():
     errs = instance_errors(sub, {"R": R @ flip, "t": sub["t"]}, 8, BOP_ROOT)
     assert errs["rot_deg"].min() == pytest.approx(180.0, abs=1e-3)
     assert errs["add"].min() > 0.1 * errs["diameter"]
+
+
+def test_symmetric_id_table_matches_models_info():
+    from src.bop_evaluate import LMO_SYMMETRIC_IDS
+
+    index = load_index("lmo", "test")
+    assert tuple(index["obj_ids"][index["symmetric"]].tolist()) == LMO_SYMMETRIC_IDS
+
+
+def test_per_object_table_means():
+    from src.bop_evaluate import TABLE_COLUMNS, per_object_table
+
+    keys = [k for k, _, _ in TABLE_COLUMNS if k != "n"]
+    per_obj = {"8": {"n": 100, **{k: 1.0 for k in keys}}, "10": {"n": 300, **{k: 0.0 for k in keys}}}
+    table, means = per_object_table(per_obj, symmetric_ids={10})
+    assert means["mean over objects"]["ADD@0.1d"] == pytest.approx(0.5)
+    assert means["mean over instances"]["ADD@0.1d"] == pytest.approx(0.25)
+    assert means["mean over objects"]["n"] == 400
+    assert "| 10 (sym.) | 300 |" in table and len(table.strip().splitlines()) == 2 + 2 + 2

@@ -2,8 +2,8 @@
 # M4: one shared model with per-object heads on the 8 LM-O objects, object-balanced virtual epochs.
 # Trains the given variants one after the other, then evaluates last.pt per object on LM real val
 # (LM-O test only at the end of the milestone). Each variant gets $RUN_DIR/<name>/ (train log,
-# last.pt, eval/obj_<id>/). A finished variant has a DONE file and is skipped, so a restarted job
-# continues.
+# last.pt, eval/obj_<id>/, eval/table_val_real.md). A finished variant has a DONE file and is
+# skipped, so a restarted job continues.
 #
 # Usage (from the project root, inside a job), one variant per job:
 #   bash rcp/train.sh lmo-m4-dg-001 bash scripts/m4_multi.sh dg
@@ -26,7 +26,6 @@ declare -A FLAGS=(
     [dg2x]="--bop_pixel_aug domain_gap --bop_epoch_samples $((2 * SPE)) --bop_sampler_seed 0"
     [dg4x]="--bop_pixel_aug domain_gap --bop_epoch_samples $((4 * SPE)) --bop_sampler_seed 0"
 )
-OBJ_IDS=(1 5 6 8 9 10 11 12)
 (( $# )) || { echo "usage: $0 VARIANT... (${!FLAGS[*]})"; exit 5; }
 
 for v in "$@"; do
@@ -44,11 +43,10 @@ for v in "$@"; do
         --bbox_crop_percent 10 --depth_mode site --translation_loss relative_translation \
         --log_dir "$out/" --model_save_path "$out/model.pth" --resume auto ${FLAGS[$v]}
     echo "== $v: eval ($(date '+%F %T'))"
-    for o in "${OBJ_IDS[@]}"; do
-        # last.pt (final epoch = end of a cycle) rather than the best-val model.pth
-        .venv/bin/python src/bop_evaluate.py --model_weights "$out/last.pt" --obj_id "$o" \
-            --splits val_real --vit_model "$VIT" --depth_mode site --out_dir "$out/eval/obj_$o"
-    done
+    # last.pt (final epoch = end of a cycle) rather than the best-val model.pth; all 8 objects,
+    # per-object results in eval/obj_<id>/ and the table in eval/table_val_real.md
+    .venv/bin/python src/bop_evaluate.py --model_weights "$out/last.pt" --splits val_real \
+        --vit_model "$VIT" --depth_mode site --out_dir "$out/eval"
     touch "$out/DONE"
 done
 echo "== all done ($(date '+%F %T'))"

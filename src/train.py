@@ -57,7 +57,7 @@ from src.losses import (
     TranslationLpNormLoss,
     TranslationNuclearLoss,
 )
-from src.models import FastPoseViT, SUPPORTED_VIT_MODELS, VIT_MODELS
+from src.models import OBJECT_CONDITIONINGS, FastPoseViT, SUPPORTED_VIT_MODELS, VIT_MODELS
 import numpy as np
 from styleaug import StyleAugmentor
 
@@ -281,6 +281,7 @@ def train(args: argparse.Namespace, log_file: str, bbox_json_path: str) -> None:
         use_residual=args.use_residual,
         no_mlp=args.no_mlp,
         num_objects=len(LMO_OBJ_IDS) if is_bop(args) else 1,
+        object_conditioning=args.object_conditioning,
     ).to(device)
 
     # Set basic torch inductor optimization flags (always applied for better performance)
@@ -1204,6 +1205,13 @@ if __name__ == "__main__":
         help="BOP sanity check: train on this many fixed instances, no augmentation, val on the same",
     )
     parser.add_argument("--bop_overfit_seed", type=int, default=0)
+    parser.add_argument(
+        "--object_conditioning",
+        type=str,
+        default="heads",
+        choices=OBJECT_CONDITIONINGS,
+        help="BOP multi-object model: per-object heads (a), per-object class token (b) or both",
+    )
     parser.add_argument(
         "--bop_epoch_samples",
         type=int,

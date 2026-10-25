@@ -35,6 +35,10 @@ SUPPORTED_VIT_MODELS = [
     "convnext_base",
 ]
 
+# How a multi-object model knows each sample's object (M4): per-object output heads (option a),
+# a per-object class token with one shared head (option b), or both
+OBJECT_CONDITIONINGS = ("heads", "token", "both")
+
 # Dictionary mapping model names to their corresponding functions, weights, outputs sizes, and image sizes in format (height, width)
 VIT_MODELS = {
     # ViT models
@@ -173,6 +177,7 @@ class FastPoseViT(nn.Module):
         use_residual: bool = True,
         no_mlp: bool = False,
         num_objects: int = 1,
+        object_conditioning: str = "heads",
     ):
         """
         Model initialization
@@ -193,17 +198,28 @@ class FastPoseViT(nn.Module):
             num_objects (int, optional): Number of objects with their own output heads (the last
                 layers output num_objects times more values, see forward). With 1, the model is
                 identical to the single-object one, so existing weights load unchanged. Defaults to 1.
+            object_conditioning (str, optional): How the model knows the sample's object when
+                num_objects > 1 (see OBJECT_CONDITIONINGS): "heads" = one output head per object
+                (option a), "token" = one shared head and a per-object class token (option b),
+                "both" = a + b. Defaults to "heads".
         """
         super().__init__()
 
         if num_objects < 1:
             raise ValueError(f"num_objects must be >= 1, got {num_objects}")
+        if object_conditioning not in OBJECT_CONDITIONINGS:
+            raise ValueError(
+                f"object_conditioning must be one of {OBJECT_CONDITIONINGS}, got {object_conditioning}"
+            )
         self.num_objects = num_objects
+        self.object_heads = num_objects > 1 and object_conditioning in ("heads", "both")
+        self.object_tokens = num_objects > 1 and object_conditioning in ("token", "both")
         self.out_dim_translation = out_dim_translation
         self.out_dim_rotation = out_dim_rotation
-        # One set of outputs per object; the sample's object is selected in forward
-        out_dim_translation *= num_objects
-        out_dim_rotation *= num_objects
+        if self.object_heads:
+            # One set of outputs per object; the sample's object is selected in forward
+            out_dim_translation *= num_objects
+            out_dim_rotation *= num_objects
 
         if vit_model not in VIT_MODELS:
             raise ValueError(
@@ -253,7 +269,16 @@ class FastPoseViT(nn.Module):
             # Remove classification head
             self.backbone.heads = nn.Identity()
 
+            if self.object_tokens:
+                # Per-object class token = shared class token + this object's embedding. The
+                # embeddings start at zero (= the pretrained model) and have the class token's
+                # shape per object, so Muon updates each one like the class token.
+                hidden_dim = self.backbone.class_token.shape[-1]
+                self.object_token = nn.Parameter(torch.zeros(num_objects, 1, hidden_dim))
+
         else:  # ConvNeXt
+            if self.object_tokens:
+                raise ValueError("object tokens need a ViT backbone (no class token in ConvNeXt)")
             if nb_class_tokens > 1:
                 warnings.warn(
                     f"nb_class_tokens={nb_class_tokens} is ignored for ConvNeXt backbone "
@@ -391,20 +416,25 @@ class FastPoseViT(nn.Module):
         Args:
             x (torch.Tensor): Input image tensor
             obj_idx (torch.Tensor, optional): Object index of each sample (B,). Only used with
-                num_objects > 1; without it, the outputs of all objects are returned with an
-                extra object dimension (B, num_objects, D).
+                num_objects > 1. Required with object tokens; with per-object heads only, the
+                outputs of all objects are returned without it, with an extra object dimension
+                (B, num_objects, D).
 
         Returns:
             torch.Tensor: Output tensor
         """
-        if self.backbone_type == "vit":
+        if self.object_tokens:
+            if obj_idx is None:
+                raise ValueError("object tokens need obj_idx")
+            x = self.backbone(x, class_token_offset=self.object_token[obj_idx.to(x.device)])
+        elif self.backbone_type == "vit":
             x = self.backbone(x)
         else:  # ConvNeXt
             x = self.backbone.features(x)  # [batch, channels, H, W]
             x = self.gap(x)  # [batch, channels, 1, 1]
             x = x.flatten(1)  # [batch, channels]
 
-        if self.num_objects == 1:
+        if not self.object_heads:
             if self.merge_outputs:
                 return self.output(x)
             else:

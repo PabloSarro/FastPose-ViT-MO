@@ -25,7 +25,7 @@ from src.bop_dataset import (
     select_rows,
 )
 from src.engine import CoordinateTransformer, forward_model
-from src.models import VIT_MODELS, FastPoseViT
+from src.models import OBJECT_CONDITIONINGS, VIT_MODELS, FastPoseViT
 from src.utils import process_rotation, quaternion_to_rotation_matrix
 
 # BOP19 error thresholds: MSSD in fractions of the diameter, MSPD in pixels at 640 px width
@@ -46,6 +46,7 @@ def build_model(args: argparse.Namespace, device: torch.device) -> FastPoseViT:
         nb_class_tokens=1,
         no_mlp=True,
         num_objects=len(LMO_OBJ_IDS),
+        object_conditioning=args.object_conditioning,
     )
     # model.pth is a state dict; last.pt (train.py checkpoint) holds it under "model"
     state = torch.load(args.model_weights, map_location="cpu", weights_only=False)
@@ -241,6 +242,9 @@ def main() -> None:
     )
     parser.add_argument("--vit_model", default="vit_b_16_384")
     parser.add_argument("--depth_mode", default="site")
+    parser.add_argument(
+        "--object_conditioning", default="heads", choices=OBJECT_CONDITIONINGS, help="as train.py"
+    )
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--num_workers", type=int, default=8)
     parser.add_argument("--method", default="fpvit", help="BOP method name (no '_')")

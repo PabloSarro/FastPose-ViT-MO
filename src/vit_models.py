@@ -474,11 +474,15 @@ class VisionTransformer(nn.Module):
         """
         return self.class_token.expand(batch_size, -1, -1).clone()
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, class_token_offset: torch.Tensor | None = None
+    ) -> torch.Tensor:
         """Perform forward pass through the Vision Transformer.
 
         Args:
             x: Input image tensor of shape (batch, 3, height, width).
+            class_token_offset: Optional per-sample vector added to the class token(s),
+                (batch, 1, hidden_dim), e.g. a per-object embedding (FastPoseViT object tokens).
 
         Returns:
             Classification logits or features from class tokens.
@@ -489,6 +493,8 @@ class VisionTransformer(nn.Module):
 
         # Efficiently get class tokens for this batch size
         batch_class_token = self._get_class_tokens(batch_size)
+        if class_token_offset is not None:
+            batch_class_token = batch_class_token + class_token_offset
         x = torch.cat([batch_class_token, x], dim=1)
 
         x = self.encoder(x)

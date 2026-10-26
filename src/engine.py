@@ -19,6 +19,7 @@ from src.utils import (
     rotation_matrix_to_quaternion,
     get_absolute_orientation,
     rotation_matrix_to_6d,
+    quaternion_to_rotation_matrix,
 )
 from src.losses import SymmetricRotation6DLoss
 from src.metrics import compute_metrics
@@ -51,6 +52,8 @@ class ValidationConfig:
     no_rotation_compensation: bool = False
     use_absolute_translation: bool = False
     depth_mode: str = "legacy"
+    # BOP: src.bop_metrics.BOPPoseMetrics for the symmetric ADD(-S)/MSSD/MSPD recalls, or None
+    pose_metrics: Optional[object] = None
 
 
 # Batch fields beyond SPEED's (images, translations, rotations, bboxes); None when absent
@@ -585,6 +588,8 @@ def val_epoch(
         config.depth_mode,
     )
     progress_tracker = ProgressTracker(config.smooth_window, f"Epoch {epoch + 1} [Val]")
+    if config.pose_metrics is not None:
+        config.pose_metrics.reset()
     total_val_batches = len(val_loader)
     progress_tracker.setup_progress_bar(total_val_batches)
 
@@ -652,6 +657,17 @@ def val_epoch(
             metrics = compute_metrics(
                 abs_pred_translations, abs_translations, abs_pred_rotations, abs_rotations
             )
+            if config.pose_metrics is not None:
+                # Against the original BOP pose (R_m2c, t_m2c in mm), as src/bop_evaluate.py
+                config.pose_metrics.update(
+                    quaternion_to_rotation_matrix(abs_pred_rotations.float()),
+                    abs_pred_translations.float(),
+                    batch["R_m2c"].to(device),
+                    batch["t_m2c"].to(device),
+                    batch["K"].to(device),
+                    obj_idx,
+                    batch["img_wh"][:, 0],
+                )
 
             # Accumulate losses
             val_loss.add_(total_loss.detach())
@@ -686,8 +702,18 @@ def val_epoch(
     for key in val_metrics:
         val_metrics[key] *= inv_total_batches_scalar
 
+    if config.pose_metrics is not None:
+        val_metrics["bop"] = config.pose_metrics.compute()
+
     # Log results
     if writer is not None:
+        if "bop" in val_metrics:
+            bop = val_metrics["bop"]
+            for key in ("AR_MSSD", "AR_MSPD", "score", "ADD@0.1d"):
+                writer.add_scalar(f"BOP/Validation/{key}", bop[key], epoch)
+            for obj_id, (ar_mssd, ar_mspd) in bop["per_object"].items():
+                writer.add_scalar(f"BOP/Validation/AR_MSSD/obj_{obj_id}", ar_mssd, epoch)
+                writer.add_scalar(f"BOP/Validation/AR_MSPD/obj_{obj_id}", ar_mspd, epoch)
         writer.add_scalar("Loss/Validation/Total", val_loss, epoch)
         writer.add_scalar("Loss/Validation/Translation", val_loss_translation, epoch)
         writer.add_scalar("Loss/Validation/Rotation", val_loss_rotation, epoch)

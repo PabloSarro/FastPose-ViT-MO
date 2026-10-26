@@ -60,6 +60,7 @@ from src.losses import (
     TranslationLpNormLoss,
     TranslationNuclearLoss,
 )
+from src.bop_metrics import BOPPoseMetrics
 from src.models import OBJECT_CONDITIONINGS, FastPoseViT, SUPPORTED_VIT_MODELS, VIT_MODELS
 import numpy as np
 from styleaug import StyleAugmentor
@@ -631,8 +632,16 @@ def train(args: argparse.Namespace, log_file: str, bbox_json_path: str) -> None:
     if scaler:
         logger.info("Mixed precision training enabled with power-stability optimized settings")
 
-    # Initialize best validation loss
+    # Initialize best validation loss, and the best model-selection score (higher is better)
     best_val_loss = float("inf")
+    best_score = -float("inf")
+    # BOP (M5): symmetric ADD(-S)/MSSD/MSPD on the GPU during validation
+    pose_metrics = (
+        BOPPoseMetrics(default_bop_root(), args.dataset.lower(), LMO_OBJ_IDS, device)
+        if is_bop(args)
+        else None
+    )
+    logger.info(f"Model selection on {args.selection_metric}")
 
     # Cache validation loss criteria to avoid recreation every epoch
     val_translation_criterion = RelativeTranslationLoss()
@@ -712,6 +721,11 @@ def train(args: argparse.Namespace, log_file: str, bbox_json_path: str) -> None:
         start_epoch = checkpoint["epoch"] + 1
         global_iteration = checkpoint["global_iteration"]
         best_val_loss = checkpoint["best_val_loss"]
+        # Absent before M5: the val-loss selection score is then -best_val_loss
+        best_score = checkpoint.get(
+            "best_score",
+            -best_val_loss if args.selection_metric == "val_loss" else -float("inf"),
+        )
         changed = {
             k: (v, vars(args).get(k))
             for k, v in checkpoint["args"].items()
@@ -773,6 +787,7 @@ def train(args: argparse.Namespace, log_file: str, bbox_json_path: str) -> None:
             no_rotation_compensation=args.no_rotation_compensation,
             use_absolute_translation=args.use_absolute_translation,
             depth_mode=args.depth_mode,
+            pose_metrics=pose_metrics,
         )
 
         val_loss, val_loss_translation, val_loss_rotation, val_metrics = val_epoch(
@@ -843,18 +858,35 @@ def train(args: argparse.Namespace, log_file: str, bbox_json_path: str) -> None:
             f"Val Metrics: Trans: {val_metrics['translation_metric_mean']:.4f}, Rot: {val_metrics['rotation_metric_mean']:.4f}, Rel Trans: {val_metrics['relative_translation_metric_mean']:.4f}, SPEED Score: {val_metrics['relative_total_metric']:.4f}\n"
             f"Learning Rate: {current_lr_display}"
         )
+        if "bop" in val_metrics:
+            bop = val_metrics["bop"]
+            per_obj = " ".join(
+                f"{o}:{(a + b) / 2:.3f}" for o, (a, b) in bop["per_object"].items()
+            )
+            log_message += (
+                f"\nVal BOP (n={bop['n']}): AR_MSSD {bop['AR_MSSD']:.4f}, AR_MSPD "
+                f"{bop['AR_MSPD']:.4f}, score {bop['score']:.4f}, ADD(-S)@0.1d "
+                f"{bop['ADD@0.1d']:.4f}; per object (score): {per_obj}"
+            )
         logger.info(log_message)
 
         if writer is not None:
             writer.add_scalar("LearningRate", current_lr, epoch)
 
-        # Save the model if it's the best so far
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
+        # Save the model if it's the best so far: lowest val loss, or (BOP) highest
+        # (AR_MSSD + AR_MSPD) / 2
+        score = val_metrics["bop"]["score"] if args.selection_metric == "bop_score" else -val_loss
+        best_val_loss = min(best_val_loss, val_loss)
+        if score > best_score:
+            best_score = score
             if args.model_save_path:
                 model.save(args.model_save_path)
-                best_model_message = f"New best model saved to {args.model_save_path} with validation loss: {best_val_loss:.4f}"
-                logger.info(best_model_message)
+                what = (
+                    f"(AR_MSSD + AR_MSPD) / 2: {score:.4f}"
+                    if args.selection_metric == "bop_score"
+                    else f"validation loss: {val_loss:.4f}"
+                )
+                logger.info(f"New best model saved to {args.model_save_path} with {what}")
 
         # Save the training state to resume from (every epoch, overwritten atomically)
         save_checkpoint(
@@ -867,6 +899,7 @@ def train(args: argparse.Namespace, log_file: str, bbox_json_path: str) -> None:
                 "epoch": epoch,
                 "global_iteration": global_iteration,
                 "best_val_loss": best_val_loss,
+                "best_score": best_score,
                 "rng": get_rng_state(),
                 "args": vars(args),
             },
@@ -875,6 +908,8 @@ def train(args: argparse.Namespace, log_file: str, bbox_json_path: str) -> None:
 
     # Training completed
     final_message = f"Training completed. Best validation loss: {best_val_loss:.4f}"
+    if args.selection_metric == "bop_score":
+        final_message += f", best (AR_MSSD + AR_MSPD) / 2: {best_score:.4f}"
     logger.info(final_message)
 
     logger.info("Training process completed")
@@ -1216,6 +1251,14 @@ if __name__ == "__main__":
     )
     parser.add_argument("--bop_overfit_seed", type=int, default=0)
     parser.add_argument(
+        "--selection_metric",
+        type=str,
+        default=None,
+        choices=["val_loss", "bop_score"],
+        help="Best model (model.pth): lowest val loss, or highest (AR_MSSD + AR_MSPD) / 2 "
+        "(default: bop_score for BOP, val_loss for SPEED)",
+    )
+    parser.add_argument(
         "--symmetric_rotation_loss",
         action="store_true",
         help="BOP: min of the 6D relative Frobenius loss over each object's symmetries (M5)",
@@ -1244,6 +1287,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.depth_mode is None:
         args.depth_mode = "site" if args.dataset in BOP_DATASETS else "legacy"
+    if args.selection_metric is None:
+        args.selection_metric = "bop_score" if args.dataset in BOP_DATASETS else "val_loss"
+    if args.selection_metric == "bop_score" and args.dataset not in BOP_DATASETS:
+        parser.error("--selection_metric bop_score needs a BOP dataset")
     if args.symmetric_rotation_loss and (
         args.dataset not in BOP_DATASETS
         or args.rotation_format != "matrix"

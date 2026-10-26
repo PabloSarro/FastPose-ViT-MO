@@ -12,6 +12,7 @@
 # epochs, ~7.5-8.7 h at 384 px; 2x/4x scale the epoch size (same schedule, more data per epoch).
 # Class-token ablation (domain_gap, 2x; a trailing "2" = sampler seed 1): dg2x2 (per-object heads,
 # option a, repeat of dg2x), tok2x tok2x2 (per-object class token, option b), both2x both2x2 (a + b).
+# Final M4 model (chosen 2026-10-26): tok4x tok4x2 (class token, domain_gap, 4x, 2 seeds).
 set -euo pipefail
 : "${RUN_DIR:?run inside a train job (RUN_DIR not set)}"
 export PYTHONPATH=.
@@ -32,9 +33,13 @@ declare -A FLAGS=(
     [tok2x2]="--bop_pixel_aug domain_gap --bop_epoch_samples $((2 * SPE)) --bop_sampler_seed 1"
     [both2x]="--bop_pixel_aug domain_gap --bop_epoch_samples $((2 * SPE)) --bop_sampler_seed 0"
     [both2x2]="--bop_pixel_aug domain_gap --bop_epoch_samples $((2 * SPE)) --bop_sampler_seed 1"
+    [tok4x]="--bop_pixel_aug domain_gap --bop_epoch_samples $((4 * SPE)) --bop_sampler_seed 0"
+    [tok4x2]="--bop_pixel_aug domain_gap --bop_epoch_samples $((4 * SPE)) --bop_sampler_seed 1"
 )
 # Variant -> --object_conditioning (train and eval); default heads
-declare -A COND=([tok2x]=token [tok2x2]=token [both2x]=both [both2x2]=both)
+declare -A COND=(
+    [tok2x]=token [tok2x2]=token [both2x]=both [both2x2]=both [tok4x]=token [tok4x2]=token
+)
 (( $# )) || { echo "usage: $0 VARIANT... (${!FLAGS[*]})"; exit 5; }
 
 for v in "$@"; do

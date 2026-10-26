@@ -1,6 +1,7 @@
 # This file contains the training and validation loops for the model.
 
 import logging
+import os
 from collections import deque
 from dataclasses import dataclass
 from typing import Optional
@@ -124,7 +125,9 @@ class ProgressTracker:
         Returns:
             The initialized tqdm progress bar.
         """
-        self.pbar = tqdm(total=total_batches, desc=self.desc)
+        # DDP: only rank 0 shows progress bars
+        disable = int(os.environ.get("RANK", "0")) != 0
+        self.pbar = tqdm(total=total_batches, desc=self.desc, disable=disable)
         return self.pbar
 
     def update_losses(

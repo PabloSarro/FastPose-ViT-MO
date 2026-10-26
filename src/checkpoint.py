@@ -5,6 +5,7 @@ import random
 
 import numpy as np
 import torch
+from torch.nn.parallel import DistributedDataParallel
 
 
 def get_rng_state() -> dict:
@@ -35,8 +36,9 @@ def set_rng_state(state: dict) -> None:
 
 
 def unwrap_model(model: torch.nn.Module) -> torch.nn.Module:
-    """Return the original module of a torch.compile'd model (or the model itself)."""
-    return getattr(model, "_orig_mod", model)
+    """Return the plain model inside torch.compile and/or DistributedDataParallel wrappers."""
+    model = getattr(model, "_orig_mod", model)
+    return model.module if isinstance(model, DistributedDataParallel) else model
 
 
 def save_checkpoint(path: str, checkpoint: dict) -> None:

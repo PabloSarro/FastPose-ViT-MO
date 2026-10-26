@@ -21,6 +21,7 @@ from torch.utils.data import Dataset, Sampler
 
 from src.camera import Camera
 from src.datasets import random_bbox_augmentation
+from src.distributed import shard
 from src.utils import (
     DEPTH_MODES,
     get_apparent_orientation,
@@ -101,9 +102,14 @@ class ObjectBalancedSampler(Sampler):
     all. Every object walks through its own random permutations, so an instance comes back only
     after all instances of its object were seen. The order depends only on (seed, epoch): call
     set_epoch before each epoch, and a resumed run continues with the same samples.
+
+    With DDP (world_size > 1), every rank builds the same epoch order and takes its own shard
+    (src.distributed.shard), so the ranks see disjoint samples and together the whole epoch.
     """
 
-    def __init__(self, obj_idx, samples_per_epoch: int, seed: int = 0):
+    def __init__(
+        self, obj_idx, samples_per_epoch: int, seed: int = 0, rank: int = 0, world_size: int = 1
+    ):
         obj_idx = np.asarray(obj_idx)
         self.groups = [np.flatnonzero(obj_idx == o) for o in np.unique(obj_idx)]
         self.per_object = samples_per_epoch // len(self.groups)
@@ -111,12 +117,14 @@ class ObjectBalancedSampler(Sampler):
             raise ValueError(f"samples_per_epoch {samples_per_epoch} < {len(self.groups)} objects")
         self.seed = seed
         self.epoch = 0
+        self.rank, self.world_size = rank, world_size
 
     def set_epoch(self, epoch: int) -> None:
         self.epoch = epoch
 
     def __len__(self) -> int:
-        return self.per_object * len(self.groups)
+        """Samples of this rank per epoch (all of them with world size 1)."""
+        return self.per_object * len(self.groups) // self.world_size
 
     def _draw(self, g: int, rows: np.ndarray) -> np.ndarray:
         """This epoch's slice of object g's endless sequence of permutations."""
@@ -133,7 +141,7 @@ class ObjectBalancedSampler(Sampler):
     def __iter__(self):
         idx = np.concatenate([self._draw(g, rows) for g, rows in enumerate(self.groups)])
         np.random.default_rng((self.seed, 0, self.epoch)).shuffle(idx)
-        return iter(idx.tolist())
+        return iter(shard(idx.tolist(), self.rank, self.world_size))
 
 
 def default_bop_root() -> str:

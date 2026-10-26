@@ -1,7 +1,9 @@
 # This script is used to train the FastPoseViT model on the SPEED dataset.
 
 import argparse
+import logging
 import os
+import time
 import torch
 
 # Fix torch.compile Docker UID issues by setting comprehensive cache directories
@@ -61,11 +63,20 @@ from src.losses import (
     TranslationNuclearLoss,
 )
 from src.bop_metrics import BOPPoseMetrics
+from src.distributed import (
+    DistInfo,
+    all_gather_object,
+    all_reduce_mean,
+    barrier,
+    cleanup_distributed,
+    init_distributed,
+)
 from src.models import OBJECT_CONDITIONINGS, FastPoseViT, SUPPORTED_VIT_MODELS, VIT_MODELS
 import numpy as np
 from styleaug import StyleAugmentor
 
-from torch.utils.data import DataLoader
+from torch.nn.parallel import DistributedDataParallel
+from torch.utils.data import DataLoader, DistributedSampler
 from torch.utils.tensorboard import SummaryWriter
 from src.utils import DEPTH_MODES, setup_logging
 from src.checkpoint import (
@@ -131,7 +142,9 @@ def create_bop_datasets(args: argparse.Namespace, img_size: int, logger) -> tupl
     return train_dataset, val_dataset
 
 
-def train(args: argparse.Namespace, log_file: str, bbox_json_path: str) -> None:
+def train(
+    args: argparse.Namespace, log_file: str, bbox_json_path: str, dist_info: DistInfo = DistInfo()
+) -> None:
     """
     Training function
 
@@ -142,8 +155,10 @@ def train(args: argparse.Namespace, log_file: str, bbox_json_path: str) -> None:
     Returns:
         None
     """
-    # Set up logging
+    # Set up logging (DDP: only rank 0 logs below WARNING)
     logger, _ = setup_logging(args, initialized=True, log_file=log_file)
+    if not dist_info.is_main:
+        logger.setLevel(logging.WARNING)
 
     # Set up loss functions
     match args.translation_loss:
@@ -244,7 +259,17 @@ def train(args: argparse.Namespace, log_file: str, bbox_json_path: str) -> None:
 
     # Set up device - always use GPU if available
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if dist_info.enabled and device.type == "cuda":
+        device = torch.device("cuda", dist_info.local_rank)  # one GPU per process
     logger.info(f"Using device: {device}")
+    # --batch_size is the global batch: each of the world_size processes gets an equal share, so
+    # the LR scaling, the steps per epoch and the schedule do not depend on the number of GPUs
+    rank_batch_size = args.batch_size // dist_info.world_size
+    if dist_info.enabled:
+        logger.info(
+            f"DDP: {dist_info.world_size} processes, {rank_batch_size} samples per GPU "
+            f"(global batch {args.batch_size})"
+        )
     rotation_criterion.to(device)  # buffers, e.g. the symmetry table of SymmetricRotation6DLoss
 
     # Enable cuDNN benchmark and optimizations for better performance
@@ -301,6 +326,14 @@ def train(args: argparse.Namespace, log_file: str, bbox_json_path: str) -> None:
         torch._inductor.config.coordinate_descent_tuning = True
         logger.info("Torch inductor optimization flags enabled")
 
+    if dist_info.enabled:
+        # Same initial weights on every rank (DDP broadcasts rank 0's); gradients are averaged
+        model = DistributedDataParallel(
+            model,
+            device_ids=[device.index] if device.type == "cuda" else None,
+            broadcast_buffers=False,
+        )
+
     # Apply torch.compile unless disabled
     if not args.no_compile_model:
         logger.info("Applying torch.compile optimization...")
@@ -312,7 +345,7 @@ def train(args: argparse.Namespace, log_file: str, bbox_json_path: str) -> None:
 
             model.eval()
             with torch.no_grad():
-                dummy_input = torch.randn(args.batch_size, 3, *image_size, device=device)
+                dummy_input = torch.randn(rank_batch_size, 3, *image_size, device=device)
                 logger.info(f"Warmup input shape: {dummy_input.shape}")
 
                 # Single warmup run
@@ -344,8 +377,8 @@ def train(args: argparse.Namespace, log_file: str, bbox_json_path: str) -> None:
                     # Multiple warmup scenarios to trigger all compilation paths
                     warmup_scenarios = [
                         (1, "single sample"),
-                        (args.batch_size // 2, "half batch"),
-                        (args.batch_size, "full batch"),
+                        (rank_batch_size // 2, "half batch"),
+                        (rank_batch_size, "full batch"),
                     ]
 
                     for warmup_batch_size, desc in warmup_scenarios:
@@ -419,15 +452,29 @@ def train(args: argparse.Namespace, log_file: str, bbox_json_path: str) -> None:
     train_sampler = None
     if is_bop(args) and args.bop_epoch_samples and not args.bop_overfit:
         train_sampler = ObjectBalancedSampler(
-            train_dataset.index["obj_idx"], args.bop_epoch_samples, seed=args.bop_sampler_seed
+            train_dataset.index["obj_idx"],
+            args.bop_epoch_samples,
+            seed=args.bop_sampler_seed,
+            rank=dist_info.rank,
+            world_size=dist_info.world_size,
         )
         logger.info(
             f"Object-balanced virtual epochs: {train_sampler.per_object} samples x "
             f"{len(train_sampler.groups)} objects = {len(train_sampler)} per epoch"
+            + (f" on each of {dist_info.world_size} GPUs" if dist_info.enabled else "")
+        )
+    elif dist_info.enabled:
+        # DDP without virtual epochs: a disjoint shuffled share of the training set per rank
+        train_sampler = DistributedSampler(
+            train_dataset,
+            num_replicas=dist_info.world_size,
+            rank=dist_info.rank,
+            shuffle=True,
+            drop_last=True,
         )
     train_loader = DataLoader(
         train_dataset,
-        batch_size=args.batch_size,
+        batch_size=rank_batch_size,
         shuffle=train_sampler is None,
         sampler=train_sampler,
         num_workers=args.num_workers,
@@ -479,11 +526,11 @@ def train(args: argparse.Namespace, log_file: str, bbox_json_path: str) -> None:
 
     # Load full model weights if provided
     if args.model_weights:
-        model.load_from_pretrained(args.model_weights)
+        unwrap_model(model).load_from_pretrained(args.model_weights)
         logger.info(f"Loaded pretrained model weights from {args.model_weights}")
 
     # Set up TensorBoard writer
-    if args.skip_tensorboard:
+    if args.skip_tensorboard or not dist_info.is_main:
         writer = None
         logger.info("TensorBoard logging disabled")
     else:
@@ -717,7 +764,11 @@ def train(args: argparse.Namespace, log_file: str, bbox_json_path: str) -> None:
             scheduler.load_state_dict(checkpoint["scheduler"])
         if scaler is not None and checkpoint["scaler"] is not None:
             scaler.load_state_dict(checkpoint["scaler"])
-        set_rng_state(checkpoint["rng"])
+        # One RNG state per rank since M6 (DDP); rank 0's is also under "rng"
+        rng_ranks = checkpoint.get("rng_ranks") or [checkpoint["rng"]]
+        set_rng_state(
+            rng_ranks[dist_info.rank] if len(rng_ranks) == dist_info.world_size else rng_ranks[0]
+        )
         start_epoch = checkpoint["epoch"] + 1
         global_iteration = checkpoint["global_iteration"]
         best_val_loss = checkpoint["best_val_loss"]
@@ -736,7 +787,7 @@ def train(args: argparse.Namespace, log_file: str, bbox_json_path: str) -> None:
         if writer is not None:
             # Drop TensorBoard points logged after the checkpoint by the interrupted run
             writer.close()
-            writer = SummaryWriter(args.log_dir, purge_step=start_epoch)
+            writer = SummaryWriter(args.log_dir, purge_step=start_epoch)  # rank 0 only
         logger.info(
             f"Resumed from {resume_path}: {start_epoch} epoch(s) done, global iteration "
             f"{global_iteration}, best validation loss {best_val_loss:.4f}"
@@ -765,6 +816,7 @@ def train(args: argparse.Namespace, log_file: str, bbox_json_path: str) -> None:
             global_iteration_start=global_iteration,
         )
 
+        train_start = time.time()
         train_loss, train_loss_translation, train_loss_rotation = train_epoch(
             model=model,
             train_loader=train_loader,
@@ -773,13 +825,26 @@ def train(args: argparse.Namespace, log_file: str, bbox_json_path: str) -> None:
             rotation_criterion=rotation_criterion,
             device=device,
             epoch=epoch,
-            writer=writer,
+            # DDP: the epoch's train losses are logged below, averaged over the ranks
+            writer=None if dist_info.enabled else writer,
             config=train_config,
             scaler=scaler,
             style_augmentor=style_augmentor,
             train_dataset=train_dataset,
             scheduler=scheduler if args.optimizer != "muon" else None,
         )
+        train_seconds = time.time() - train_start
+        if dist_info.enabled:
+            train_loss, train_loss_translation, train_loss_rotation = all_reduce_mean(
+                [train_loss, train_loss_translation, train_loss_rotation], dist_info, device
+            )
+            if writer is not None:
+                writer.add_scalar("Loss/Train/Total", train_loss, epoch)
+                writer.add_scalar("Loss/Train/Translation", train_loss_translation, epoch)
+                writer.add_scalar("Loss/Train/Rotation", train_loss_rotation, epoch)
+        # Collective: every rank's RNG state, for the checkpoint saved by rank 0
+        rng_states = all_gather_object(get_rng_state(), dist_info)
+
         # Create validation configuration
         val_config = ValidationConfig(
             rotation_format=args.rotation_format,
@@ -790,17 +855,19 @@ def train(args: argparse.Namespace, log_file: str, bbox_json_path: str) -> None:
             pose_metrics=pose_metrics,
         )
 
-        val_loss, val_loss_translation, val_loss_rotation, val_metrics = val_epoch(
-            model=model,
-            val_loader=val_loader,
-            translation_criterion=val_translation_criterion,
-            rotation_criterion=val_rotation_criterion,
-            device=device,
-            epoch=epoch,
-            writer=writer,
-            config=val_config,
-            val_dataset=val_dataset,
-        )
+        if dist_info.is_main:
+            val_loss, val_loss_translation, val_loss_rotation, val_metrics = val_epoch(
+                # DDP: validate rank 0's plain module (no collectives), the other ranks wait
+            model=unwrap_model(model) if dist_info.enabled else model,
+                val_loader=val_loader,
+                translation_criterion=val_translation_criterion,
+                rotation_criterion=val_rotation_criterion,
+                device=device,
+                epoch=epoch,
+                writer=writer,
+                config=val_config,
+                val_dataset=val_dataset,
+            )
 
         # Update global iteration counter for next epoch
         global_iteration += batches_per_epoch
@@ -822,89 +889,103 @@ def train(args: argparse.Namespace, log_file: str, bbox_json_path: str) -> None:
                 f"Per-epoch scheduler stepped after epoch {epoch + 1}: LR {old_lr:.8f} -> {new_lr:.8f}"
             )
 
-        # Log the results
-        # Get learning rate information for logging
-        if args.optimizer == "muon" and muon_lrs is not None:
-            # For Muon with per-iteration scheduling, show start and end LR
-            epoch_start_iteration = (epoch) * batches_per_epoch
-            epoch_end_iteration = (epoch + 1) * batches_per_epoch - 1
+        if dist_info.is_main:
+            # Log the results
+            # Get learning rate information for logging
+            if args.optimizer == "muon" and muon_lrs is not None:
+                # For Muon with per-iteration scheduling, show start and end LR
+                epoch_start_iteration = (epoch) * batches_per_epoch
+                epoch_end_iteration = (epoch + 1) * batches_per_epoch - 1
 
-            if use_per_iteration_scheduling:
-                start_lr_index = min(epoch_start_iteration, len(muon_lrs) - 1)
-                end_lr_index = min(epoch_end_iteration, len(muon_lrs) - 1)
-                start_lr = muon_lrs[start_lr_index]
-                end_lr = muon_lrs[end_lr_index]
+                if use_per_iteration_scheduling:
+                    start_lr_index = min(epoch_start_iteration, len(muon_lrs) - 1)
+                    end_lr_index = min(epoch_end_iteration, len(muon_lrs) - 1)
+                    start_lr = muon_lrs[start_lr_index]
+                    end_lr = muon_lrs[end_lr_index]
 
-                # Format LR display for per-iteration scheduling
-                if start_lr != end_lr:
-                    current_lr_display = f"{start_lr:.8f} → {end_lr:.8f}"
+                    # Format LR display for per-iteration scheduling
+                    if start_lr != end_lr:
+                        current_lr_display = f"{start_lr:.8f} → {end_lr:.8f}"
+                    else:
+                        current_lr_display = f"{start_lr:.8f}"
+                    current_lr = start_lr  # For compatibility with TensorBoard logging
                 else:
-                    current_lr_display = f"{start_lr:.8f}"
-                current_lr = start_lr  # For compatibility with TensorBoard logging
+                    lr_index = min(epoch, len(muon_lrs) - 1)
+                    current_lr = muon_lrs[lr_index]
+                    current_lr_display = f"{current_lr:.8f}"
             else:
-                lr_index = min(epoch, len(muon_lrs) - 1)
-                current_lr = muon_lrs[lr_index]
+                # For Adam, get the current learning rate from optimizer
+                current_lr = optimizer.param_groups[0]["lr"]
                 current_lr_display = f"{current_lr:.8f}"
-        else:
-            # For Adam, get the current learning rate from optimizer
-            current_lr = optimizer.param_groups[0]["lr"]
-            current_lr_display = f"{current_lr:.8f}"
 
-        scheduling_mode = "per-iteration" if use_per_iteration_scheduling else "per-epoch"
-        log_message = (
-            f"Epoch {epoch + 1}/{args.epochs} ({scheduling_mode} scheduling)\n"
-            f"Train Loss: {train_loss:.4f} (Translation: {train_loss_translation:.4f}, Rotation: {train_loss_rotation:.4f})\n"
-            f"Val Loss: {val_loss:.4f} (Relative Translation: {val_loss_translation:.4f}, Rotation (Geodesic): {val_loss_rotation:.4f})\n"
-            f"Val Metrics: Trans: {val_metrics['translation_metric_mean']:.4f}, Rot: {val_metrics['rotation_metric_mean']:.4f}, Rel Trans: {val_metrics['relative_translation_metric_mean']:.4f}, SPEED Score: {val_metrics['relative_total_metric']:.4f}\n"
-            f"Learning Rate: {current_lr_display}"
-        )
-        if "bop" in val_metrics:
-            bop = val_metrics["bop"]
-            per_obj = " ".join(
-                f"{o}:{(a + b) / 2:.3f}" for o, (a, b) in bop["per_object"].items()
+            scheduling_mode = "per-iteration" if use_per_iteration_scheduling else "per-epoch"
+            log_message = (
+                f"Epoch {epoch + 1}/{args.epochs} ({scheduling_mode} scheduling)\n"
+                f"Train Loss: {train_loss:.4f} (Translation: {train_loss_translation:.4f}, Rotation: {train_loss_rotation:.4f})\n"
+                f"Val Loss: {val_loss:.4f} (Relative Translation: {val_loss_translation:.4f}, Rotation (Geodesic): {val_loss_rotation:.4f})\n"
+                f"Val Metrics: Trans: {val_metrics['translation_metric_mean']:.4f}, Rot: {val_metrics['rotation_metric_mean']:.4f}, Rel Trans: {val_metrics['relative_translation_metric_mean']:.4f}, SPEED Score: {val_metrics['relative_total_metric']:.4f}\n"
+                f"Learning Rate: {current_lr_display}\n"
+                f"Train time: {train_seconds:.1f} s, "
+                f"{batches_per_epoch * args.batch_size / train_seconds:.1f} samples/s"
+                + (f" on {dist_info.world_size} GPUs" if dist_info.enabled else "")
             )
-            log_message += (
-                f"\nVal BOP (n={bop['n']}): AR_MSSD {bop['AR_MSSD']:.4f}, AR_MSPD "
-                f"{bop['AR_MSPD']:.4f}, score {bop['score']:.4f}, ADD(-S)@0.1d "
-                f"{bop['ADD@0.1d']:.4f}; per object (score): {per_obj}"
-            )
-        logger.info(log_message)
-
-        if writer is not None:
-            writer.add_scalar("LearningRate", current_lr, epoch)
-
-        # Save the model if it's the best so far: lowest val loss, or (BOP) highest
-        # (AR_MSSD + AR_MSPD) / 2
-        score = val_metrics["bop"]["score"] if args.selection_metric == "bop_score" else -val_loss
-        best_val_loss = min(best_val_loss, val_loss)
-        if score > best_score:
-            best_score = score
-            if args.model_save_path:
-                model.save(args.model_save_path)
-                what = (
-                    f"(AR_MSSD + AR_MSPD) / 2: {score:.4f}"
-                    if args.selection_metric == "bop_score"
-                    else f"validation loss: {val_loss:.4f}"
+            if "bop" in val_metrics:
+                bop = val_metrics["bop"]
+                per_obj = " ".join(
+                    f"{o}:{(a + b) / 2:.3f}" for o, (a, b) in bop["per_object"].items()
                 )
-                logger.info(f"New best model saved to {args.model_save_path} with {what}")
+                log_message += (
+                    f"\nVal BOP (n={bop['n']}): AR_MSSD {bop['AR_MSSD']:.4f}, AR_MSPD "
+                    f"{bop['AR_MSPD']:.4f}, score {bop['score']:.4f}, ADD(-S)@0.1d "
+                    f"{bop['ADD@0.1d']:.4f}; per object (score): {per_obj}"
+                )
+            logger.info(log_message)
 
-        # Save the training state to resume from (every epoch, overwritten atomically)
-        save_checkpoint(
-            checkpoint_path,
-            {
-                "model": unwrap_model(model).state_dict(),
-                "optimizer": optimizer.state_dict(),
-                "scheduler": scheduler.state_dict() if scheduler is not None else None,
-                "scaler": scaler.state_dict() if scaler is not None else None,
-                "epoch": epoch,
-                "global_iteration": global_iteration,
-                "best_val_loss": best_val_loss,
-                "best_score": best_score,
-                "rng": get_rng_state(),
-                "args": vars(args),
-            },
-        )
-        logger.info(f"Checkpoint saved to {checkpoint_path} (epoch {epoch + 1})")
+            if writer is not None:
+                writer.add_scalar("LearningRate", current_lr, epoch)
+
+            # Save the model if it's the best so far: lowest val loss, or (BOP) highest
+            # (AR_MSSD + AR_MSPD) / 2
+            score = val_metrics["bop"]["score"] if args.selection_metric == "bop_score" else -val_loss
+            best_val_loss = min(best_val_loss, val_loss)
+            if score > best_score:
+                best_score = score
+                if args.model_save_path:
+                    unwrap_model(model).save(args.model_save_path)
+                    what = (
+                        f"(AR_MSSD + AR_MSPD) / 2: {score:.4f}"
+                        if args.selection_metric == "bop_score"
+                        else f"validation loss: {val_loss:.4f}"
+                    )
+                    logger.info(f"New best model saved to {args.model_save_path} with {what}")
+
+            # Save the training state to resume from (every epoch, overwritten atomically)
+            save_checkpoint(
+                checkpoint_path,
+                {
+                    "model": unwrap_model(model).state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "scheduler": scheduler.state_dict() if scheduler is not None else None,
+                    "scaler": scaler.state_dict() if scaler is not None else None,
+                    "epoch": epoch,
+                    "global_iteration": global_iteration,
+                    "best_val_loss": best_val_loss,
+                    "best_score": best_score,
+                    "rng": rng_states[0],
+                "rng_ranks": rng_states,
+                    "args": vars(args),
+                },
+            )
+            logger.info(f"Checkpoint saved to {checkpoint_path} (epoch {epoch + 1})")
+        barrier(dist_info)  # DDP: wait for rank 0's validation and checkpoint
+
+    if dist_info.enabled:
+        # The ranks must end with the same weights (same initial weights, averaged gradients)
+        checksum = sum(p.detach().double().sum().item() for p in unwrap_model(model).parameters())
+        checksums = all_gather_object(checksum, dist_info)
+        logger.info(f"DDP weight checksums per rank: {checksums}")
+        if len(set(checksums)) > 1:
+            logger.warning("DDP ranks ended with different weights")
 
     # Training completed
     final_message = f"Training completed. Best validation loss: {best_val_loss:.4f}"
@@ -1317,8 +1398,17 @@ if __name__ == "__main__":
         dataset_config = get_dataset_config(args.dataset)
         bbox_json_path = os.path.join(args.dataset_root_dir, dataset_config["bbox_annotations"])
 
-    # Set up logging
-    logger, log_file = setup_logging(args)
+    # DDP (M6): one process per GPU when started by torchrun; world size 1 otherwise
+    dist_info = init_distributed()
+    if args.batch_size % dist_info.world_size:
+        parser.error(f"--batch_size {args.batch_size} is not divisible by {dist_info.world_size} GPUs")
+
+    # Set up logging (one log file, written by rank 0)
+    if dist_info.is_main:
+        logger, log_file = setup_logging(args)
+    else:
+        logger, log_file = setup_logging(args, initialized=True, log_file=os.devnull)
+        logger.setLevel(logging.WARNING)
 
     # Log the arguments provided in a clean format
     logger.info("=========================================")
@@ -1330,4 +1420,7 @@ if __name__ == "__main__":
 
     # Start training process
     logger.info("Starting training")
-    train(args, log_file, bbox_json_path)
+    try:
+        train(args, log_file, bbox_json_path, dist_info)
+    finally:
+        cleanup_distributed(dist_info)

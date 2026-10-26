@@ -46,6 +46,14 @@ declare -A COND=(
     [symtok2x]=token [symtok2x2]=token
 )
 (( $# )) || { echo "usage: $0 VARIANT... (${!FLAGS[*]})"; exit 5; }
+# One process per GPU (DDP, M6) when the job has several: GPUS=2 CPUS=32 MEMORY=64Gi bash rcp/train.sh
+# ... (--batch_size stays the global batch; --num_workers is per process)
+NGPU=$(nvidia-smi -L 2>/dev/null | wc -l)
+if (( NGPU > 1 )); then
+    TRAIN=(.venv/bin/python -m torch.distributed.run --standalone --nproc_per_node="$NGPU" src/train.py)
+else
+    TRAIN=(.venv/bin/python src/train.py)
+fi
 
 for v in "$@"; do
     [[ -n ${FLAGS[$v]:-} ]] || { echo "unknown variant $v"; exit 5; }
@@ -55,7 +63,7 @@ for v in "$@"; do
     mkdir -p "$out"
     echo "== $v: train ($(date '+%F %T'))"
     # shellcheck disable=SC2086
-    .venv/bin/python src/train.py --dataset LMO --bop_val_split val \
+    "${TRAIN[@]}" --dataset LMO --bop_val_split val \
         --max_val_samples 2000 --rotation_format matrix --rotation_loss 6d_relative_frobenius \
         --max_lr 1e-4 --min_lr 1e-6 --epochs "$EPOCHS" --num_hidden_layers 0 --hidden_layer_dim 0 \
         --nb_class_tokens 1 --batch_size 32 --vit_model "$VIT" --optimizer muon \

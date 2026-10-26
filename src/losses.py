@@ -776,6 +776,46 @@ class RelativeRotation6DFrobeniusLoss(nn.Module):
         return relative_errors.mean()
 
 
+class SymmetricRotation6DLoss(nn.Module):
+    """
+    Symmetry-aware relative 6D Frobenius loss (M5): for each sample, the smallest
+    ||6D_pred - 6D(R_target·S_k)|| / ||6D(R_target·S_k)|| over its object's symmetries S_k.
+
+    Symmetries multiply on the right (model frame) and the allocentric change on the left, so this
+    works directly on allocentric targets. For an object with the identity only it equals
+    RelativeRotation6DFrobeniusLoss.
+    """
+
+    def __init__(self, sym_table: torch.Tensor, epsilon: float = 1e-8):
+        """
+        Args:
+            sym_table (torch.Tensor): (n_obj, K, 3, 3) symmetry rotations of every object, padded
+                with the identity (src.bop_dataset.symmetry_table)
+            epsilon (float): Added to the target norm
+        """
+        super().__init__()
+        self.register_buffer("sym_table", torch.as_tensor(sym_table, dtype=torch.float32))
+        self.epsilon = epsilon
+
+    def forward(
+        self, pred_6d: torch.Tensor, target_R: torch.Tensor, obj_idx: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Args:
+            pred_6d (torch.Tensor): Predicted 6D rotation vectors (B, 6)
+            target_R (torch.Tensor): Ground truth rotation matrices (B, 3, 3)
+            obj_idx (torch.Tensor): Object index of each sample (B,)
+
+        Returns:
+            torch.Tensor: Mean over the batch of the per-sample minimum
+        """
+        targets = target_R.float().unsqueeze(1) @ self.sym_table[obj_idx]  # (B, K, 3, 3)
+        targets_6d = torch.cat([targets[..., :, 0], targets[..., :, 1]], dim=-1)  # (B, K, 6)
+        diff = torch.norm(pred_6d.float().unsqueeze(1) - targets_6d, dim=-1)
+        relative = diff / (torch.norm(targets_6d, dim=-1) + self.epsilon)
+        return relative.min(dim=1).values.mean()
+
+
 class Identity(nn.Module):
     """
     Identity loss

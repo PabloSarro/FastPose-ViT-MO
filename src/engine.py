@@ -20,6 +20,7 @@ from src.utils import (
     get_absolute_orientation,
     rotation_matrix_to_6d,
 )
+from src.losses import SymmetricRotation6DLoss
 from src.metrics import compute_metrics
 
 
@@ -478,7 +479,9 @@ def train_epoch(
             )
 
             # Process rotations based on loss type
-            if is_6d_rotation_loss:
+            if isinstance(rotation_criterion, SymmetricRotation6DLoss):
+                loss_rotation = rotation_criterion(pred_rotations, rotations, obj_idx)
+            elif is_6d_rotation_loss:
                 target_rotations_6d = rotation_matrix_to_6d(rotations)
                 loss_rotation = rotation_criterion(pred_rotations, target_rotations_6d)
             else:

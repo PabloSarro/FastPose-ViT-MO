@@ -178,6 +178,29 @@ def load_models_info(bop_root: str, dataset: str, obj_ids) -> dict:
     }
 
 
+def symmetry_table(
+    bop_root: str, dataset: str, obj_ids, max_sym_disc_step: float = 0.01
+) -> np.ndarray:
+    """Rotations of every object's symmetry set, padded with the identity: (n_obj, K, 3, 3).
+
+    From models_eval/models_info.json via bop_toolkit (the BOP19 set: identity first, continuous
+    symmetries discretised at max_sym_disc_step of the diameter). An asymmetric object has the
+    identity only. A repeated identity does not change a min over the set, so no mask is needed.
+    The symmetries' translation offsets (< 1 mm on LM-O) are not kept.
+    """
+    from bop_toolkit_lib import misc  # only needed for symmetric training
+
+    info = _load_json(os.path.join(bop_root, dataset, "models_eval", "models_info.json"))
+    sets = [
+        [s["R"] for s in misc.get_symmetry_transformations(info[str(o)], max_sym_disc_step)]
+        for o in obj_ids
+    ]
+    table = np.tile(np.eye(3), (len(sets), max(len(s) for s in sets), 1, 1))
+    for i, rots in enumerate(sets):
+        table[i, : len(rots)] = rots
+    return table
+
+
 def build_index(
     bop_root: str, sources, obj_ids, models_dataset: str, min_visib_fract: float = 0.1
 ) -> dict:

@@ -20,6 +20,8 @@ import torch._inductor.config
 from src.datasets import SPEEDDataset, get_dataset_config
 from src.bop_dataset import (
     LMO_OBJ_IDS,
+    default_bop_root,
+    symmetry_table,
     BOPDataset,
     ObjectBalancedSampler,
     load_index,
@@ -28,6 +30,7 @@ from src.bop_dataset import (
 )
 from src.engine import train_epoch, val_epoch, TrainingConfig, ValidationConfig
 from src.losses import (
+    SymmetricRotation6DLoss,
     QuaternionGeodesicLoss,
     QuaternionSimplifiedGeodesicLoss,
     QuaternionMSELoss,
@@ -218,6 +221,12 @@ def train(args: argparse.Namespace, log_file: str, bbox_json_path: str) -> None:
                 rotation_criterion = Rotation6DLpNormLoss(p=float("inf"))
             case "6d_nuclear":
                 rotation_criterion = Rotation6DNuclearLoss()
+            case "6d_relative_frobenius" if args.symmetric_rotation_loss:
+                # BOP (M5): min over each object's symmetries, from the LM-O models_info.json
+                table = symmetry_table(default_bop_root(), "lmo", LMO_OBJ_IDS)
+                rotation_criterion = SymmetricRotation6DLoss(torch.from_numpy(table))
+                n_sym = int((np.abs(table - np.eye(3)).sum(axis=(2, 3)) > 1e-6).any(1).sum())
+                logger.info(f"Symmetric rotation loss: {n_sym} symmetric objects, K = {table.shape[1]}")
             case "6d_relative_frobenius":
                 rotation_criterion = RelativeRotation6DFrobeniusLoss()
             case "relative_frobenius":
@@ -235,6 +244,7 @@ def train(args: argparse.Namespace, log_file: str, bbox_json_path: str) -> None:
     # Set up device - always use GPU if available
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Using device: {device}")
+    rotation_criterion.to(device)  # buffers, e.g. the symmetry table of SymmetricRotation6DLoss
 
     # Enable cuDNN benchmark and optimizations for better performance
     if device.type == "cuda":
@@ -1206,6 +1216,11 @@ if __name__ == "__main__":
     )
     parser.add_argument("--bop_overfit_seed", type=int, default=0)
     parser.add_argument(
+        "--symmetric_rotation_loss",
+        action="store_true",
+        help="BOP: min of the 6D relative Frobenius loss over each object's symmetries (M5)",
+    )
+    parser.add_argument(
         "--object_conditioning",
         type=str,
         default="heads",
@@ -1229,6 +1244,15 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.depth_mode is None:
         args.depth_mode = "site" if args.dataset in BOP_DATASETS else "legacy"
+    if args.symmetric_rotation_loss and (
+        args.dataset not in BOP_DATASETS
+        or args.rotation_format != "matrix"
+        or args.rotation_loss != "6d_relative_frobenius"
+    ):
+        parser.error(
+            "--symmetric_rotation_loss needs a BOP dataset, --rotation_format matrix and "
+            "--rotation_loss 6d_relative_frobenius"
+        )
 
     # Validate bbox_crop_percent
     if not (0.0 <= args.bbox_crop_percent <= 50.0):

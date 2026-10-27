@@ -15,6 +15,8 @@
 # Final M4 model (chosen 2026-10-26): tok4x tok4x2 (class token, domain_gap, 4x, 2 seeds).
 # M5 exit: symtok2x symtok2x2 = tok2x/tok2x2 + --symmetric_rotation_loss (model.pth is then
 # selected on (AR_MSSD + AR_MSPD) / 2; the evaluation uses last.pt as for every variant).
+# The symmetric loss is on by default for BOP since 2026-10-27; this script turns it off for every
+# variant (as when they were run) and the sym* variants turn it back on (the last flag wins).
 set -euo pipefail
 : "${RUN_DIR:?run inside a train job (RUN_DIR not set)}"
 export PYTHONPATH=.
@@ -70,7 +72,7 @@ for v in "$@"; do
         --scheduler cosineannealingwarmrestarts --num_workers 14 --merge_outputs --no_mlp \
         --bbox_crop_percent 10 --depth_mode site --translation_loss relative_translation \
         --log_dir "$out/" --model_save_path "$out/model.pth" --resume auto \
-        --object_conditioning "$cond" ${FLAGS[$v]}
+        --object_conditioning "$cond" --no-symmetric_rotation_loss ${FLAGS[$v]}
     echo "== $v: eval ($(date '+%F %T'))"
     # last.pt (final epoch = end of a cycle) rather than the best-val model.pth; all 8 objects,
     # per-object results in eval/obj_<id>/ and the table in eval/table_val_real.md

@@ -1341,8 +1341,10 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--symmetric_rotation_loss",
-        action="store_true",
-        help="BOP: min of the 6D relative Frobenius loss over each object's symmetries (M5)",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="BOP: min of the 6D relative Frobenius loss over each object's symmetries (M5; "
+        "default on for BOP with --rotation_format matrix and 6d_relative_frobenius, else off)",
     )
     parser.add_argument(
         "--object_conditioning",
@@ -1372,16 +1374,18 @@ if __name__ == "__main__":
         args.selection_metric = "bop_score" if args.dataset in BOP_DATASETS else "val_loss"
     if args.selection_metric == "bop_score" and args.dataset not in BOP_DATASETS:
         parser.error("--selection_metric bop_score needs a BOP dataset")
-    if args.symmetric_rotation_loss and (
-        args.dataset not in BOP_DATASETS
-        or args.rotation_format != "matrix"
-        or args.rotation_loss != "6d_relative_frobenius"
-    ):
+    symmetric_ok = (
+        args.dataset in BOP_DATASETS
+        and args.rotation_format == "matrix"
+        and args.rotation_loss == "6d_relative_frobenius"
+    )
+    if args.symmetric_rotation_loss is None:
+        args.symmetric_rotation_loss = symmetric_ok  # on from M5 (decided 2026-10-27)
+    if args.symmetric_rotation_loss and not symmetric_ok:
         parser.error(
             "--symmetric_rotation_loss needs a BOP dataset, --rotation_format matrix and "
             "--rotation_loss 6d_relative_frobenius"
         )
-
     # Validate bbox_crop_percent
     if not (0.0 <= args.bbox_crop_percent <= 50.0):
         parser.error("--bbox_crop_percent must be between 0 and 50 (inclusive)")

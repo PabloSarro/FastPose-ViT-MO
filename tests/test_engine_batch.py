@@ -124,3 +124,20 @@ def test_coordinate_transformer_site_mode_inverts_dataset_transform():
     )
     abs_t = ct.transform_to_absolute(U, q, U, q, bbox, K=K, diameter=diameter)[0]
     torch.testing.assert_close(abs_t, t, rtol=1e-5, atol=1e-2)
+
+
+def test_progress_tracker_shows_the_item_values():
+    # update_losses copies the losses to the CPU only on displayed batches (every 10th), with
+    # the same values as calling .item() on each
+    from src.engine import ProgressTracker, smooth_loss
+
+    tracker = ProgressTracker(smooth_window=5, desc="t")
+    tracker.setup_progress_bar(40)
+    losses = [torch.rand(3) for _ in range(40)]
+    for i, (a, b, c) in enumerate(losses):
+        tracker.update_losses(a, b, c, i)
+    shown = [losses[i] for i in range(0, 40, 10)][-5:]
+    assert list(tracker.loss_deque) == [x[0].item() for x in shown]
+    assert list(tracker.loss_rotation_deque) == [x[2].item() for x in shown]
+    assert tracker.pbar.postfix.startswith(f"loss={smooth_loss([x[0].item() for x in shown]):.4f}")
+    tracker.close()

@@ -131,18 +131,27 @@ class ProgressTracker:
         return self.pbar
 
     def update_losses(
-        self, total_loss: float, trans_loss: float, rot_loss: float, batch_idx: int
+        self,
+        total_loss: torch.Tensor,
+        trans_loss: torch.Tensor,
+        rot_loss: torch.Tensor,
+        batch_idx: int,
     ) -> None:
         """Update loss tracking and display every 10 batches.
 
         Args:
-            total_loss: Total loss value for the batch.
-            trans_loss: Translation loss value for the batch.
-            rot_loss: Rotation loss value for the batch.
+            total_loss: Total loss of the batch (scalar tensor, may be on the GPU).
+            trans_loss: Translation loss of the batch.
+            rot_loss: Rotation loss of the batch.
             batch_idx: Current batch index.
         """
         update_interval = 10
         if batch_idx % update_interval == 0:
+            # Only the displayed batches are copied to the CPU, in one transfer: a .item() per
+            # batch made the CPU wait for the GPU at every step instead of queueing the next one
+            total_loss, trans_loss, rot_loss = (
+                torch.stack([total_loss, trans_loss, rot_loss]).detach().tolist()
+            )
             self.loss_deque.append(total_loss)
             self.loss_translation_deque.append(trans_loss)
             self.loss_rotation_deque.append(rot_loss)
@@ -531,9 +540,7 @@ def train_epoch(
         loss_accumulator.add_batch_losses(total_loss, loss_translation, loss_rotation)
 
         # Update progress and loss display every 10 batches
-        progress_tracker.update_losses(
-            total_loss.item(), loss_translation.item(), loss_rotation.item(), batch_idx
-        )
+        progress_tracker.update_losses(total_loss, loss_translation, loss_rotation, batch_idx)
 
     progress_tracker.close()
 
@@ -682,9 +689,7 @@ def val_epoch(
                 val_metrics[key] += metrics.get(key, 0.0)
 
             # Update progress and loss display every 10 batches
-            progress_tracker.update_losses(
-                total_loss.item(), loss_translation.item(), loss_rotation.item(), batch_idx
-            )
+            progress_tracker.update_losses(total_loss, loss_translation, loss_rotation, batch_idx)
 
     progress_tracker.close()
 

@@ -10,18 +10,25 @@
 #   GPUS=2 CPUS=24 MEMORY=64Gi bash rcp/train.sh NAME bash -c 'WORKERS=11 bash scripts/ddp_bench.sh'
 #   (fewer CPUs: 2 x (11 workers + 1 main process) = 24; WORKERS must be set inside the job)
 # Result: the last line, "BENCH gpus=N samples/s=... gpu_util=...%" (epochs 2-3: epoch 1 compiles).
+# Runs through scripts/ddp_profile.py (src/train.py unchanged + per-rank "PROFILE" lines: data wait
+# and optimizer time per step). RUNS=2 repeats the benchmark in the same job (bench, bench_2, ...)
+# to measure the run-to-run noise without waiting for a second job.
 set -euo pipefail
 : "${RUN_DIR:?run inside a train job (RUN_DIR not set)}"
 export PYTHONPATH=.
 WORKERS=${WORKERS:-14}  # DataLoader workers per process (per GPU)
-out=$RUN_DIR/bench
-mkdir -p "$out"
+RUNS=${RUNS:-1}
 NGPU=$(nvidia-smi -L | wc -l)
 if (( NGPU > 1 )); then
-    TRAIN=(.venv/bin/python -m torch.distributed.run --standalone --nproc_per_node="$NGPU" src/train.py)
+    TRAIN=(.venv/bin/python -m torch.distributed.run --standalone --nproc_per_node="$NGPU" scripts/ddp_profile.py)
 else
-    TRAIN=(.venv/bin/python src/train.py)
+    TRAIN=(.venv/bin/python scripts/ddp_profile.py)
 fi
+nvidia-smi topo -m > "$RUN_DIR/gpu_topology.txt" 2>&1 || true
+
+for run in $(seq 1 "$RUNS"); do
+out=$RUN_DIR/bench$([[ $run == 1 ]] || echo "_$run")
+mkdir -p "$out"
 
 nvidia-smi --query-gpu=index,utilization.gpu,memory.used --format=csv,noheader,nounits -l 5 \
     > "$out/gpu_util.csv" &
@@ -42,4 +49,5 @@ kill $smi 2>/dev/null || true
 rate=$(grep -o "Train time: [0-9.]* s, [0-9.]* samples/s" "$out/train.txt" | tail -n 2 \
     | awk '{s += $5} END {printf "%.1f", s / NR}')
 util=$(awk -F', ' '$2 > 0 {s += $2; n++} END {printf "%.0f", n ? s / n : 0}' "$out/gpu_util.csv")
-echo "BENCH gpus=$NGPU workers/gpu=$WORKERS samples/s=$rate gpu_util=$util%"
+echo "BENCH run=$run gpus=$NGPU workers/gpu=$WORKERS samples/s=$rate gpu_util=$util%"
+done

@@ -280,9 +280,15 @@ class DistributedMuonWithAuxAdam(SingleDeviceMuonWithAuxAdam):
             n = per_rank * math.prod(shape)
             X = gathered[:, offset : offset + n].reshape(ws * per_rank, *shape)[: len(idx)]
             offset += n
-            X = X * max(1, shape[-2] / shape[-1]) ** 0.5
+            scale = max(1, shape[-2] / shape[-1]) ** 0.5
+            if scale != 1:  # x * 1 == x: skipping it is exact
+                X = X * scale
+            # One float32 conversion (exact) and one foreach add per group: with bf16 updates the
+            # foreach add fell back to one add per parameter (77 launches). Bit-identical results
+            # on the GPU for the ViT-B shapes (checked 2026-10-28; tests/test_distributed.py: CPU)
+            X = X.float()
             torch._foreach_add_(
                 [params[i] for i in idx],
-                [x.reshape(params[i].shape) for i, x in zip(idx, X.unbind(0))],
+                [x.view(params[i].shape) for i, x in zip(idx, X.unbind(0))],
                 alpha=-lr,
             )

@@ -76,6 +76,24 @@ Pretrained HF weights `weights/vit_b_16_384.pth` (ViT-B/16 at 384 px), evaluated
   |---|---|---|---|---|
   | GDRNPP-PBR-RGB-MModel | 71.3 | 79.6 | 71.3 | BOP Challenge 2022 paper ([arXiv 2302.13075](https://arxiv.org/abs/2302.13075)) |
   | GDR-Net | 67.2 | 70.8 | – | as reported by a later paper ([arXiv 2607.02360](https://arxiv.org/abs/2607.02360)) |
+- **LM-O BOP19 leaderboard, per metric** (read 2026-10-28 from the [BOP leaderboard, LM-O](https://bop.felk.cvut.cz/leaderboards/pose-estimation-bop19/lm-o/) through an automatic page extractor: spot-check a value on the page before quoting it). All entries use real detections. "Training data" is taken from the entry name ("?" = not stated).
+  - RGB only (like us):
+    | Method | Training data | AR | AR_VSD | AR_MSSD | AR_MSPD | time (s/img) |
+    |---|---|---|---|---|---|---|
+    | IL-Pose | ? | 0.772 | 0.621 | 0.794 | 0.900 | – |
+    | HccePose (FCOS) | ? | 0.768 | 0.615 | 0.787 | 0.902 | – |
+    | ZebraPoseSAT-EffnetB4 (PBR only, DefaultDetections-2023) | PBR | 0.729 | 0.562 | 0.736 | 0.888 | 0.250 |
+    | GDRNPP-PBR-RGB-MModel | PBR | 0.713 | 0.549 | 0.701 | 0.887 | 0.206 |
+    | GDRNPP-PBRReal-RGB-SModel | PBR + real | 0.686 | 0.518 | 0.664 | 0.875 | 0.092 |
+    | SurfEmb-PBR-RGB | PBR | 0.663 | 0.497 | 0.640 | 0.851 | 11.8 |
+    | CosyPose-ECCV20-PBR-1VIEW | PBR | 0.633 | 0.480 | 0.606 | 0.812 | 0.550 |
+    | CDPNv2_BOP20 (PBR-only & RGB-only) | PBR | 0.624 | 0.445 | 0.612 | 0.815 | 0.163 |
+    | EPOS-BOP20-PBR | PBR | 0.547 | 0.389 | 0.501 | 0.750 | 0.468 |
+    | DPODv2 (synthetic, RGB, PnP) | synthetic | 0.584 | 0.432 | 0.560 | 0.761 | 0.274 |
+    | **Ours, M4 `tok4x` (GT boxes, own metrics, 2026-10-28)** | PBR | – | – | **0.653** | **0.891** | – |
+  - RGB-D, for reference only (they use depth): the best reach AR 0.80–0.86 (e.g. Flose 0.861: VSD 0.817, MSSD 0.875, MSPD 0.891; GDRNPP-PBR-RGBD-MModel 0.775: 0.629 / 0.822 / 0.872). Depth mostly fixes the distance error, hence MSSD 0.82–0.88.
+  - GDR-Net (not GDRNPP) and PoseCNN are not on this page.
+  - Reading (2026-10-28): our MSPD (2D alignment) is at the level of the best RGB methods; our MSSD (3D, dominated by the depth error of the directly regressed translation) is between SurfEmb and GDRNPP. Ours uses GT boxes, so it is optimistic until M7. RGB methods have AR_VSD ~0.15 below AR_MSSD, so a rough guess for our official AR is the low 0.6s; M6 measures it.
 
 ---
 

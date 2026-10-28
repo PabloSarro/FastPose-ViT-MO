@@ -114,3 +114,61 @@ def test_world_size_one_helpers_are_no_ops():
     assert not info.enabled and info.is_main
     assert all_reduce_mean([1.5, 2.0], info, torch.device("cpu")) == [1.5, 2.0]
     assert all_gather_object("x", info) == ["x"]
+
+
+# Odd group sizes (3, 1, 2) so that the per-rank shares need padding; a conv filter and 3D tokens
+DIST_SHAPES = [(12, 12)] * 3 + [(24, 12), (12, 24), (12, 24), (12, 3, 2, 2), (4, 1, 12), (1, 9, 12)]
+DIST_VECTORS = [(12,), (5,)]
+
+
+def _dist_opt_params():
+    g = torch.Generator().manual_seed(2)
+    return [torch.randn(s, generator=g) for s in DIST_SHAPES], [
+        torch.randn(s, generator=g) for s in DIST_VECTORS
+    ]
+
+
+def _dist_opt_grads(step):
+    g = torch.Generator().manual_seed(100 + step)
+    return [torch.randn(s, generator=g) for s in DIST_SHAPES + DIST_VECTORS]
+
+
+def _run_optimizer(opt_cls, steps=3, **kwargs):
+    muon, adam = _dist_opt_params()
+    opt = opt_cls(
+        [
+            {"params": muon, "use_muon": True, "lr": 0.02},
+            {"params": adam, "use_muon": False, "lr": 0.002, "betas": (0.9, 0.95)},
+        ],
+        **kwargs,
+    )
+    for step in range(steps):
+        for p, grad in zip(muon + adam, _dist_opt_grads(step)):
+            p.grad = grad
+        opt.step()
+    return muon + adam, opt
+
+
+def _dist_opt_worker(rank, init_file, out_dir):
+    from src.optimizer import DistributedMuonWithAuxAdam
+
+    dist.init_process_group("gloo", init_method=f"file://{init_file}", rank=rank, world_size=WORLD)
+    params, opt = _run_optimizer(DistributedMuonWithAuxAdam, rank=rank, world_size=WORLD)
+    torch.save(
+        {"params": params, "state": [opt.state[p] for p in params]},
+        os.path.join(out_dir, f"opt{rank}.pt"),
+    )
+    dist.destroy_process_group()
+
+
+def test_distributed_muon_bit_identical_to_single_device(tmp_path):
+    # Each rank orthogonalises a share of the matrices and all-gathers the rest: the result must be
+    # bit-identical to the single-device optimizer, on every rank
+    mp.spawn(_dist_opt_worker, args=(str(tmp_path / "init"), str(tmp_path)), nprocs=WORLD, join=True)
+    ref_params, ref_opt = _run_optimizer(SingleDeviceMuonWithAuxAdam)
+    for r in range(WORLD):
+        out = torch.load(tmp_path / f"opt{r}.pt")
+        for p, q, st in zip(ref_params, out["params"], out["state"]):
+            assert torch.equal(p, q)
+            for k, v in ref_opt.state[p].items():
+                assert torch.equal(v, st[k]) if torch.is_tensor(v) else v == st[k]

@@ -17,7 +17,7 @@ os.environ.setdefault("HOME", "/tmp")
 import torch.optim as optim
 import torch._dynamo
 from torch.amp import GradScaler
-from src.optimizer import SingleDeviceMuonWithAuxAdam
+from src.optimizer import DistributedMuonWithAuxAdam, SingleDeviceMuonWithAuxAdam
 import torch._inductor.config
 from src.datasets import SPEEDDataset, get_dataset_config
 from src.bop_dataset import (
@@ -593,7 +593,13 @@ def train(
                 }
             )
 
-        optimizer = SingleDeviceMuonWithAuxAdam(param_groups)
+        if dist_info.enabled:
+            # Same update, with the Newton-Schulz work split over the ranks (M6)
+            optimizer = DistributedMuonWithAuxAdam(
+                param_groups, dist_info.rank, dist_info.world_size
+            )
+        else:
+            optimizer = SingleDeviceMuonWithAuxAdam(param_groups)
     else:
         raise ValueError(f"Unsupported optimizer: {args.optimizer}")
 

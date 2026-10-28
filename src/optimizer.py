@@ -1,6 +1,8 @@
 # Custom optimizer implementations
 # Inspired by https://github.com/KellerJordan/Muon/blob/master/muon.py
 
+import math
+
 import torch
 
 
@@ -212,3 +214,75 @@ class SingleDeviceMuonWithAuxAdam(torch.optim.Optimizer):
             denom = torch._foreach_sqrt(torch._foreach_div(buf2, 1 - betas[1] ** step))
             torch._foreach_add_(denom, eps)
             torch._foreach_add_(ps, torch._foreach_div(buf1c, denom), alpha=-lr)
+
+
+class DistributedMuonWithAuxAdam(SingleDeviceMuonWithAuxAdam):
+    """SingleDeviceMuonWithAuxAdam for DDP (M6): the same update, with the Newton-Schulz work split.
+
+    Under DDP every rank has the same averaged gradients and the same state, so the single-device
+    optimizer computed the identical Newton-Schulz on all 77 matrices on every GPU (~15 ms per
+    step that did not shrink with more GPUs). Here each rank orthogonalises its share of every
+    shape group (padded with zero matrices to a multiple of the world size), and one all-gather
+    gives every rank all the results. Newton-Schulz of a matrix does not depend on the other
+    matrices of the batch (bit-identical, tests/test_distributed.py), so the parameters stay
+    bit-identical to SingleDeviceMuonWithAuxAdam's. Momentum and the Adam part are cheap and run on
+    every rank, as before. Used by src/train.py only when the world size is > 1.
+    """
+
+    def __init__(self, param_groups: list[dict], rank: int, world_size: int) -> None:
+        super().__init__(param_groups)
+        self.rank = rank
+        self.world_size = world_size
+
+    def _all_gather(self, local: torch.Tensor) -> torch.Tensor:
+        """(world_size * len(local),) with every rank's flat `local`, in rank order."""
+        import torch.distributed as dist
+
+        out = torch.empty(self.world_size * local.numel(), dtype=local.dtype, device=local.device)
+        if dist.get_backend() == "nccl":
+            dist.all_gather_into_tensor(out, local)
+        else:  # gloo (CPU tests)
+            dist.all_gather(list(out.chunk(self.world_size)), local)
+        return out
+
+    def _muon_step(self, params: list, lr: float, beta: float, ns_steps: int = 5) -> None:
+        grads = [p.grad for p in params]
+        bufs = []
+        for p in params:
+            state = self.state[p]
+            if len(state) == 0:
+                state["momentum_buffer"] = torch.zeros_like(p)
+            bufs.append(state["momentum_buffer"])
+        torch._foreach_lerp_(bufs, grads, 1 - beta)
+        torch._foreach_lerp_(grads, bufs, beta)  # Nesterov: the update is grad.lerp_(momentum)
+
+        by_shape: dict[tuple, list[int]] = {}
+        for i, g in enumerate(grads):
+            shape = (len(g), g[0].numel()) if g.ndim == 4 else tuple(g.shape)
+            by_shape.setdefault(shape, []).append(i)
+
+        # This rank's share of each group: rows [rank * per_rank, (rank + 1) * per_rank) of the
+        # group's stack padded to per_rank * world_size matrices
+        ws, local, layout = self.world_size, [], []
+        for shape, idx in by_shape.items():
+            per_rank = -(-len(idx) // ws)
+            G = torch.stack([grads[i].reshape(shape) for i in idx])
+            pad = per_rank * ws - len(idx)
+            if pad:
+                G = torch.cat([G, G.new_zeros((pad, *shape))])
+            mine = G[self.rank * per_rank : (self.rank + 1) * per_rank]
+            local.append(zeropower_via_newtonschulz5(mine, steps=ns_steps).reshape(-1))
+            layout.append((shape, idx, per_rank))
+        gathered = self._all_gather(torch.cat(local)).view(ws, -1)
+
+        offset = 0
+        for shape, idx, per_rank in layout:
+            n = per_rank * math.prod(shape)
+            X = gathered[:, offset : offset + n].reshape(ws * per_rank, *shape)[: len(idx)]
+            offset += n
+            X = X * max(1, shape[-2] / shape[-1]) ** 0.5
+            torch._foreach_add_(
+                [params[i] for i in idx],
+                [x.reshape(params[i].shape) for i, x in zip(idx, X.unbind(0))],
+                alpha=-lr,
+            )

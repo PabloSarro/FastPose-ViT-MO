@@ -141,3 +141,45 @@ def test_newton_schulz_at_least_as_accurate_as_before(shape, device):
     err = ((X.double() - ref).norm() / ref.norm()).item()
     err_before = ((_newton_schulz_unfused(G).double() - ref).norm() / ref.norm()).item()
     assert err <= 1.05 * err_before and err < 3e-2, (err, err_before)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs a GPU")
+def test_distributed_cuda_graph_bit_identical_on_gpu(tmp_path):
+    # DistributedMuonWithAuxAdam on the GPU (Newton-Schulz as a CUDA graph, all-gather through a
+    # 1-process NCCL group) vs SingleDeviceMuonWithAuxAdam: bit-identical parameters and state
+    import torch.distributed as dist
+
+    from src.optimizer import DistributedMuonWithAuxAdam
+
+    shapes = [(64, 64)] * 5 + [(192, 64)] * 2 + [(64, 192)] * 2 + [(64, 3, 4, 4), (8, 1, 64), (1, 33, 64)]
+    vectors = [(64,), (192,), (9,)]
+    dist.init_process_group(
+        "nccl", init_method=f"file://{tmp_path / 'init'}", rank=0, world_size=1,
+        device_id=torch.device("cuda", 0),
+    )
+    try:
+        results = []
+        for cls, kw in [(SingleDeviceMuonWithAuxAdam, {}), (DistributedMuonWithAuxAdam, {"rank": 0, "world_size": 1})]:
+            g = torch.Generator().manual_seed(0)
+            muon = [torch.randn(s, generator=g).cuda() for s in shapes]
+            adam = [torch.randn(s, generator=g).cuda() for s in vectors]
+            opt = cls(
+                [
+                    {"params": muon, "use_muon": True, "lr": 0.02},
+                    {"params": adam, "use_muon": False, "lr": 0.002, "betas": (0.9, 0.95)},
+                ],
+                **kw,
+            )
+            for _ in range(4):
+                for p in muon + adam:
+                    p.grad = torch.randn(p.shape, generator=g).cuda()
+                opt.step()
+            results.append((muon + adam, opt))
+        (ref, ref_opt), (new, new_opt) = results
+        assert new_opt._ns.graph is not None  # the CUDA graph path was used
+        for p, q in zip(ref, new):
+            assert torch.equal(p, q)
+            for k, v in ref_opt.state[p].items():
+                assert torch.equal(v, new_opt.state[q][k]) if torch.is_tensor(v) else v == new_opt.state[q][k]
+    finally:
+        dist.destroy_process_group()

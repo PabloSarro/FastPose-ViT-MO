@@ -227,12 +227,22 @@ class DistributedMuonWithAuxAdam(SingleDeviceMuonWithAuxAdam):
     matrices of the batch (bit-identical, tests/test_distributed.py), so the parameters stay
     bit-identical to SingleDeviceMuonWithAuxAdam's. Momentum and the Adam part are cheap and run on
     every rank, as before. Used by src/train.py only when the world size is > 1.
+
+    On the GPU, this rank's Newton-Schulz runs as one CUDA graph over fixed input buffers (captured
+    at the first step): ~110 small kernel launches per step become one copy and one replay. The
+    launches cost the CPU ~13 ms per step under DDP (the main processes share the CPUs with the
+    DataLoader workers), time in which the GPU waited after GradScaler's sync. A replay runs the
+    same kernels, so the results are bit-identical to eager execution (tests/test_optimizer.py).
     """
 
-    def __init__(self, param_groups: list[dict], rank: int, world_size: int) -> None:
+    def __init__(
+        self, param_groups: list[dict], rank: int, world_size: int, cuda_graph: bool = True
+    ) -> None:
         super().__init__(param_groups)
         self.rank = rank
         self.world_size = world_size
+        self.cuda_graph = cuda_graph
+        self._ns = None  # fixed buffers (and CUDA graph) of the Newton-Schulz, built at step 1
 
     def _all_gather(self, local: torch.Tensor) -> torch.Tensor:
         """(world_size * len(local),) with every rank's flat `local`, in rank order."""
@@ -256,27 +266,16 @@ class DistributedMuonWithAuxAdam(SingleDeviceMuonWithAuxAdam):
         torch._foreach_lerp_(bufs, grads, 1 - beta)
         torch._foreach_lerp_(grads, bufs, beta)  # Nesterov: the update is grad.lerp_(momentum)
 
-        by_shape: dict[tuple, list[int]] = {}
-        for i, g in enumerate(grads):
-            shape = (len(g), g[0].numel()) if g.ndim == 4 else tuple(g.shape)
-            by_shape.setdefault(shape, []).append(i)
+        if self._ns is None:
+            self._ns = _NewtonSchulzShare(params, self.rank, self.world_size, ns_steps)
+        ns = self._ns
+        if ns.my_params:
+            torch._foreach_copy_(ns.inputs, [params[i].grad for i in ns.my_params])
+        ns.run(use_graph=self.cuda_graph and params[0].is_cuda)
+        gathered = self._all_gather(ns.output).view(self.world_size, -1)
 
-        # This rank's share of each group: rows [rank * per_rank, (rank + 1) * per_rank) of the
-        # group's stack padded to per_rank * world_size matrices
-        ws, local, layout = self.world_size, [], []
-        for shape, idx in by_shape.items():
-            per_rank = -(-len(idx) // ws)
-            G = torch.stack([grads[i].reshape(shape) for i in idx])
-            pad = per_rank * ws - len(idx)
-            if pad:
-                G = torch.cat([G, G.new_zeros((pad, *shape))])
-            mine = G[self.rank * per_rank : (self.rank + 1) * per_rank]
-            local.append(zeropower_via_newtonschulz5(mine, steps=ns_steps).reshape(-1))
-            layout.append((shape, idx, per_rank))
-        gathered = self._all_gather(torch.cat(local)).view(ws, -1)
-
-        offset = 0
-        for shape, idx, per_rank in layout:
+        ws, offset = self.world_size, 0
+        for shape, idx, per_rank in ns.layout:
             n = per_rank * math.prod(shape)
             X = gathered[:, offset : offset + n].reshape(ws * per_rank, *shape)[: len(idx)]
             offset += n
@@ -292,3 +291,58 @@ class DistributedMuonWithAuxAdam(SingleDeviceMuonWithAuxAdam):
                 [x.view(params[i].shape) for i, x in zip(idx, X.unbind(0))],
                 alpha=-lr,
             )
+
+
+class _NewtonSchulzShare:
+    """One rank's share of DistributedMuonWithAuxAdam's Newton-Schulz, on fixed buffers.
+
+    Matrices are grouped by (2D-viewed) shape; group k is padded with zero matrices to
+    per_rank * world_size and this rank takes rows [rank * per_rank, (rank + 1) * per_rank). The
+    inputs are this rank's rows (float32, the zero padding is written once), the output is the
+    flat bf16 concatenation of their Newton-Schulz in group order, the layout all-gathered.
+    """
+
+    def __init__(self, params: list, rank: int, world_size: int, ns_steps: int) -> None:
+        by_shape: dict[tuple, list[int]] = {}
+        for i, p in enumerate(params):
+            shape = (len(p), p[0].numel()) if p.ndim == 4 else tuple(p.shape)
+            by_shape.setdefault(shape, []).append(i)
+        self.layout, self.buffers, self.inputs, self.my_params = [], [], [], []
+        for shape, idx in by_shape.items():
+            per_rank = -(-len(idx) // world_size)
+            buf = torch.zeros((per_rank, *shape), dtype=params[0].dtype, device=params[0].device)
+            for j, i in enumerate(idx[rank * per_rank : (rank + 1) * per_rank]):
+                self.inputs.append(buf[j].view(params[i].shape))
+                self.my_params.append(i)
+            self.buffers.append(buf)
+            self.layout.append((shape, idx, per_rank))
+        self.output = torch.empty(
+            sum(b.numel() for b in self.buffers), dtype=torch.bfloat16, device=params[0].device
+        )
+        self.ns_steps = ns_steps
+        self.graph = None
+
+    def _compute(self) -> None:
+        offset = 0
+        for buf in self.buffers:
+            X = zeropower_via_newtonschulz5(buf, steps=self.ns_steps).reshape(-1)
+            self.output[offset : offset + X.numel()].copy_(X)
+            offset += X.numel()
+
+    def run(self, use_graph: bool) -> None:
+        if not use_graph:
+            self._compute()
+            return
+        if self.graph is None:
+            # Warm up on a side stream (cuBLAS handles, workspaces), then capture; capturing does
+            # not execute, so the first step's result comes from the replay below
+            side = torch.cuda.Stream()
+            side.wait_stream(torch.cuda.current_stream())
+            with torch.cuda.stream(side):
+                for _ in range(3):
+                    self._compute()
+            torch.cuda.current_stream().wait_stream(side)
+            self.graph = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(self.graph):
+                self._compute()
+        self.graph.replay()

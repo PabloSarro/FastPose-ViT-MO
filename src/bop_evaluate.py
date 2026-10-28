@@ -4,11 +4,17 @@
 # The metrics are computed per instance with bop_toolkit_lib.pose_error, per object, and gathered
 # in a per-object table (table_<split>.md). They are not the BOP19 AR, which needs VSD and the
 # renderer: run scripts/bop_eval.sh on the CSV, which holds every evaluated object.
+#
+# BOP19 results CSV (M6): OUT_DIR/<method>_lmo-<split>.csv, method "fastposevitmo" by default (BOP
+# method names have no "_"), columns scene_id,im_id,obj_id,score,R,t,time with R row-major and t in
+# mm. `time` is BOP's per-image time (all objects of the image), measured in a separate timed pass
+# (see time_per_image); the poses come from the normal batched pass.
 
 import argparse
 import json
 import logging
 import os
+import time
 
 import numpy as np
 import torch
@@ -19,6 +25,7 @@ from torch.utils.data import DataLoader
 from src.bop_dataset import (
     LMO_OBJ_IDS,
     BOPDataset,
+    crop_image,
     default_bop_root,
     load_index,
     rows_for_objects,
@@ -87,6 +94,77 @@ def predict(model, dataset, args, device) -> dict:
         out["R"].append(quaternion_to_rotation_matrix(abs_q).cpu().numpy())
         out["t"].append(abs_t.cpu().numpy())
     return {k: np.concatenate(v) for k, v in out.items()}
+
+
+def time_per_image(model, dataset, args, device, warmup: int = 3) -> dict:
+    """BOP19 `time` per image: seconds to estimate the poses of all its objects (GT boxes).
+
+    Timed, for each image, from its decoded RGB in memory to the poses on the CPU: the crop and
+    normalisation of every instance, the network on that batch, and R, t recovery (with a CUDA
+    sync). Reading and decoding the image file is not timed (it measures the NAS, not the method).
+    The first `warmup` images are run once untimed first (cuDNN autotuning, allocations).
+
+    Returns:
+        {(scene_id, im_id): seconds}
+    """
+    index = dataset.index
+    groups: dict[tuple, list[int]] = {}
+    for row in range(len(dataset)):
+        groups.setdefault((int(index["scene_id"][row]), int(index["im_id"][row])), []).append(row)
+    transformer = CoordinateTransformer(
+        rotation_format="matrix",
+        val_camera=dataset.camera,
+        no_rotation_compensation=False,
+        depth_mode=args.depth_mode,
+    )
+
+    def estimate(rows, image):
+        bboxes = [dataset.crop_bbox(r) for r in rows]
+        images = torch.stack(
+            [
+                dataset.transform(
+                    image=crop_image(image, b, dataset.img_size, dataset.crop_context).astype(
+                        np.float32
+                    )
+                    / 255.0
+                )["image"]
+                for b in bboxes
+            ]
+        ).to(device)
+        obj_idx = torch.as_tensor(index["obj_idx"][rows], device=device)
+        with autocast("cuda", enabled=device.type == "cuda"):
+            pred_t, pred_R = forward_model(model, images, obj_idx, merge_outputs=True)
+            pred_R = process_rotation(pred_R, "matrix")
+        n = len(rows)
+        abs_t, abs_q, _, _ = transformer.transform_to_absolute(
+            pred_t.float(),
+            pred_R.float(),
+            torch.zeros(n, 3, device=device),
+            torch.zeros(n, 3, 3, device=device),
+            torch.tensor(np.array(bboxes), dtype=torch.float32),
+            K=torch.from_numpy(index["K"][rows]).float(),
+            img_wh=torch.from_numpy(index["img_wh"][rows]).float(),
+            diameter=torch.from_numpy(index["diameters"][index["obj_idx"][rows]]).float(),
+        )
+        return quaternion_to_rotation_matrix(abs_q).cpu().numpy(), abs_t.cpu().numpy()
+
+    times = {}
+    model.eval()
+    with torch.no_grad():
+        keys = list(groups)
+        for key in keys[:warmup]:
+            estimate(groups[key], dataset.load_image(groups[key][0]))
+        for key in keys:
+            rows = groups[key]
+            image = dataset.load_image(rows[0])
+            if device.type == "cuda":
+                torch.cuda.synchronize()
+            start = time.perf_counter()
+            estimate(rows, image)
+            if device.type == "cuda":
+                torch.cuda.synchronize()
+            times[key] = time.perf_counter() - start
+    return times
 
 
 def rotation_error_deg(R_est: np.ndarray, R_gt: np.ndarray) -> float:
@@ -247,8 +325,10 @@ def main() -> None:
     )
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--num_workers", type=int, default=8)
-    parser.add_argument("--method", default="fpvit", help="BOP method name (no '_')")
+    parser.add_argument("--method", default="fastposevitmo", help="BOP method name (no '_')")
     args = parser.parse_args()
+    if "_" in args.method:
+        parser.error("--method must not contain '_' (BOP file names are METHOD_DATASET-SPLIT.csv)")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
     if args.table_only:
         write_tables(args.out_dir, args.splits)
@@ -275,6 +355,12 @@ def main() -> None:
             img_size=VIT_MODELS[args.vit_model][3][0],
         )
         pred_all = predict(model, dataset, args, device)
+        image_times = time_per_image(model, dataset, args, device)
+        logging.info(
+            f"{split}: {len(image_times)} images, time per image (BOP 'time', see time_per_image) "
+            f"mean {np.mean(list(image_times.values())) * 1000:.1f} ms, "
+            f"median {np.median(list(image_times.values())) * 1000:.1f} ms"
+        )
         results = []
         for obj_id in args.obj_ids:
             rows = rows_for_objects(split_index, [obj_id])
@@ -302,6 +388,7 @@ def main() -> None:
                     "score": 1.0,
                     "R": pred["R"][i],
                     "t": pred["t"][i],
+                    "time": image_times[(int(sub["scene_id"][i]), int(sub["im_id"][i]))],
                 }
                 for i in range(len(rows))
             ]

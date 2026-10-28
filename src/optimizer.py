@@ -143,34 +143,68 @@ class SingleDeviceMuonWithAuxAdam(torch.optim.Optimizer):
             with torch.enable_grad():
                 loss = closure()
 
+        # Same math as muon_update / adam_update per parameter, but with one foreach kernel per
+        # operation for all parameters and one batched Newton-Schulz per matrix shape: the
+        # per-parameter loop launched ~4,600 small kernels per step and kept the GPU waiting
         for group in self.param_groups:
+            params = group["params"]
+            for p in params:
+                if p.grad is None:
+                    p.grad = torch.zeros_like(p)  # Force synchronization
+            if not params:
+                continue
             if group["use_muon"]:
-                for p in group["params"]:
-                    if p.grad is None:
-                        p.grad = torch.zeros_like(p)  # Force synchronization
-                    state = self.state[p]
-                    if len(state) == 0:
-                        state["momentum_buffer"] = torch.zeros_like(p)
-                    update = muon_update(p.grad, state["momentum_buffer"], beta=group["momentum"])
-                    p.add_(update.reshape(p.shape), alpha=-group["lr"])
+                self._muon_step(params, group["lr"], group["momentum"])
             else:
-                for p in group["params"]:
-                    if p.grad is None:
-                        p.grad = torch.zeros_like(p)  # Force synchronization
-                    state = self.state[p]
-                    if len(state) == 0:
-                        state["exp_avg"] = torch.zeros_like(p)
-                        state["exp_avg_sq"] = torch.zeros_like(p)
-                        state["step"] = 0
-                    state["step"] += 1
-                    update = adam_update(
-                        p.grad,
-                        state["exp_avg"],
-                        state["exp_avg_sq"],
-                        state["step"],
-                        group["betas"],
-                        group["eps"],
-                    )
-                    p.add_(update, alpha=-group["lr"])
+                self._adam_step(params, group["lr"], group["betas"], group["eps"])
 
         return loss
+
+    def _muon_step(self, params: list, lr: float, beta: float, ns_steps: int = 5) -> None:
+        grads = [p.grad for p in params]
+        bufs = []
+        for p in params:
+            state = self.state[p]
+            if len(state) == 0:
+                state["momentum_buffer"] = torch.zeros_like(p)
+            bufs.append(state["momentum_buffer"])
+        torch._foreach_lerp_(bufs, grads, 1 - beta)
+        torch._foreach_lerp_(grads, bufs, beta)  # Nesterov: the update is grad.lerp_(momentum)
+
+        # Matrices of the same (2D-viewed) shape share one batched Newton-Schulz
+        by_shape: dict[tuple, list[int]] = {}
+        for i, g in enumerate(grads):
+            shape = (len(g), g[0].numel()) if g.ndim == 4 else tuple(g.shape)
+            by_shape.setdefault(shape, []).append(i)
+        for shape, idx in by_shape.items():
+            G = torch.stack([grads[i].reshape(shape) for i in idx])
+            X = zeropower_via_newtonschulz5(G, steps=ns_steps)
+            X *= max(1, shape[-2] / shape[-1]) ** 0.5
+            torch._foreach_add_(
+                [params[i] for i in idx],
+                [x.reshape(params[i].shape) for i, x in zip(idx, X.unbind(0))],
+                alpha=-lr,
+            )
+
+    def _adam_step(self, params: list, lr: float, betas: tuple, eps: float) -> None:
+        for p in params:
+            state = self.state[p]
+            if len(state) == 0:
+                state["exp_avg"] = torch.zeros_like(p)
+                state["exp_avg_sq"] = torch.zeros_like(p)
+                state["step"] = 0
+            state["step"] += 1
+        # Parameters with the same step count share the bias correction (normally all of them)
+        by_step: dict[int, list] = {}
+        for p in params:
+            by_step.setdefault(self.state[p]["step"], []).append(p)
+        for step, ps in by_step.items():
+            grads = [p.grad for p in ps]
+            buf1 = [self.state[p]["exp_avg"] for p in ps]
+            buf2 = [self.state[p]["exp_avg_sq"] for p in ps]
+            torch._foreach_lerp_(buf1, grads, 1 - betas[0])
+            torch._foreach_lerp_(buf2, torch._foreach_mul(grads, grads), 1 - betas[1])
+            buf1c = torch._foreach_div(buf1, 1 - betas[0] ** step)
+            denom = torch._foreach_sqrt(torch._foreach_div(buf2, 1 - betas[1] ** step))
+            torch._foreach_add_(denom, eps)
+            torch._foreach_add_(ps, torch._foreach_div(buf1c, denom), alpha=-lr)

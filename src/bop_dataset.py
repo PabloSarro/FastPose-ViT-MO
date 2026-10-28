@@ -16,6 +16,7 @@ import albumentations as A
 import cv2
 import numpy as np
 import torch
+from albucore import add_weighted, maybe_process_in_chunks, preserve_channel_dim, uint8_io
 from albumentations.pytorch import ToTensorV2
 from torch.utils.data import Dataset, Sampler
 
@@ -415,12 +416,90 @@ IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
 
 
-def pixel_transform(pixel_aug: str) -> A.Compose:
+@uint8_io
+@preserve_channel_dim
+@maybe_process_in_chunks
+def sun_flare_overlay_fast(
+    img: np.ndarray, flare_center, src_radius: int, src_color, circles: list
+) -> np.ndarray:
+    """albumentations' add_sun_flare_overlay with bit-identical output, ~3x faster.
+
+    The original blends the whole image once per flare circle and once per sun circle (40 for
+    the default src_radius 400), 15-18 ms per 384 px crop (now ~6 ms, half of it the float -> uint8
+    conversion of @uint8_io). Two exact shortcuts, both resting on
+    two properties of albucore's uint8 add_weighted (checked in tests/test_bop_dataset.py): it
+    is elementwise with a result that does not depend on the array's size or layout, and
+    add_weighted(v, a, v, 1 - a) == v.
+    - Flare circles: outside the circles drawn so far the overlay equals the output, so the blend
+      is the identity there; blend only their bounding box.
+    - Sun circles: concentric, one colour. A pixel's final value depends only on its value v
+      and on the first (smallest) circle i that covers it, after which it is blended once per
+      step k >= i. A table T[i][v] per channel (built with the same add_weighted on the 256
+      values) replaces the 40 full-image blends with one lookup.
+    """
+    overlay = img.copy()
+    output = img.copy()
+    h, w = img.shape[:2]
+
+    weighted_brightness = 0.0
+    total_radius_length = 0.0
+    x0, y0, x1, y1 = w, h, 0, 0  # union of the flare circles drawn so far (bounding box)
+    for alpha, (x, y), rad3, circle_color in circles:
+        weighted_brightness += alpha * rad3
+        total_radius_length += rad3
+        cv2.circle(overlay, (x, y), rad3, circle_color, -1)
+        x0, y0 = max(min(x0, x - rad3 - 1), 0), max(min(y0, y - rad3 - 1), 0)
+        x1, y1 = min(max(x1, x + rad3 + 2), w), min(max(y1, y + rad3 + 2), h)
+        if x0 < x1 and y0 < y1:
+            roi = (slice(y0, y1), slice(x0, x1))
+            output[roi] = add_weighted(
+                np.ascontiguousarray(overlay[roi]), alpha, np.ascontiguousarray(output[roi]), 1 - alpha
+            )
+
+    point = [int(v) for v in flare_center]
+    num_times = src_radius // 10
+    max_alpha = weighted_brightness / total_radius_length * 5
+    alpha = np.linspace(0.0, min(max_alpha, 1.0), num=num_times)
+    rad = np.linspace(1, src_radius, num=num_times)
+
+    # first[pixel] = smallest sun circle covering it (num_times = none): paint largest first
+    first = np.full((h, w), num_times, np.uint16)
+    for i in reversed(range(num_times)):
+        cv2.circle(first, point, int(rad[i]), i, -1)
+
+    channels = output.shape[2]
+    values = np.repeat(np.arange(256, dtype=np.uint8)[:, None], channels, axis=1)  # (256, C)
+    color = np.broadcast_to(np.asarray(src_color, np.uint8), values.shape).copy()
+    table = np.empty((num_times + 1, 256, channels), np.uint8)
+    table[num_times] = values
+    for i in reversed(range(num_times)):  # T[i][v] = T[i + 1][g_i(v)]
+        a = alpha[num_times - i - 1]
+        alp = a * a * a
+        step = add_weighted(color, alp, values, 1 - alp)
+        table[i] = np.take_along_axis(table[i + 1], step.astype(np.intp), axis=0)
+
+    flat_index = first.astype(np.intp) * 256
+    for c in range(channels):
+        output[..., c] = table[:, :, c].reshape(-1)[flat_index + output[..., c]]
+    return output
+
+
+class FastRandomSunFlare(A.RandomSunFlare):
+    """A.RandomSunFlare with the same random parameters and bit-identical output ("overlay")."""
+
+    def apply(self, img: np.ndarray, flare_center, circles, **params) -> np.ndarray:
+        if self.method != "overlay":
+            return super().apply(img, flare_center=flare_center, circles=circles, **params)
+        return sun_flare_overlay_fast(img, flare_center, self.src_radius, self.src_color, circles)
+
+
+def pixel_transform(pixel_aug: str, fast_sun_flare: bool = True) -> A.Compose:
     """Photometric augmentations + ImageNet normalization, for crops already at model size.
 
     "standard" and "domain_gap" are the SPEEDDataset pipelines without Resize (the crop warp
     already outputs the model size) and, for "domain_gap", without OpticalDistortion: it is a
-    geometric warp, so it would make the pose labels wrong.
+    geometric warp, so it would make the pose labels wrong. fast_sun_flare=False uses the original
+    A.RandomSunFlare (same output, slower; kept for the equality test).
     """
     if pixel_aug not in PIXEL_AUGS:
         raise ValueError(f"pixel_aug must be one of {PIXEL_AUGS}, got {pixel_aug!r}")
@@ -446,7 +525,9 @@ def pixel_transform(pixel_aug: str) -> A.Compose:
             A.CLAHE(p=0.5),
             A.RandomBrightnessContrast(p=0.5),
             A.Solarize(p=0.5),
-            A.RandomSunFlare(flare_roi=(0, 0, 1, 1), p=0.5),
+            (FastRandomSunFlare if fast_sun_flare else A.RandomSunFlare)(
+                flare_roi=(0, 0, 1, 1), p=0.5
+            ),
             A.ISONoise(p=0.5),
             A.MotionBlur(p=0.5),
             A.Defocus(p=0.5),

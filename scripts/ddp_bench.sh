@@ -12,7 +12,8 @@
 # Result: the last line, "BENCH gpus=N samples/s=... gpu_util=...%" (epochs 2-3: epoch 1 compiles).
 # Runs through scripts/ddp_profile.py (src/train.py unchanged + per-rank "PROFILE" lines: data wait
 # and optimizer time per step). RUNS=2 repeats the benchmark in the same job (bench, bench_2, ...)
-# to measure the run-to-run noise without waiting for a second job.
+# to measure the run-to-run noise without waiting for a second job. WORKERS_LIST="11 8 6" runs
+# once per worker count instead (bench_w11, bench_w8, ...), to find the CPU split in one job.
 set -euo pipefail
 : "${RUN_DIR:?run inside a train job (RUN_DIR not set)}"
 export PYTHONPATH=.
@@ -26,8 +27,17 @@ else
 fi
 nvidia-smi topo -m > "$RUN_DIR/gpu_topology.txt" 2>&1 || true
 
-for run in $(seq 1 "$RUNS"); do
-out=$RUN_DIR/bench$([[ $run == 1 ]] || echo "_$run")
+if [[ -n ${WORKERS_LIST:-} ]]; then
+    runs=(); for w in $WORKERS_LIST; do runs+=("w$w"); done
+else
+    runs=($(seq 1 "$RUNS"))
+fi
+for run in "${runs[@]}"; do
+if [[ $run == w* ]]; then
+    WORKERS=${run#w}; out=$RUN_DIR/bench_$run
+else
+    out=$RUN_DIR/bench$([[ $run == 1 ]] || echo "_$run")
+fi
 mkdir -p "$out"
 
 nvidia-smi --query-gpu=index,utilization.gpu,memory.used --format=csv,noheader,nounits -l 5 \

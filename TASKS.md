@@ -854,7 +854,10 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 - **Exit:** official LM-O AR with oracle boxes, with in-loop MSSD/MSPD within ±0.01 of the official values. Multi-GPU: N = 1 identical to before, and a measured 1 vs N speed-up table in §9.
 
 ### M7 — Real detections (W9–11)
-- [ ] Download the BOP default detections for seen objects: [`bop23_default_detections_for_task1.zip`](https://bop.felk.cvut.cz/media/data/bop_datasets_extra/bop23_default_detections_for_task1.zip) (GDRNPPDet).
+- [x] Download the BOP default detections for seen objects: [`bop23_default_detections_for_task1.zip`](https://bop.felk.cvut.cz/media/data/bop_datasets_extra/bop23_default_detections_for_task1.zip) (GDRNPPDet).
+  - **Done 2026-11-02.** 50 MB zip (sha256 `f0a01aee…3249`) in `$NAS_HOME/datasets/bop_detections/zip/`, extracted to `$NAS_HOME/datasets/bop_detections/default_task1/bop23_default_detections_for_task1/` (outside `$DATA_DIR` and the repo). GDRNPPDet detections for the 7 core datasets, two variants: `gdrnppdet-pbr/` (trained on PBR only) and `gdrnppdet-pbrreal/` (PBR + real; the one BOP 2023 asks for the "default detections" award). **For LM-O both files are byte-identical** (LM-O has no real training images): `gdrnppdet-pbr/gdrnppdet-pbr_lmo-test_468338cf-….json`.
+  - Format (COCO-style list): `scene_id`, `image_id`, `category_id` (= BOP obj_id), `score`, `bbox` = [x, y, w, h] in pixels (floats), `time` = the detector's seconds for that image (75–185 ms). LM-O: **38,152 detections on all 200 test images, for the 8 objects** (1: 3,403 … 8: 7,077), scores from 0.001 (median 0.003: a long low-score tail, hence "keep the top `inst_count` per object by score").
+  - BOP rule to apply in the results: with default detections, the reported `time` per image must include the detection time (the detector's `time` + ours).
 - [ ] Measure whether detector boxes match `bbox_visib` or `bbox_obj` better (mean IoU), and adapt the crop source and jitter.
 - [ ] Re-evaluate LM-O with detections; keep the top `inst_count` per object by detection score.
 - [ ] (Stretch) Multi-class LW-DETR so the Jetson pipeline is self-contained. Today `object_detector/` is hard-coded to one class.

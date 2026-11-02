@@ -9,6 +9,12 @@
 # method names have no "_"), columns scene_id,im_id,obj_id,score,R,t,time with R row-major and t in
 # mm. `time` is BOP's per-image time (all objects of the image), measured in a separate timed pass
 # (see time_per_image); the poses come from the normal batched pass.
+#
+# Real detections (M7): --detections FILE (BOP default detections, COCO-style JSON) crops around
+# the top inst_count detections by score of each target (image, object) instead of the GT box;
+# the CSV then has the detection scores, no estimate where nothing was detected (a miss for BOP),
+# and time = ours + the detector's time of the image. In the per-object tables a missing
+# detection counts as a failure.
 
 import argparse
 import json
@@ -25,6 +31,7 @@ from torch.utils.data import DataLoader
 from src.bop_dataset import (
     LMO_OBJ_IDS,
     BOPDataset,
+    bop_bbox_to_xyxy,
     crop_image,
     default_bop_root,
     load_index,
@@ -165,6 +172,56 @@ def time_per_image(model, dataset, args, device, warmup: int = 3) -> dict:
                 torch.cuda.synchronize()
             times[key] = time.perf_counter() - start
     return times
+
+
+def bop_iou(a, b) -> float:
+    """IoU of two [x1, y1, x2, y2] boxes."""
+    w = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
+    h = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - w * h
+    return w * h / union if union > 0 else 0.0
+
+
+def assign_detections(index: dict, detections_path: str) -> dict:
+    """Detection boxes for the rows (GT instances = targets) of `index`.
+
+    For each (scene, image, object), the top inst_count detections by score (inst_count = its
+    number of rows), matched to the instances greedily by IoU with bbox_visib (only for our
+    per-instance errors: BOP matches by itself). Rows without a detection get NaN.
+
+    Returns:
+        bbox: (n, 4) BOP-format [x, y, w, h] floats (bop_bbox_to_xyxy gives the detection box
+        back exactly), score: (n,), det_time: {(scene_id, im_id): detector seconds}
+    """
+    with open(detections_path) as f:
+        dets = json.load(f)
+    by_key: dict[tuple, list] = {}
+    det_time: dict[tuple, float] = {}
+    for d in dets:
+        x, y, w, h = d["bbox"]
+        by_key.setdefault((d["scene_id"], d["image_id"], d["category_id"]), []).append(
+            (d["score"], [x, y, x + w, y + h])
+        )
+        key = (d["scene_id"], d["image_id"])
+        det_time[key] = max(det_time.get(key, 0.0), float(d.get("time", 0.0)))
+    n = len(index["obj_id"])
+    bbox = np.full((n, 4), np.nan)
+    score = np.full(n, np.nan)
+    groups: dict[tuple, list[int]] = {}
+    for row in range(n):
+        key = (int(index["scene_id"][row]), int(index["im_id"][row]), int(index["obj_id"][row]))
+        groups.setdefault(key, []).append(row)
+    for key, rows in groups.items():
+        kept = sorted(by_key.get(key, []), key=lambda c: -c[0])[: len(rows)]
+        for row in sorted(rows, key=lambda r: -float(index["visib_fract"][r])):
+            if not kept:
+                break
+            gt = bop_bbox_to_xyxy(index["bbox_visib"][row])
+            j = max(range(len(kept)), key=lambda j: bop_iou(kept[j][1], gt))
+            sc, (x1, y1, x2, y2) = kept.pop(j)
+            bbox[row] = [x1, y1, x2 - x1 - 1.0, y2 - y1 - 1.0]  # inverse of bop_bbox_to_xyxy
+            score[row] = sc
+    return {"bbox": bbox, "score": score, "det_time": det_time}
 
 
 def rotation_error_deg(R_est: np.ndarray, R_gt: np.ndarray) -> float:
@@ -329,13 +386,23 @@ def main() -> None:
         choices=["visib", "obj"],
         help="GT box to crop around: bbox_visib (as in training) or bbox_obj (amodal, M7)",
     )
+    parser.add_argument(
+        "--detections",
+        default=None,
+        help="Crop around these detections (BOP default detections JSON) instead of GT boxes; "
+        "one split only (M7)",
+    )
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--num_workers", type=int, default=8)
     parser.add_argument("--method", default="fastposevitmo", help="BOP method name (no '_')")
     args = parser.parse_args()
+    if args.detections and len(args.splits) != 1:
+        parser.error("--detections needs exactly one split (the detections file's)")
     if "_" in args.method:
         parser.error("--method must not contain '_' (BOP file names are METHOD_DATASET-SPLIT.csv)")
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s", force=True
+    )  # force: an imported module may have configured logging already
     if args.table_only:
         write_tables(args.out_dir, args.splits)
         return
@@ -353,15 +420,38 @@ def main() -> None:
         # One pass over all requested objects, then the errors object by object
         all_rows = rows_for_objects(index, args.obj_ids)
         split_index = select_rows(index, all_rows)
+        n_rows = len(split_index["obj_id"])
+        detected = np.ones(n_rows, dtype=bool)
+        pred_index, bbox_source, score = split_index, args.bbox_source, np.ones(n_rows)
+        if args.detections:
+            det = assign_detections(split_index, args.detections)
+            detected = ~np.isnan(det["score"])
+            score = det["score"]
+            pred_index = select_rows(split_index, np.flatnonzero(detected))
+            pred_index["bbox_visib"] = det["bbox"][detected]  # crop around the detections
+            bbox_source = "visib"
+            logging.info(
+                f"{split}: detections for {detected.sum()} of {n_rows} targets "
+                f"({args.detections})"
+            )
         dataset = BOPDataset(
-            index=split_index,
+            index=pred_index,
             augment=False,
-            bbox_source=args.bbox_source,
+            bbox_source=bbox_source,
             depth_mode=args.depth_mode,
             img_size=VIT_MODELS[args.vit_model][3][0],
         )
-        pred_all = predict(model, dataset, args, device)
+        pred_det = predict(model, dataset, args, device)
+        # Targets without a detection: a pose 10 km away, so every error counts as a failure
+        pred_all = {
+            "R": np.tile(np.eye(3, dtype=pred_det["R"].dtype), (n_rows, 1, 1)),
+            "t": np.tile(np.array([0.0, 0.0, 1e7], dtype=pred_det["t"].dtype), (n_rows, 1)),
+        }
+        for k in pred_all:
+            pred_all[k][detected] = pred_det[k]
         image_times = time_per_image(model, dataset, args, device)
+        if args.detections:
+            image_times = {k: v + det["det_time"].get(k, 0.0) for k, v in image_times.items()}
         logging.info(
             f"{split}: {len(image_times)} images, time per image (BOP 'time', see time_per_image) "
             f"mean {np.mean(list(image_times.values())) * 1000:.1f} ms, "
@@ -391,12 +481,13 @@ def main() -> None:
                     "scene_id": int(sub["scene_id"][i]),
                     "im_id": int(sub["im_id"][i]),
                     "obj_id": obj_id,
-                    "score": 1.0,
+                    "score": float(score[rows[i]]),
                     "R": pred["R"][i],
                     "t": pred["t"][i],
                     "time": image_times[(int(sub["scene_id"][i]), int(sub["im_id"][i]))],
                 }
                 for i in range(len(rows))
+                if detected[rows[i]]
             ]
         # One BOP results file per split with every evaluated object (scripts/bop_eval.sh)
         inout.save_bop_results(

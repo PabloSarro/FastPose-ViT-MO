@@ -131,6 +131,7 @@ def create_bop_datasets(args: argparse.Namespace, img_size: int, logger) -> tupl
         augment=True,
         bbox_jitter_percent=0.0 if no_jitter else args.bbox_crop_percent,
         pixel_aug="none" if args.no_pixel_augmentation else args.bop_pixel_aug,
+        bbox_source=args.bop_bbox_source,
         **common,
     )
     val_rows = rows_for_objects(val_index, obj_ids)
@@ -1324,6 +1325,14 @@ if __name__ == "__main__":
         default="standard",
         choices=["standard", "domain_gap"],
         help="BOP pixel augmentation (off with --no_pixel_augmentation)",
+    )
+    parser.add_argument(
+        "--bop_bbox_source",
+        type=str,
+        default="visib",
+        choices=["visib", "obj", "mix"],
+        help="BOP: box the training crops use: bbox_visib, bbox_obj (amodal), or a random mix "
+        "per sample (M7). Validation always uses bbox_visib",
     )
     parser.add_argument(
         "--crop_context",

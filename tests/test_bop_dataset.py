@@ -454,3 +454,22 @@ def test_balanced_sampler_depends_only_on_seed_and_epoch():
     c = ObjectBalancedSampler(obj_idx, 40, seed=1)
     c.set_epoch(3)
     assert list(c) != list(b)
+
+
+def test_bbox_source_mix_picks_both_boxes_when_augmenting():
+    # "mix" (M7): bbox_visib or bbox_obj at random per training sample; bbox_visib without
+    # augmentation. Without jitter the crop box is exactly one of the two.
+    index = load_index("lmo", "test")
+    rows = np.flatnonzero(
+        np.any(index["bbox_visib"] != index["bbox_obj"], axis=1)
+    )[:1]  # an occluded instance: the two boxes differ
+    sub = select_rows(index, rows)
+    visib, obj = bop_bbox_to_xyxy(sub["bbox_visib"][0]), bop_bbox_to_xyxy(sub["bbox_obj"][0])
+    train = BOPDataset(index=sub, augment=True, bbox_jitter_percent=0.0, bbox_source="mix")
+    np.random.seed(0)
+    picks = [train.crop_bbox(0) for _ in range(200)]
+    n_obj = sum(p == obj for p in picks)
+    assert sum(p == visib for p in picks) + n_obj == 200 and 70 < n_obj < 130
+    val = BOPDataset(index=sub, augment=False, bbox_source="mix")
+    assert all(val.crop_bbox(0) == visib for _ in range(5))
+    assert BOPDataset(index=sub, augment=True, bbox_jitter_percent=0.0, bbox_source="obj").crop_bbox(0) == obj

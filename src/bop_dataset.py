@@ -654,7 +654,9 @@ class BOPDataset(Dataset):
             img_size: Side of the square crop (the model input size).
             rotation_format: "matrix" or "quaternion".
             depth_mode: "site" (BOP default) or "legacy"; see src/utils.py.
-            bbox_source: "visib" (bbox_visib, what a detector sees) or "obj" (bbox_obj).
+            bbox_source: "visib" (bbox_visib, what a detector sees), "obj" (bbox_obj, amodal), or
+                "mix": bbox_visib or bbox_obj at random per sample when augmenting (M7: the
+                default detections lie in between), bbox_visib otherwise.
             augment: Bbox jitter + pixel augmentations; default True for split "train" only.
             bbox_jitter_percent, bbox_jitter_prob: As SPEED's --bbox_crop_percent, applied with
                 this probability (SPEED: 0.5).
@@ -671,15 +673,16 @@ class BOPDataset(Dataset):
             )
         if depth_mode not in DEPTH_MODES:
             raise ValueError(f"depth_mode must be one of {DEPTH_MODES}, got {depth_mode!r}")
-        if bbox_source not in ("visib", "obj"):
-            raise ValueError(f"bbox_source must be visib or obj, got {bbox_source!r}")
+        if bbox_source not in ("visib", "obj", "mix"):
+            raise ValueError(f"bbox_source must be visib, obj or mix, got {bbox_source!r}")
         self.index = (
             index if index is not None else load_index(dataset, split, bop_root, cache_dir)
         )
         self.img_size = img_size
         self.rotation_format = rotation_format
         self.depth_mode = depth_mode
-        self.bbox_key = f"bbox_{bbox_source}"
+        self.bbox_source = bbox_source
+        self.bbox_key = "bbox_visib" if bbox_source == "mix" else f"bbox_{bbox_source}"
         self.augment = (split == "train") if augment is None else augment
         self.bbox_jitter = bbox_jitter_percent / 100.0
         self.bbox_jitter_prob = bbox_jitter_prob
@@ -703,7 +706,10 @@ class BOPDataset(Dataset):
 
     def crop_bbox(self, row: int) -> list[float]:
         """The [x1, y1, x2, y2] bbox the crop and labels use, jittered when augmenting."""
-        bbox = bop_bbox_to_xyxy(self.index[self.bbox_key][row])
+        key = self.bbox_key
+        if self.bbox_source == "mix" and self.augment and np.random.random() < 0.5:
+            key = "bbox_obj"
+        bbox = bop_bbox_to_xyxy(self.index[key][row])
         if self.augment and self.bbox_jitter > 0 and np.random.random() < self.bbox_jitter_prob:
             width, height = (int(v) for v in self.index["img_wh"][row])
             bbox = [

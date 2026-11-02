@@ -13,6 +13,9 @@
 # Class-token ablation (domain_gap, 2x; a trailing "2" = sampler seed 1): dg2x2 (per-object heads,
 # option a, repeat of dg2x), tok2x tok2x2 (per-object class token, option b), both2x both2x2 (a + b).
 # Final M4 model (chosen 2026-10-26): tok4x tok4x2 (class token, domain_gap, 4x, 2 seeds).
+# M7 crop source (2026-11-02): bobj2x bobj2x2 / bmix2x bmix2x2 = symtok2x/symtok2x2 + training crops
+# around bbox_obj / a random mix of bbox_visib and bbox_obj (--bop_bbox_source; symtok2x is the
+# bbox_visib baseline). Every variant is also evaluated on val_pbr with both GT box types.
 # M5 exit: symtok2x symtok2x2 = tok2x/tok2x2 + --symmetric_rotation_loss (model.pth is then
 # selected on (AR_MSSD + AR_MSPD) / 2; the evaluation uses last.pt as for every variant).
 # The symmetric loss is on by default for BOP since 2026-10-27; this script turns it off for every
@@ -41,11 +44,15 @@ declare -A FLAGS=(
     [tok4x2]="--bop_pixel_aug domain_gap --bop_epoch_samples $((4 * SPE)) --bop_sampler_seed 1"
     [symtok2x]="--bop_pixel_aug domain_gap --bop_epoch_samples $((2 * SPE)) --bop_sampler_seed 0 --symmetric_rotation_loss"
     [symtok2x2]="--bop_pixel_aug domain_gap --bop_epoch_samples $((2 * SPE)) --bop_sampler_seed 1 --symmetric_rotation_loss"
+    [bobj2x]="--bop_pixel_aug domain_gap --bop_epoch_samples $((2 * SPE)) --bop_sampler_seed 0 --symmetric_rotation_loss --bop_bbox_source obj"
+    [bobj2x2]="--bop_pixel_aug domain_gap --bop_epoch_samples $((2 * SPE)) --bop_sampler_seed 1 --symmetric_rotation_loss --bop_bbox_source obj"
+    [bmix2x]="--bop_pixel_aug domain_gap --bop_epoch_samples $((2 * SPE)) --bop_sampler_seed 0 --symmetric_rotation_loss --bop_bbox_source mix"
+    [bmix2x2]="--bop_pixel_aug domain_gap --bop_epoch_samples $((2 * SPE)) --bop_sampler_seed 1 --symmetric_rotation_loss --bop_bbox_source mix"
 )
 # Variant -> --object_conditioning (train and eval); default heads
 declare -A COND=(
     [tok2x]=token [tok2x2]=token [both2x]=both [both2x2]=both [tok4x]=token [tok4x2]=token
-    [symtok2x]=token [symtok2x2]=token
+    [symtok2x]=token [symtok2x2]=token [bobj2x]=token [bobj2x2]=token [bmix2x]=token [bmix2x2]=token
 )
 (( $# )) || { echo "usage: $0 VARIANT... (${!FLAGS[*]})"; exit 5; }
 # One process per GPU (DDP, M6) when the job has several: GPUS=2 CPUS=32 MEMORY=64Gi bash rcp/train.sh
@@ -78,6 +85,12 @@ for v in "$@"; do
     # per-object results in eval/obj_<id>/ and the table in eval/table_val_real.md
     .venv/bin/python src/bop_evaluate.py --model_weights "$out/last.pt" --splits val_real \
         --vit_model "$VIT" --depth_mode site --object_conditioning "$cond" --out_dir "$out/eval"
+    # Held-out synthetic val (occluded) with both GT box types (M7 crop-source comparison)
+    for box in visib obj; do
+        .venv/bin/python src/bop_evaluate.py --model_weights "$out/last.pt" --splits val_pbr \
+            --vit_model "$VIT" --depth_mode site --object_conditioning "$cond" \
+            --bbox_source "$box" --out_dir "$out/eval_valpbr_$box"
+    done
     touch "$out/DONE"
 done
 echo "== all done ($(date '+%F %T'))"

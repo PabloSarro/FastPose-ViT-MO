@@ -881,6 +881,12 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
     - New `train.py --bop_bbox_source visib|obj|mix` (default visib, training crops only; validation stays bbox_visib for every variant). `BOPDataset(bbox_source="mix")`: bbox_visib or bbox_obj at random per training sample, bbox_visib without augmentation; the default path draws no extra random number (unchanged). Test `test_bbox_source_mix_picks_both_boxes_when_augmenting`.
     - `scripts/m4_multi.sh` variants `bobj2x`, `bobj2x2` (option 2) and `bmix2x`, `bmix2x2` (option 3) = `symtok2x` / `symtok2x2` flags + `--bop_bbox_source obj|mix`. After training, every variant is now also evaluated on `val_pbr` with both GT boxes (`eval_valpbr_visib/`, `eval_valpbr_obj/`); for `symtok2x`/`symtok2x2` run that evaluation in `dev` on their `last.pt`.
     - Same configuration as `symtok2x` (150 epochs, 2×, LR, batch, aug, symmetric loss, seeds 0/1, 1 GPU / 16 CPUs / 32 GiB); the code differs only by the M6 speed-ups, all bit-identical except the fused Newton–Schulz (closer to exact).
+    - Option 1 baseline evaluated in `dev` (2026-11-02; `last.pt`, `val_pbr`, 13,484 instances, mean over instances; `.../lmo-m5-symtok2x{,2}-001/<variant>/eval_valpbr_{visib,obj}/`):
+      | run | crop box at test | ADD(-S)@0.1d | @0.05d | MSSD | MSPD | trans mean | rot mean |
+      |---|---|---|---|---|---|---|---|
+      | `symtok2x` / `symtok2x2` | bbox_visib | 0.750 / 0.753 | 0.508 / 0.515 | 0.829 / 0.831 | 0.975 / 0.975 | 17.0 / 16.5 mm | 2.88 / 2.95° |
+      | `symtok2x` / `symtok2x2` | bbox_obj | 0.693 / 0.688 | 0.468 / 0.467 | 0.784 / 0.780 | 0.961 / 0.960 | 22.0 / 22.6 mm | 3.35 / 3.35° |
+      Same pattern as `tok4x` (−0.06 ADD, −0.05 MSSD with amodal boxes); seed spread ≤ 0.005.
     - **Launched 2026-11-02 ~17:20**: `lmo-m7-bobj2x-001`, `lmo-m7-bobj2x2-001` (Running), `lmo-m7-bmix2x-001`, `lmo-m7-bmix2x2-001` (Pending: no free GPU on any node). ~11 h each once running.
     - Found on the way: `test_distributed_muon_bit_identical_to_single_device` failed ~1 run in 10 (a gloo worker aborted at teardown, "terminate called without an active exception"); fixed with a `dist.barrier()` before `destroy_process_group` in the test (0 failures in 20 runs). Only the test changed.
 - [x] Re-evaluate LM-O with detections; keep the top `inst_count` per object by detection score. **Done 2026-11-02 with option 1** (the M4 final model `tok4x`, trained on bbox_visib crops).

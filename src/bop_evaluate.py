@@ -323,6 +323,12 @@ def main() -> None:
     parser.add_argument(
         "--object_conditioning", default="heads", choices=OBJECT_CONDITIONINGS, help="as train.py"
     )
+    parser.add_argument(
+        "--bbox_source",
+        default="visib",
+        choices=["visib", "obj"],
+        help="GT box to crop around: bbox_visib (as in training) or bbox_obj (amodal, M7)",
+    )
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--num_workers", type=int, default=8)
     parser.add_argument("--method", default="fastposevitmo", help="BOP method name (no '_')")
@@ -350,7 +356,7 @@ def main() -> None:
         dataset = BOPDataset(
             index=split_index,
             augment=False,
-            bbox_source="visib",
+            bbox_source=args.bbox_source,
             depth_mode=args.depth_mode,
             img_size=VIT_MODELS[args.vit_model][3][0],
         )

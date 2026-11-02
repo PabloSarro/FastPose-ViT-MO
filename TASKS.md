@@ -858,7 +858,24 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
   - **Done 2026-11-02.** 50 MB zip (sha256 `f0a01aee…3249`) in `$NAS_HOME/datasets/bop_detections/zip/`, extracted to `$NAS_HOME/datasets/bop_detections/default_task1/bop23_default_detections_for_task1/` (outside `$DATA_DIR` and the repo). GDRNPPDet detections for the 7 core datasets, two variants: `gdrnppdet-pbr/` (trained on PBR only) and `gdrnppdet-pbrreal/` (PBR + real; the one BOP 2023 asks for the "default detections" award). **For LM-O both files are byte-identical** (LM-O has no real training images): `gdrnppdet-pbr/gdrnppdet-pbr_lmo-test_468338cf-….json`.
   - Format (COCO-style list): `scene_id`, `image_id`, `category_id` (= BOP obj_id), `score`, `bbox` = [x, y, w, h] in pixels (floats), `time` = the detector's seconds for that image (75–185 ms). LM-O: **38,152 detections on all 200 test images, for the 8 objects** (1: 3,403 … 8: 7,077), scores from 0.001 (median 0.003: a long low-score tail, hence "keep the top `inst_count` per object by score").
   - Time per image: the BOP 2023 page only requires a real time (not -1) and does not say whether it must include the default detector's time (checked 2026-11-02). We will report ours + the detector's `time` of that image, so it is comparable with entries that run their own detector, and say so.
-- [ ] Measure whether detector boxes match `bbox_visib` or `bbox_obj` better (mean IoU), and adapt the crop source and jitter.
+- [~] Measure whether detector boxes match `bbox_visib` or `bbox_obj` better (mean IoU), and adapt the crop source and jitter. **Measured 2026-11-02; the adaptation needs a training decision (user).**
+  - New `scripts/detection_iou.py` (top `inst_count` detections by score per (image, object), matched to the GT instances; output `$NAS_HOME/results/m7-detection-iou/detection_iou.md`). LM-O test, GDRNPPDet-PBR, 1,445 instances (`inst_count` is always 1 on LM-O):
+    | | IoU with bbox_visib (mean / median) | IoU with bbox_obj | bbox_obj closer |
+    |---|---|---|---|
+    | all | 0.811 / 0.871 | **0.824 / 0.880** | 79 % |
+    | visib_fract 0.1–0.5 (191) | 0.620 | **0.681** | |
+    | visib_fract 0.5–0.9 (548) | 0.827 | 0.844 | |
+    | visib_fract ≥ 0.9 (693) | 0.863 | 0.862 | |
+    - **The detector boxes are partly amodal**: for occluded objects they lean towards bbox_obj.
+    - Edges of matched detections (IoU ≥ 0.5): 94 % within ±10 % of bbox_obj (91 % of bbox_visib), p90 0.08: **the training jitter (±10 % per edge) already covers the spread**.
+    - Top detection wrong (IoU_visib < 0.5) for 6.3 % of instances; eggbox 27.2 % (a better detection exists for most: only 9.4 % have none ≥ 0.5), cat 12.9 % (7.6 %), others ≤ 5 %. So the top-score choice, not the detector, loses most of these.
+  - **Sensitivity of the current model** (`tok4x`, trained on bbox_visib) to the crop box: new `bop_evaluate.py --bbox_source visib|obj`, on held-out synthetic val (`val_pbr`, LM PBR scenes 48–49, occluded; LM real val is unoccluded so both boxes coincide, and LM-O test is kept for final numbers), 13,484 instances:
+    | crop box | ADD(-S)@0.1d | @0.05d | MSSD | MSPD | trans mean | rot mean |
+    |---|---|---|---|---|---|---|
+    | bbox_visib (as trained) | **0.814** | 0.610 | **0.865** | 0.978 | 13.8 mm | 2.57° |
+    | bbox_obj | 0.765 | 0.569 | 0.827 | 0.967 | 18.3 mm | 2.89° |
+    The model loses 0.05 ADD / 0.04 MSSD when fed amodal boxes (mostly translation), so with detections (in between) part of that is lost. Results in `$NAS_HOME/results/m7-valpbr-bbox-{visib,obj}/`.
+  - Options (training needed to choose): keep bbox_visib; train on bbox_obj; or train on a random mix of both (robust to either). Proposed: one job per candidate at the ablation budget (token, domain_gap, symmetric loss, 2×, 2 seeds; the bbox_visib baseline = the existing `symtok2x` runs), compared on `val_pbr` with both box types and on LM real val; the final check with detections on LM-O test at the end of M7.
 - [ ] Re-evaluate LM-O with detections; keep the top `inst_count` per object by detection score.
 - [ ] (Stretch) Multi-class LW-DETR so the Jetson pipeline is self-contained. Today `object_detector/` is hard-coded to one class.
 - **Exit:** first BOP-comparable LM-O AR, compared with §2.2.

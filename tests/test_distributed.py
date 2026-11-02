@@ -158,6 +158,7 @@ def _dist_opt_worker(rank, init_file, out_dir):
         {"params": params, "state": [opt.state[p] for p in params]},
         os.path.join(out_dir, f"opt{rank}.pt"),
     )
+    dist.barrier()  # both ranks done before the teardown (gloo could abort a rank that exits early)
     dist.destroy_process_group()
 
 

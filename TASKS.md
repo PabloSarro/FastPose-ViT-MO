@@ -876,7 +876,14 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
     | bbox_obj | 0.765 | 0.569 | 0.827 | 0.967 | 18.3 mm | 2.89° |
     The model loses 0.05 ADD / 0.04 MSSD when fed amodal boxes (mostly translation), so with detections (in between) part of that is lost. Results in `$NAS_HOME/results/m7-valpbr-bbox-{visib,obj}/`.
   - Options (training needed to choose): keep bbox_visib; train on bbox_obj; or train on a random mix of both (robust to either). Proposed: one job per candidate at the ablation budget (token, domain_gap, symmetric loss, 2×, 2 seeds; the bbox_visib baseline = the existing `symtok2x` runs), compared on `val_pbr` with both box types and on LM real val; the final check with detections on LM-O test at the end of M7.
+  - **Decided with the user 2026-11-02: option 1 = the existing `symtok2x` / `symtok2x2` (bbox_visib); launch options 2 and 3 with the same configuration, only the training crop box changes.**
+    - New `train.py --bop_bbox_source visib|obj|mix` (default visib, training crops only; validation stays bbox_visib for every variant). `BOPDataset(bbox_source="mix")`: bbox_visib or bbox_obj at random per training sample, bbox_visib without augmentation; the default path draws no extra random number (unchanged). Test `test_bbox_source_mix_picks_both_boxes_when_augmenting`.
+    - `scripts/m4_multi.sh` variants `bobj2x`, `bobj2x2` (option 2) and `bmix2x`, `bmix2x2` (option 3) = `symtok2x` / `symtok2x2` flags + `--bop_bbox_source obj|mix`. After training, every variant is now also evaluated on `val_pbr` with both GT boxes (`eval_valpbr_visib/`, `eval_valpbr_obj/`); for `symtok2x`/`symtok2x2` run that evaluation in `dev` on their `last.pt`.
+    - Same configuration as `symtok2x` (150 epochs, 2×, LR, batch, aug, symmetric loss, seeds 0/1, 1 GPU / 16 CPUs / 32 GiB); the code differs only by the M6 speed-ups, all bit-identical except the fused Newton–Schulz (closer to exact).
+    - **Launched 2026-11-02 ~17:20**: `lmo-m7-bobj2x-001`, `lmo-m7-bobj2x2-001` (Running), `lmo-m7-bmix2x-001`, `lmo-m7-bmix2x2-001` (Pending: no free GPU on any node). ~11 h each once running.
+    - Found on the way: `test_distributed_muon_bit_identical_to_single_device` failed ~1 run in 10 (a gloo worker aborted at teardown, "terminate called without an active exception"); fixed with a `dist.barrier()` before `destroy_process_group` in the test (0 failures in 20 runs). Only the test changed.
 - [ ] Re-evaluate LM-O with detections; keep the top `inst_count` per object by detection score.
+  - [ ] **Open (user, 2026-11-02): also evaluate options 2 and 3 of the crop-source comparison with detections** (`bobj2x*`, `bmix2x*` vs `symtok2x*`), once their jobs are done; the first run uses option 1 (bbox_visib models).
 - [ ] (Stretch) Multi-class LW-DETR so the Jetson pipeline is self-contained. Today `object_detector/` is hard-coded to one class.
 - **Exit:** first BOP-comparable LM-O AR, compared with §2.2.
 

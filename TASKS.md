@@ -171,7 +171,7 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 - **val:** PBR scenes 48–49 (synthetic), plus LM `test_bop19` scenes 1, 5, 6, 8, 9, 10, 11, 12 (real; each annotated only for its own object). Scene 2 is the LM-O test sequence, so leaving it out means no leak.
 - **test:** LM-O `test_bop19`, used only at milestones and never for early stopping or model selection.
 
-**Report to Pierre (dataset owner):** deferred on 2026-10-20. None of these issues affects LM-O, so send them before starting YCB-V (M8).
+**Report to Pierre (dataset owner):** deferred on 2026-10-20. None of these issues affects LM-O, so send them before starting YCB-V (M8). Re-checked 2026-11-03 (all still present); draft message in `docs/pierre_data_report.md`, to be sent by Pablo.
 - [ ] `hb/` is empty; the hb zips are in `xyzibd/`.
 - [ ] xyzibd is missing `xyzibd_train_pbr.z01`, `xyzibd_models.zip` and `xyzibd_test_all.zip`.
 - [ ] `ycbv_train_real.z01` is missing, so train_real cannot be extracted.
@@ -907,11 +907,11 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
       | 3 mix | `bmix2x` / `bmix2x2` | 0.650 / 0.654 | 0.467 / 0.473 | 0.616 / 0.619 | 0.867 / 0.870 | 0.423 / 0.432 | 0.664 / 0.654 | 0.743 / 0.731 · 0.793 / 0.779 |
       | ref: `tok4x` (option 1, 4×) | | 0.668 | 0.491 | 0.641 | 0.873 | 0.473 | 0.672 | — |
     - **Result: with real detections the crop source barely matters** (spread 0.009 AR, seed spread up to 0.004); option 1 is marginally best (0.6545 vs 0.652 mix, 0.648 obj) and best on ADD with detections, although option 2 wins clearly on val_pbr with amodal GT boxes. So the GDRNPPDet boxes on LM-O test behave like bbox_visib for our model, not like bbox_obj (IoU 0.811 vs 0.824 was nearly equal). **Decision: keep bbox_visib (default); the final model stays `tok4x`** (4× gives +0.013 AR over the 2× runs). The training option `--bop_bbox_source` stays available.
-- [ ] (Stretch) Multi-class LW-DETR so the Jetson pipeline is self-contained. Today `object_detector/` is hard-coded to one class.
 - **Exit:** first BOP-comparable LM-O AR, compared with §2.2.
 
 ### M8 — YCB-V (W11–12)
-- [ ] Send Pierre the data issues from §5 before starting YCB-V. *Moved here from M0 (2026-10-20): LM-O isn't affected by them.*
+- [x] Send Pierre the data issues from §5 before starting YCB-V. *Moved here from M0 (2026-10-20): LM-O isn't affected by them.*
+  - **Draft ready 2026-11-03: `docs/pierre_data_report.md`** (all 5 §5 issues re-checked today, still present; `train_real` has 3 scenes with 1/0/0 images). **Pablo sends it** (agent doesn't send messages to people). Doesn't block M8: YCB-V trains on PBR only.
 - [ ] Symlink tree + index. Train on PBR only unless Pierre fixes `train_real`. There are two cameras, so per-sample K matters.
 - [ ] Continuous symmetries (objects 13, 18) and discrete ones (1, 16, 19, 20, 21).
 - **Exit:** YCB-V AR plus a per-object table.
@@ -920,6 +920,7 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 - [ ] ONNX export with dynamic batch (`dynamic_shapes`). ONNX Runtime vs PyTorch max abs diff < 1e-3 (fp32).
 - [ ] TensorRT fp16 engine with an optimization profile for 1/8/16 crops. AR change < 0.005.
 - [ ] Latency per image for N = 1, 4, 8, 16 objects (A100, and Jetson Orin Nano if available). The SPEED engine must still build.
+- [ ] (Stretch) Multi-class LW-DETR so the Jetson pipeline is self-contained. Today `object_detector/` is hard-coded to one class. *Moved here from M7 (user, 2026-11-03): it doesn't change the BOP numbers (those use the default detections), only the on-device pipeline; the default detector costs ~81 ms/image on an A100, more than our 53 ms.*
 - **Exit:** latency table with the real-time claim quantified.
 
 ### M10 — Write-up (W13–14), T-LESS as a stretch

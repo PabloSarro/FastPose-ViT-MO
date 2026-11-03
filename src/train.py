@@ -21,7 +21,7 @@ from src.optimizer import DistributedMuonWithAuxAdam, SingleDeviceMuonWithAuxAda
 import torch._inductor.config
 from src.datasets import SPEEDDataset, get_dataset_config
 from src.bop_dataset import (
-    LMO_OBJ_IDS,
+    SPLITS,
     default_bop_root,
     symmetry_table,
     BOPDataset,
@@ -90,7 +90,7 @@ from src.checkpoint import (
 from src.scheduler import LogarithmicLR, CosineAnnealingLR, CosineAnnealingWithWarmRestarts
 
 # Datasets read through src/bop_dataset.py (lower-cased name = key in its SPLITS)
-BOP_DATASETS = ("LMO",)
+BOP_DATASETS = ("LMO", "YCBV")
 
 
 def is_bop(args: argparse.Namespace) -> bool:
@@ -98,17 +98,22 @@ def is_bop(args: argparse.Namespace) -> bool:
     return args.dataset in BOP_DATASETS
 
 
-def create_bop_datasets(args: argparse.Namespace, img_size: int, logger) -> tuple:
-    """Train and validation BOPDataset for --dataset LMO, from the cached index.
+def bop_config(args: argparse.Namespace) -> dict:
+    """SPLITS entry of a BOP --dataset: obj_ids (one output head / token each), models_dataset."""
+    return SPLITS[args.dataset.lower()]
 
-    --bop_obj_ids restricts both splits to some objects (heads stay one per LM-O object).
+
+def create_bop_datasets(args: argparse.Namespace, img_size: int, logger) -> tuple:
+    """Train and validation BOPDataset for a BOP --dataset (LMO, YCBV), from the cached index.
+
+    --bop_obj_ids restricts both splits to some objects (heads stay one per dataset object).
     --bop_overfit N trains on N fixed training instances without augmentation and validates on
     the same instances: a label/pipeline sanity check that must reach near-zero error.
     """
     dataset = args.dataset.lower()
     train_index = load_index(dataset, "train")
     val_index = load_index(dataset, args.bop_val_split)
-    obj_ids = args.bop_obj_ids or list(LMO_OBJ_IDS)
+    obj_ids = args.bop_obj_ids or list(bop_config(args)["obj_ids"])
     train_rows = rows_for_objects(train_index, obj_ids)
     common = dict(
         img_size=img_size,
@@ -239,8 +244,9 @@ def train(
             case "6d_nuclear":
                 rotation_criterion = Rotation6DNuclearLoss()
             case "6d_relative_frobenius" if args.symmetric_rotation_loss:
-                # BOP (M5): min over each object's symmetries, from the LM-O models_info.json
-                table = symmetry_table(default_bop_root(), "lmo", LMO_OBJ_IDS)
+                # BOP (M5): min over each object's symmetries, from the models_info.json
+                cfg = bop_config(args)
+                table = symmetry_table(default_bop_root(), cfg["models_dataset"], cfg["obj_ids"])
                 rotation_criterion = SymmetricRotation6DLoss(torch.from_numpy(table))
                 n_sym = int((np.abs(table - np.eye(3)).sum(axis=(2, 3)) > 1e-6).any(1).sum())
                 logger.info(f"Symmetric rotation loss: {n_sym} symmetric objects, K = {table.shape[1]}")
@@ -317,7 +323,7 @@ def train(
         dropout_rate=args.dropout_rate,
         use_residual=args.use_residual,
         no_mlp=args.no_mlp,
-        num_objects=len(LMO_OBJ_IDS) if is_bop(args) else 1,
+        num_objects=len(bop_config(args)["obj_ids"]) if is_bop(args) else 1,
         object_conditioning=args.object_conditioning,
     ).to(device)
 
@@ -691,7 +697,12 @@ def train(
     best_score = -float("inf")
     # BOP (M5): symmetric ADD(-S)/MSSD/MSPD on the GPU during validation
     pose_metrics = (
-        BOPPoseMetrics(default_bop_root(), args.dataset.lower(), LMO_OBJ_IDS, device)
+        BOPPoseMetrics(
+            default_bop_root(),
+            bop_config(args)["models_dataset"],
+            bop_config(args)["obj_ids"],
+            device,
+        )
         if is_bop(args)
         else None
     )
@@ -1304,14 +1315,14 @@ if __name__ == "__main__":
         type=int,
         nargs="+",
         default=None,
-        help="BOP object ids to train/validate on (default: all LM-O objects)",
+        help="BOP object ids to train/validate on (default: all objects of the dataset)",
     )
     parser.add_argument(
         "--bop_val_split",
         type=str,
         default="val",
         choices=["val", "val_pbr", "val_real"],
-        help="Validation split (never the test split)",
+        help="Validation split (never the test split; YCBV has no val_real: val = val_pbr)",
     )
     parser.add_argument(
         "--max_val_samples",
@@ -1407,6 +1418,12 @@ if __name__ == "__main__":
 
     if args.dataset in BOP_DATASETS:
         bbox_json_path = None  # BOP boxes come from the index
+        cfg = SPLITS[args.dataset.lower()]
+        if args.bop_val_split not in cfg:
+            parser.error(f"--bop_val_split {args.bop_val_split} does not exist for {args.dataset}")
+        unknown = sorted(set(args.bop_obj_ids or ()) - set(cfg["obj_ids"]))
+        if unknown:
+            parser.error(f"--bop_obj_ids {unknown} are not objects of {args.dataset}")
     else:
         # Set dataset_root_dir based on dataset choice if not specified
         if args.dataset_root_dir is None:

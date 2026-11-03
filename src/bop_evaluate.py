@@ -5,7 +5,7 @@
 # in a per-object table (table_<split>.md). They are not the BOP19 AR, which needs VSD and the
 # renderer: run scripts/bop_eval.sh on the CSV, which holds every evaluated object.
 #
-# BOP19 results CSV (M6): OUT_DIR/<method>_lmo-<split>.csv, method "fastposevitmo" by default (BOP
+# BOP19 results CSV (M6): OUT_DIR/<method>_<dataset>-<split>.csv, method "fastposevitmo" by default (BOP
 # method names have no "_"), columns scene_id,im_id,obj_id,score,R,t,time with R row-major and t in
 # mm. `time` is BOP's per-image time (all objects of the image), measured in a separate timed pass
 # (see time_per_image); the poses come from the normal batched pass.
@@ -15,6 +15,8 @@
 # the CSV then has the detection scores, no estimate where nothing was detected (a miss for BOP),
 # and time = ours + the detector's time of the image. In the per-object tables a missing
 # detection counts as a failure.
+#
+# --dataset lmo (default) or ycbv (M8): objects, models and index from src/bop_dataset.py SPLITS.
 
 import argparse
 import json
@@ -29,12 +31,13 @@ from torch.amp import autocast
 from torch.utils.data import DataLoader
 
 from src.bop_dataset import (
-    LMO_OBJ_IDS,
+    SPLITS,
     BOPDataset,
     bop_bbox_to_xyxy,
     crop_image,
     default_bop_root,
     load_index,
+    load_models_info,
     rows_for_objects,
     select_rows,
 )
@@ -59,7 +62,7 @@ def build_model(args: argparse.Namespace, device: torch.device) -> FastPoseViT:
         merge_outputs=True,
         nb_class_tokens=1,
         no_mlp=True,
-        num_objects=len(LMO_OBJ_IDS),
+        num_objects=len(SPLITS[args.dataset]["obj_ids"]),  # as trained: one per dataset object
         object_conditioning=args.object_conditioning,
     )
     # model.pth is a state dict; last.pt (train.py checkpoint) holds it under "model"
@@ -229,8 +232,10 @@ def rotation_error_deg(R_est: np.ndarray, R_gt: np.ndarray) -> float:
     return float(np.degrees(np.arccos(np.clip(cos, -1.0, 1.0))))
 
 
-def instance_errors(index: dict, pred: dict, obj_id: int, bop_root: str) -> dict:
-    """Per-instance errors of one object.
+def instance_errors(
+    index: dict, pred: dict, obj_id: int, bop_root: str, models_dataset: str = "lmo"
+) -> dict:
+    """Per-instance errors of one object (models from <bop_root>/<models_dataset>/models_eval).
 
     For a symmetric object (LM-O eggbox 10, glue 11), "add" is ADD-S, "rot_deg" is the smallest
     angle to any symmetric GT pose, and MSSD/MSPD use the BOP19 symmetry set (models_info.json,
@@ -238,7 +243,7 @@ def instance_errors(index: dict, pred: dict, obj_id: int, bop_root: str) -> dict
     """
     obj_idx = int(np.flatnonzero(index["obj_ids"] == obj_id)[0])
     diameter = float(index["diameters"][obj_idx])
-    models_dir = os.path.join(bop_root, "lmo", "models_eval")
+    models_dir = os.path.join(bop_root, models_dataset, "models_eval")
     pts = inout.load_ply(os.path.join(models_dir, f"obj_{obj_id:06d}.ply"))["pts"]
     symmetric = bool(index["symmetric"][obj_idx])
     if symmetric:
@@ -333,8 +338,11 @@ def per_object_table(per_obj: dict, symmetric_ids=()) -> tuple[str, dict]:
     return "\n".join(lines) + "\n", means
 
 
-def write_tables(out_dir: str, splits) -> dict:
-    """table_<split>.md and summary.json from the per-object obj_<id>/summary.json files."""
+def write_tables(out_dir: str, splits, symmetric_ids=LMO_SYMMETRIC_IDS) -> dict:
+    """table_<split>.md and summary.json from the per-object obj_<id>/summary.json files.
+
+    symmetric_ids: objects marked "(sym.)" (evaluated with ADD-S), default LM-O's.
+    """
     obj_dirs = sorted(
         (d for d in os.listdir(out_dir) if d.startswith("obj_")), key=lambda d: int(d[4:])
     )
@@ -345,8 +353,7 @@ def write_tables(out_dir: str, splits) -> dict:
     summary = {}
     for split in splits:
         objs = {o: v[split] for o, v in per_obj.items() if split in v}
-        sym = set(LMO_SYMMETRIC_IDS)
-        table, means = per_object_table(objs, sym)
+        table, means = per_object_table(objs, set(symmetric_ids))
         with open(os.path.join(out_dir, f"table_{split}.md"), "w") as f:
             f.write(f"{split}, GT boxes; ADD-S for symmetric objects\n\n{table}")
         logging.info(f"{split}:\n{table}")
@@ -361,14 +368,20 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate FastPoseViT on BOP (GT boxes)")
     parser.add_argument("--model_weights", help="model.pth or last.pt (not with --table_only)")
     parser.add_argument("--out_dir", required=True)
-    parser.add_argument("--splits", nargs="+", default=["val_real", "test"])
+    parser.add_argument("--dataset", default="lmo", choices=sorted(SPLITS))
+    parser.add_argument(
+        "--splits",
+        nargs="+",
+        default=None,
+        help="Default: val_real test (lmo), val_pbr test (ycbv, which has no real val)",
+    )
     parser.add_argument(
         "--obj_ids",
         "--obj_id",
         type=int,
         nargs="+",
-        default=list(LMO_OBJ_IDS),
-        help="BOP object ids (default: all LM-O objects); results in OUT_DIR/obj_<id>/",
+        default=None,
+        help="BOP object ids (default: all objects of the dataset); results in OUT_DIR/obj_<id>/",
     )
     parser.add_argument(
         "--table_only",
@@ -396,6 +409,17 @@ def main() -> None:
     parser.add_argument("--num_workers", type=int, default=8)
     parser.add_argument("--method", default="fastposevitmo", help="BOP method name (no '_')")
     args = parser.parse_args()
+    cfg = SPLITS[args.dataset]
+    if args.splits is None:
+        args.splits = ["val_real", "test"] if "val_real" in cfg else ["val_pbr", "test"]
+    if args.obj_ids is None:
+        args.obj_ids = list(cfg["obj_ids"])
+    bad_splits = [s for s in args.splits if s not in cfg or s in ("obj_ids", "models_dataset")]
+    if bad_splits:
+        parser.error(f"--splits {bad_splits} do not exist for {args.dataset}")
+    bad_objs = sorted(set(args.obj_ids) - set(cfg["obj_ids"]))
+    if bad_objs:
+        parser.error(f"--obj_ids {bad_objs} are not objects of {args.dataset}")
     if args.detections and len(args.splits) != 1:
         parser.error("--detections needs exactly one split (the detections file's)")
     if "_" in args.method:
@@ -403,8 +427,10 @@ def main() -> None:
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s", force=True
     )  # force: an imported module may have configured logging already
+    models = load_models_info(default_bop_root(), cfg["models_dataset"], cfg["obj_ids"])
+    symmetric_ids = [o for o, sym in zip(cfg["obj_ids"], models["symmetric"]) if sym]
     if args.table_only:
-        write_tables(args.out_dir, args.splits)
+        write_tables(args.out_dir, args.splits, symmetric_ids)
         return
     if not args.model_weights:
         parser.error("--model_weights is required (unless --table_only)")
@@ -416,7 +442,7 @@ def main() -> None:
 
     per_obj = {o: {} for o in args.obj_ids}
     for split in args.splits:
-        index = load_index("lmo", split)
+        index = load_index(args.dataset, split)
         # One pass over all requested objects, then the errors object by object
         all_rows = rows_for_objects(index, args.obj_ids)
         split_index = select_rows(index, all_rows)
@@ -462,7 +488,7 @@ def main() -> None:
             rows = rows_for_objects(split_index, [obj_id])
             sub = select_rows(split_index, rows)
             pred = {k: v[rows] for k, v in pred_all.items()}
-            errs = instance_errors(sub, pred, obj_id, bop_root)
+            errs = instance_errors(sub, pred, obj_id, bop_root, cfg["models_dataset"])
             per_obj[obj_id][split] = summarize(errs)
 
             obj_dir = os.path.join(args.out_dir, f"obj_{obj_id}")
@@ -491,13 +517,13 @@ def main() -> None:
             ]
         # One BOP results file per split with every evaluated object (scripts/bop_eval.sh)
         inout.save_bop_results(
-            os.path.join(args.out_dir, f"{args.method}_lmo-{split}.csv"), results
+            os.path.join(args.out_dir, f"{args.method}_{args.dataset}-{split}.csv"), results
         )
 
     for obj_id, d in per_obj.items():
         with open(os.path.join(args.out_dir, f"obj_{obj_id}", "summary.json"), "w") as f:
             json.dump(d, f, indent=2)
-    write_tables(args.out_dir, args.splits)
+    write_tables(args.out_dir, args.splits, symmetric_ids)
 
 
 if __name__ == "__main__":

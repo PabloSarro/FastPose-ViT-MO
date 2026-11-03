@@ -59,6 +59,8 @@ class ValidationConfig:
 
 # Batch fields beyond SPEED's (images, translations, rotations, bboxes); None when absent
 OPTIONAL_BATCH_KEYS = ("K", "img_wh", "obj_idx", "diameter")
+# BOP batch fields SymmetricRotation6DLoss.pose_loss needs, in its argument order
+SYMMETRIC_POSE_KEYS = ("R_m2c", "t_m2c", "K", "bboxes", "img_wh", "diameter")
 
 
 def unpack_batch(batch: tuple | list | dict) -> dict:
@@ -494,7 +496,17 @@ def train_epoch(
             )
 
             # Process rotations based on loss type
-            if isinstance(rotation_criterion, SymmetricRotation6DLoss):
+            if isinstance(rotation_criterion, SymmetricRotation6DLoss) and (
+                rotation_criterion.has_offsets
+            ):
+                # M8: symmetries that also shift the model (YCB-V clamps): the translation label
+                # follows the symmetric pose the rotation loss picks
+                loss_rotation, translations = rotation_criterion.pose_loss(
+                    pred_rotations,
+                    obj_idx,
+                    *(batch[k].to(device, non_blocking=True) for k in SYMMETRIC_POSE_KEYS),
+                )
+            elif isinstance(rotation_criterion, SymmetricRotation6DLoss):
                 loss_rotation = rotation_criterion(pred_rotations, rotations, obj_idx)
             elif is_6d_rotation_loss:
                 target_rotations_6d = rotation_matrix_to_6d(rotations)

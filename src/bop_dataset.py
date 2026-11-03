@@ -220,25 +220,27 @@ def load_models_info(bop_root: str, dataset: str, obj_ids) -> dict:
 
 def symmetry_table(
     bop_root: str, dataset: str, obj_ids, max_sym_disc_step: float = 0.01
-) -> np.ndarray:
-    """Rotations of every object's symmetry set, padded with the identity: (n_obj, K, 3, 3).
+) -> tuple[np.ndarray, np.ndarray]:
+    """Every object's symmetry set, padded with the identity: R (n_obj, K, 3, 3), t (n_obj, K, 3).
 
     From models_eval/models_info.json via bop_toolkit (the BOP19 set: identity first, continuous
-    symmetries discretised at max_sym_disc_step of the diameter). An asymmetric object has the
-    identity only. A repeated identity does not change a min over the set, so no mask is needed.
-    The symmetries' translation offsets (< 1 mm on LM-O) are not kept.
+    symmetries discretised at max_sym_disc_step of the diameter). A symmetry maps the model onto
+    itself as x -> R·x + t (t in mm): the GT pose (R_gt, t_gt) is equivalent to
+    (R_gt·R, R_gt·t + t_gt). The offsets t are < 1 mm on LM-O but ~19 mm for the YCB-V clamps
+    (objects 19, 20). An asymmetric object has the identity only. A repeated identity does not
+    change a min over the set, so no mask is needed.
     """
     from bop_toolkit_lib import misc  # only needed for symmetric training
 
     info = _load_json(os.path.join(bop_root, dataset, "models_eval", "models_info.json"))
-    sets = [
-        [s["R"] for s in misc.get_symmetry_transformations(info[str(o)], max_sym_disc_step)]
-        for o in obj_ids
-    ]
-    table = np.tile(np.eye(3), (len(sets), max(len(s) for s in sets), 1, 1))
-    for i, rots in enumerate(sets):
-        table[i, : len(rots)] = rots
-    return table
+    sets = [misc.get_symmetry_transformations(info[str(o)], max_sym_disc_step) for o in obj_ids]
+    n_sym = max(len(s) for s in sets)
+    R = np.tile(np.eye(3), (len(sets), n_sym, 1, 1))
+    t = np.zeros((len(sets), n_sym, 3))
+    for i, syms in enumerate(sets):
+        R[i, : len(syms)] = [x["R"] for x in syms]
+        t[i, : len(syms)] = [x["t"][:, 0] for x in syms]
+    return R, t
 
 
 def build_index(

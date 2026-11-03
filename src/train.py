@@ -246,10 +246,21 @@ def train(
             case "6d_relative_frobenius" if args.symmetric_rotation_loss:
                 # BOP (M5): min over each object's symmetries, from the models_info.json
                 cfg = bop_config(args)
-                table = symmetry_table(default_bop_root(), cfg["models_dataset"], cfg["obj_ids"])
-                rotation_criterion = SymmetricRotation6DLoss(torch.from_numpy(table))
+                # With the symmetries' translation offsets (M8): the YCB-V clamps shift ~19 mm
+                table, offsets = symmetry_table(
+                    default_bop_root(), cfg["models_dataset"], cfg["obj_ids"]
+                )
+                rotation_criterion = SymmetricRotation6DLoss(
+                    torch.from_numpy(table),
+                    torch.from_numpy(offsets),
+                    depth_mode=args.depth_mode,
+                    no_rotation_compensation=args.no_rotation_compensation,
+                )
                 n_sym = int((np.abs(table - np.eye(3)).sum(axis=(2, 3)) > 1e-6).any(1).sum())
-                logger.info(f"Symmetric rotation loss: {n_sym} symmetric objects, K = {table.shape[1]}")
+                logger.info(
+                    f"Symmetric rotation loss: {n_sym} symmetric objects, K = {table.shape[1]}, "
+                    f"max offset {np.linalg.norm(offsets, axis=-1).max():.2f} mm"
+                )
             case "6d_relative_frobenius":
                 rotation_criterion = RelativeRotation6DFrobeniusLoss()
             case "relative_frobenius":

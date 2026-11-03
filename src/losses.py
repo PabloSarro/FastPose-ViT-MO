@@ -3,7 +3,12 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from src.utils import EPS
+from src.utils import (
+    EPS,
+    get_apparent_orientation,
+    quaternion_to_rotation_matrix,
+    translation_to_bbox_relative_translation,
+)
 
 
 class TranslationMSELoss(nn.Module):
@@ -784,23 +789,56 @@ class SymmetricRotation6DLoss(nn.Module):
     Symmetries multiply on the right (model frame) and the allocentric change on the left, so this
     works directly on allocentric targets. For an object with the identity only it equals
     RelativeRotation6DFrobeniusLoss.
+
+    A symmetry can also shift the model (x -> S_k·x + s_k, e.g. ~19 mm for the YCB-V clamps): the
+    equivalent pose is then (R·S_k, t + R·s_k), with its own translation label and allocentric
+    change. pose_loss() handles that (M8): it builds every symmetric pose's labels from the
+    original BOP pose, takes the rotation minimum, and returns the translation label of the chosen
+    symmetry for the translation loss.
     """
 
-    def __init__(self, sym_table: torch.Tensor, epsilon: float = 1e-8):
+    def __init__(
+        self,
+        sym_table: torch.Tensor,
+        sym_offsets: torch.Tensor | None = None,
+        depth_mode: str = "site",
+        no_rotation_compensation: bool = False,
+        epsilon: float = 1e-8,
+    ):
         """
         Args:
             sym_table (torch.Tensor): (n_obj, K, 3, 3) symmetry rotations of every object, padded
                 with the identity (src.bop_dataset.symmetry_table)
+            sym_offsets (torch.Tensor): (n_obj, K, 3) their translation offsets in mm, or None
+                (all zero)
+            depth_mode, no_rotation_compensation: As the dataset's labels (src.bop_dataset)
             epsilon (float): Added to the target norm
         """
         super().__init__()
-        self.register_buffer("sym_table", torch.as_tensor(sym_table, dtype=torch.float32))
+        sym_table = torch.as_tensor(sym_table, dtype=torch.float32)
+        if sym_offsets is None:
+            sym_offsets = torch.zeros(sym_table.shape[:-1])
+        self.register_buffer("sym_table", sym_table)
+        self.register_buffer("sym_offsets", torch.as_tensor(sym_offsets, dtype=torch.float32))
+        self.has_offsets = bool((self.sym_offsets.abs() > 0).any())  # use pose_loss() then
+        self.depth_mode = depth_mode
+        self.no_rotation_compensation = no_rotation_compensation
         self.epsilon = epsilon
+
+    def _min_over_targets(self, pred_6d: torch.Tensor, targets: torch.Tensor):
+        """Per-sample min over K target rotations (B, K, 3, 3): (mean of the min, argmin (B,))."""
+        targets_6d = torch.cat([targets[..., :, 0], targets[..., :, 1]], dim=-1)  # (B, K, 6)
+        diff = torch.norm(pred_6d.float().unsqueeze(1) - targets_6d, dim=-1)
+        relative = diff / (torch.norm(targets_6d, dim=-1) + self.epsilon)
+        best = relative.min(dim=1)
+        return best.values.mean(), best.indices
 
     def forward(
         self, pred_6d: torch.Tensor, target_R: torch.Tensor, obj_idx: torch.Tensor
     ) -> torch.Tensor:
         """
+        Rotation part only (ignores the offsets).
+
         Args:
             pred_6d (torch.Tensor): Predicted 6D rotation vectors (B, 6)
             target_R (torch.Tensor): Ground truth rotation matrices (B, 3, 3)
@@ -810,10 +848,73 @@ class SymmetricRotation6DLoss(nn.Module):
             torch.Tensor: Mean over the batch of the per-sample minimum
         """
         targets = target_R.float().unsqueeze(1) @ self.sym_table[obj_idx]  # (B, K, 3, 3)
-        targets_6d = torch.cat([targets[..., :, 0], targets[..., :, 1]], dim=-1)  # (B, K, 6)
-        diff = torch.norm(pred_6d.float().unsqueeze(1) - targets_6d, dim=-1)
-        relative = diff / (torch.norm(targets_6d, dim=-1) + self.epsilon)
-        return relative.min(dim=1).values.mean()
+        return self._min_over_targets(pred_6d, targets)[0]
+
+    def symmetric_labels(
+        self, obj_idx, R_m2c, t_m2c, K, bboxes, img_wh, diameter
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Labels of every symmetric pose (R·S_k, t + R·s_k), as BOPDataset.labels computes them.
+
+        Args:
+            obj_idx (B,); R_m2c (B, 3, 3), t_m2c (B, 3) mm: the original BOP pose; K (B, 3, 3);
+            bboxes (B, 4) crop bbox; img_wh (B, 2); diameter (B,) mm
+
+        Returns:
+            U (B, K, 3) translation labels and allocentric rotations (B, K, 3, 3), in float64
+        """
+        B, n_sym = obj_idx.shape[0], self.sym_table.shape[1]
+        f64 = dict(dtype=torch.float64, device=self.sym_table.device)
+        R, t = R_m2c.to(**f64), t_m2c.to(**f64)
+        R_k = R.unsqueeze(1) @ self.sym_table[obj_idx].double()  # (B, K, 3, 3)
+        t_k = t.unsqueeze(1) + (R.unsqueeze(1) @ self.sym_offsets[obj_idx].double()[..., None])[
+            ..., 0
+        ]  # (B, K, 3)
+        flat_t = t_k.reshape(-1, 3)
+
+        def rep(x):
+            x = x.to(**f64)
+            return x.repeat_interleave(n_sym, dim=0)
+
+        U = translation_to_bbox_relative_translation(
+            flat_t,
+            rep(bboxes),
+            None,
+            K=rep(K),
+            img_wh=rep(img_wh),
+            depth_mode=self.depth_mode,
+            diameter=rep(diameter),
+        ).reshape(B, n_sym, 3)
+        # The allocentric change of a pose depends on its translation only: R_rel(t)^T = the
+        # apparent orientation of the identity
+        identity = torch.tensor([1.0, 0.0, 0.0, 0.0], **f64).expand(B * n_sym, 4)
+        R_rel_T = quaternion_to_rotation_matrix(
+            get_apparent_orientation(flat_t, identity, self.no_rotation_compensation)
+        ).to(**f64)
+        rotations = R_rel_T.reshape(B, n_sym, 3, 3) @ R_k
+        return U, rotations
+
+    def pose_loss(
+        self, pred_6d, obj_idx, R_m2c, t_m2c, K, bboxes, img_wh, diameter
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Rotation loss over the full symmetric poses (offsets included).
+
+        Args:
+            pred_6d (torch.Tensor): Predicted 6D rotation vectors (B, 6)
+            obj_idx, R_m2c, t_m2c, K, bboxes, img_wh, diameter: see symmetric_labels
+
+        Returns:
+            The rotation loss (mean of the per-sample min) and the translation label U (B, 3) of
+            each sample's chosen symmetry, for the translation loss
+        """
+        device_type = self.sym_table.device.type
+        with torch.no_grad(), torch.autocast(device_type, enabled=False):
+            U, rotations = self.symmetric_labels(
+                obj_idx, R_m2c, t_m2c, K, bboxes, img_wh, diameter
+            )
+        loss, k = self._min_over_targets(pred_6d, rotations.float())
+        U_best = U[torch.arange(len(k), device=k.device), k].float()
+        return loss, U_best
 
 
 class Identity(nn.Module):

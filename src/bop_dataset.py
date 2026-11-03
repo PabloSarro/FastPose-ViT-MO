@@ -38,6 +38,8 @@ INDEX_VERSION = 1
 
 # Objects of LM-O (the 8 LM objects that appear in the LM-O test scene)
 LMO_OBJ_IDS = (1, 5, 6, 8, 9, 10, 11, 12)
+# Objects of YCB-V (all 21; 13 and 18 have a continuous symmetry)
+YCBV_OBJ_IDS = tuple(range(1, 22))
 
 
 @dataclass(frozen=True)
@@ -73,6 +75,17 @@ SPLITS = {
             Source("lm", "test", LMO_OBJ_IDS, targets=True),
         ),
         "test": (Source("lmo", "test", targets=True),),
+    },
+    # YCB-V (M8): PBR only, as train_real is incomplete in our copy (TASKS.md §5). There is no
+    # usable real val: test_all holds more frames of the same 12 test videos (a leak), so val is
+    # the held-out PBR scenes 48-49 only. Two real cameras (uw, cmu): K is per image anyway.
+    "ycbv": {
+        "obj_ids": YCBV_OBJ_IDS,
+        "models_dataset": "ycbv",
+        "train": (Source("ycbv", "train_pbr", tuple(range(0, 48))),),
+        "val_pbr": (Source("ycbv", "train_pbr", (48, 49)),),
+        "val": (Source("ycbv", "train_pbr", (48, 49)),),
+        "test": (Source("ycbv", "test", targets=True),),
     },
 }
 
@@ -162,6 +175,24 @@ def _load_json(path: str):
         return json.load(f)
 
 
+def _image_size(dataset_dir: str) -> tuple[int, int]:
+    """(width, height) from camera.json, or from camera_*.json when a dataset has several cameras
+    (YCB-V: camera_uw.json, camera_cmu.json), which must then share one image size."""
+    path = os.path.join(dataset_dir, "camera.json")
+    if os.path.exists(path):
+        cam = _load_json(path)
+        return cam["width"], cam["height"]
+    sizes = {
+        (cam["width"], cam["height"])
+        for name in sorted(os.listdir(dataset_dir))
+        if name.startswith("camera_") and name.endswith(".json")
+        for cam in [_load_json(os.path.join(dataset_dir, name))]
+    }
+    if len(sizes) != 1:
+        raise ValueError(f"Expected one image size in {dataset_dir}/camera*.json, found {sizes}")
+    return sizes.pop()
+
+
 def _rgb_extension(scene_dir: str) -> str:
     """Image extension of a scene ("jpg" for PBR, "png" for real test images)."""
     for name in sorted(os.listdir(os.path.join(scene_dir, "rgb"))):
@@ -242,8 +273,7 @@ def build_index(
 
     for s_idx, src in enumerate(sources):
         split_dir = os.path.join(bop_root, src.dataset, src.split)
-        camera = _load_json(os.path.join(bop_root, src.dataset, "camera.json"))
-        img_wh = (camera["width"], camera["height"])
+        img_wh = _image_size(os.path.join(bop_root, src.dataset))
         scenes = src.scenes
         if scenes is None:
             scenes = tuple(int(d) for d in sorted(os.listdir(split_dir)) if d.isdigit())

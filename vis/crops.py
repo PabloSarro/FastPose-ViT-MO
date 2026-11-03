@@ -10,6 +10,7 @@
 #
 #   python vis/crops.py                     # train (augmented) and test, 4 crops per object
 #   python vis/crops.py --split val_real --per_object 8
+#   python vis/crops.py --dataset ycbv --per_object 2   # YCB-V: 21 objects, 7 tiles per row
 
 import argparse
 
@@ -17,17 +18,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from common import (
-    OBJ_COLORS,
     TEXT_2,
     denormalize,
     image_axes,
     model_points,
+    obj_color,
     obj_label,
     project,
     save,
 )
 
-from src.bop_dataset import LMO_OBJ_IDS, BOPDataset, crop_warp_matrix
+from src.bop_dataset import SPLITS, BOPDataset, crop_warp_matrix
 from src.camera import Camera
 from src.utils import (
     bbox_relative_translation_to_translation,
@@ -61,13 +62,13 @@ def to_crop(uv, sample, size):
     return (uv - 0.5) @ M[:, :2].T + M[:, 2]
 
 
-def draw_tile(ax, sample, size):
+def draw_tile(ax, sample, size, dataset="lmo"):
     obj_id = sample["obj_id"]
     ax.imshow(denormalize(sample["images"]))
     K = sample["K"].double().numpy()
     uv = to_crop(
         project(
-            model_points(obj_id, 600),
+            model_points(obj_id, 600, dataset=dataset),
             sample["R_m2c"].double().numpy(),
             sample["t_m2c"].double().numpy(),
             K,
@@ -75,7 +76,8 @@ def draw_tile(ax, sample, size):
         sample,
         size,
     )
-    ax.scatter(uv[:, 0], uv[:, 1], s=2.5, color=OBJ_COLORS[obj_id], alpha=0.7, linewidths=0)
+    color = obj_color(obj_id, dataset)
+    ax.scatter(uv[:, 0], uv[:, 1], s=2.5, color=color, alpha=0.7, linewidths=0)
     R, t = decode_pose(sample)
     length = 0.35 * sample["diameter"].item()
     pts = to_crop(project(np.vstack([np.zeros(3), np.eye(3) * length]), R, t, K), sample, size)
@@ -90,27 +92,39 @@ def draw_tile(ax, sample, size):
     image_axes(ax)
     for spine in ax.spines.values():
         spine.set_visible(True)
-        spine.set_color(OBJ_COLORS[obj_id])
+        spine.set_color(color)
         spine.set_linewidth(2)
-    ax.set_title(f"{obj_label(obj_id)} · {100 * sample['visib_fract']:.0f}%", fontsize=7.5, pad=2)
+    title = f"{obj_label(obj_id, dataset)} · {100 * sample['visib_fract']:.0f}%"
+    ax.set_title(title, fontsize=7.5, pad=2)
 
 
-def grid(split, per_object, size, seed, augment):
+def grid(split, per_object, size, seed, augment, dataset="lmo"):
     torch.manual_seed(seed)
     np.random.seed(seed)
-    ds = BOPDataset("lmo", split, img_size=size, augment=augment)
+    ds = BOPDataset(dataset, split, img_size=size, augment=augment)
     rng = np.random.default_rng(seed)
+    obj_ids = SPLITS[dataset]["obj_ids"]
     rows = [
         rng.choice(np.flatnonzero(ds.index["obj_id"] == o), per_object, replace=False)
-        for o in LMO_OBJ_IDS
+        for o in obj_ids
     ]
-    fig, axes = plt.subplots(per_object, 8, figsize=(16, 2.15 * per_object + 0.9))
+    # LM-O: one column per object. More objects (YCB-V): tiles in object order, 7 per row.
+    if len(obj_ids) <= 8:
+        n_rows, n_cols = per_object, len(obj_ids)
+        cells = [(r, c) for c in range(n_cols) for r in range(per_object)]
+    else:
+        n_cols = 7
+        n_rows = -(-len(obj_ids) * per_object // n_cols)
+        cells = [divmod(i, n_cols) for i in range(n_rows * n_cols)]
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(2 * n_cols, 2.15 * n_rows + 0.9))
     axes = np.atleast_2d(axes)
-    for col, obj_rows in enumerate(rows):
-        for r, row in enumerate(obj_rows):
-            sample = ds[int(row)]
-            sample["visib_fract"] = float(ds.index["visib_fract"][row])
-            draw_tile(axes[r, col], sample, size)
+    flat_rows = [row for obj_rows in rows for row in obj_rows]
+    for (r, c), row in zip(cells, flat_rows):
+        sample = ds[int(row)]
+        sample["visib_fract"] = float(ds.index["visib_fract"][row])
+        draw_tile(axes[r, c], sample, size, dataset)
+    for r, c in cells[len(flat_rows) :]:
+        axes[r, c].axis("off")
     what = "augmented (jitter + colour)" if ds.augment else "no augmentation"
     fig.suptitle(
         f"Model-input crops, {split} split, {what}. Dots: GT model points. Axes/cross: pose decoded from the labels.",
@@ -120,13 +134,14 @@ def grid(split, per_object, size, seed, augment):
         color=TEXT_2,
     )
     fig.subplots_adjust(
-        left=0.01, right=0.99, wspace=0.06, hspace=0.18, top=1 - 0.75 / (2.15 * per_object + 0.9)
+        left=0.01, right=0.99, wspace=0.06, hspace=0.18, top=1 - 0.75 / (2.15 * n_rows + 0.9)
     )
     return fig
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--dataset", choices=sorted(SPLITS), default="lmo")
     parser.add_argument("--split", choices=["train", "val_pbr", "val_real", "test"], default=None)
     parser.add_argument("--per_object", type=int, default=4)
     parser.add_argument("--size", type=int, default=192)
@@ -138,6 +153,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
     for split in [args.split] if args.split else ["train", "test"]:
         augment = None if not args.no_augment else False
-        fig = grid(split, args.per_object, args.size, args.seed, augment)
-        suffix = "" if args.per_object == 4 else f"_{8 * args.per_object}"
-        save(fig, f"03_crops_{split}{suffix}.png", args.out_dir)
+        fig = grid(split, args.per_object, args.size, args.seed, augment, args.dataset)
+        if args.dataset == "lmo":
+            suffix = "" if args.per_object == 4 else f"_{8 * args.per_object}"
+            save(fig, f"03_crops_{split}{suffix}.png", args.out_dir)
+        else:
+            save(fig, f"03_crops_{args.dataset}_{split}.png", args.out_dir)

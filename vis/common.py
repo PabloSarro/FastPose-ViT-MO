@@ -87,8 +87,18 @@ def save(fig, name: str, out_dir: str | None = None) -> str:
     return path
 
 
-def obj_label(obj_id: int) -> str:
+def obj_label(obj_id: int, dataset: str = "lmo") -> str:
+    """LM-O name and id; other datasets (YCB-V) just the id."""
+    if dataset != "lmo":
+        return f"obj {int(obj_id)}"
     return f"{OBJ_NAMES[int(obj_id)]} ({int(obj_id)})"
+
+
+def obj_color(obj_id: int, dataset: str = "lmo") -> str:
+    """OBJ_COLORS for LM-O objects; other datasets cycle through the palette."""
+    if dataset == "lmo":
+        return OBJ_COLORS[int(obj_id)]
+    return PALETTE[(int(obj_id) - 1) % len(PALETTE)]
 
 
 def denormalize(image_tensor) -> np.ndarray:
@@ -102,13 +112,15 @@ def denormalize(image_tensor) -> np.ndarray:
 _POINTS = {}
 
 
-def model_points(obj_id: int, n: int | None = 1500, kind: str = "models_eval") -> np.ndarray:
-    """3D model points (mm) of an LM-O object, subsampled to n for drawing."""
+def model_points(
+    obj_id: int, n: int | None = 1500, kind: str = "models_eval", dataset: str = "lmo"
+) -> np.ndarray:
+    """3D model points (mm) of an object of `dataset`, subsampled to n for drawing."""
     from bop_toolkit_lib import inout
 
-    key = (int(obj_id), kind)
+    key = (int(obj_id), kind, dataset)
     if key not in _POINTS:
-        path = os.path.join(bop_root(), "lmo", kind, f"obj_{int(obj_id):06d}.ply")
+        path = os.path.join(bop_root(), dataset, kind, f"obj_{int(obj_id):06d}.ply")
         _POINTS[key] = inout.load_ply(path)["pts"]
     pts = _POINTS[key]
     if n is not None and len(pts) > n:

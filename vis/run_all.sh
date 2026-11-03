@@ -8,3 +8,5 @@ for script in objects scene crops augmentations reprojection stats speed; do
     echo "== $script"
     "$py" "$script.py"
 done
+echo "== crops (YCB-V)"
+for split in train test; do "$py" crops.py --dataset ycbv --split "$split" --per_object 2; done

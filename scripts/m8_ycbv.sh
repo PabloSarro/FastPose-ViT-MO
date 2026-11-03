@@ -5,9 +5,10 @@
 #
 # Usage (from the project root, inside a job), one variant per job:
 #   CPUS=16 bash rcp/train.sh ycbv-m8-tok4x-001 bash scripts/m8_ycbv.sh tok4x
-# Variants: tok4x tok4x2 (sampler seeds 0 / 1, for the run-to-run noise).
-# Budget: LM-O 4x per object (21,104 samples per object per epoch, 150 epochs), i.e. 21 x 21,104
-# = 443,184 samples per epoch, ~2.6x the LM-O epoch (~56 h at 332 samples/s).
+# Variants: tok4x tok4x2 (sampler seeds 0 / 1, for the run-to-run noise), and tok2x tok2x2 at half
+# the budget (2026-11-03: to decide whether later YCB-V runs can use 2x).
+# Budget 4x: LM-O 4x per object (21,104 samples per object per epoch, 150 epochs), i.e.
+# 21 x 21,104 = 443,184 samples per epoch (~58 h); 2x: 221,592 per epoch (~29 h).
 # Evaluation of last.pt: val_pbr (GT bbox_visib), test with GT boxes and test with the BOP default
 # detections (GDRNPPDet-PBR), each test run followed by the official BOP19 eval.
 set -euo pipefail
@@ -15,11 +16,12 @@ set -euo pipefail
 export PYTHONPATH=.
 EPOCHS=${EPOCHS:-150}
 VIT=${VIT:-vit_b_16_384}
-SPE=${SPE:-443184}
+SPE4=443184  # 21 objects x 21,104 (LM-O 4x per object)
 DET=$(ls "$NAS_HOME"/datasets/bop_detections/default_task1/bop23_default_detections_for_task1/gdrnppdet-pbr/gdrnppdet-pbr_ycbv-test_*.json)
 CSV=fastposevitmo_ycbv-test.csv
 
-declare -A SEED=([tok4x]=0 [tok4x2]=1)
+declare -A SEED=([tok4x]=0 [tok4x2]=1 [tok2x]=0 [tok2x2]=1)
+declare -A SPE=([tok4x]=$SPE4 [tok4x2]=$SPE4 [tok2x]=$((SPE4 / 2)) [tok2x2]=$((SPE4 / 2)))
 (( $# )) || { echo "usage: $0 VARIANT... (${!SEED[*]})"; exit 5; }
 
 for v in "$@"; do
@@ -36,7 +38,7 @@ for v in "$@"; do
             --bbox_crop_percent 10 --depth_mode site --translation_loss relative_translation \
             --log_dir "$out/" --model_save_path "$out/model.pth" --resume auto \
             --object_conditioning token --symmetric_rotation_loss --bop_pixel_aug domain_gap \
-            --bop_epoch_samples "$SPE" --bop_sampler_seed "${SEED[$v]}"
+            --bop_epoch_samples "${SPE[$v]}" --bop_sampler_seed "${SEED[$v]}"
         touch "$out/TRAINED"
     fi
     eval_args=(--dataset ycbv --model_weights "$out/last.pt" --vit_model "$VIT" --depth_mode site

@@ -338,10 +338,20 @@ def per_object_table(per_obj: dict, symmetric_ids=()) -> tuple[str, dict]:
     return "\n".join(lines) + "\n", means
 
 
-def write_tables(out_dir: str, splits, symmetric_ids=LMO_SYMMETRIC_IDS) -> dict:
+def boxes_label(args) -> str:
+    """Table title part: where the crops came from."""
+    if args.detections:
+        return f"detections {os.path.basename(args.detections)}"
+    return "GT boxes"
+
+
+def write_tables(
+    out_dir: str, splits, symmetric_ids=LMO_SYMMETRIC_IDS, boxes: str = "GT boxes"
+) -> dict:
     """table_<split>.md and summary.json from the per-object obj_<id>/summary.json files.
 
     symmetric_ids: objects marked "(sym.)" (evaluated with ADD-S), default LM-O's.
+    boxes: what the crops came from, for the table title ("GT boxes" or the detections file).
     """
     obj_dirs = sorted(
         (d for d in os.listdir(out_dir) if d.startswith("obj_")), key=lambda d: int(d[4:])
@@ -355,7 +365,7 @@ def write_tables(out_dir: str, splits, symmetric_ids=LMO_SYMMETRIC_IDS) -> dict:
         objs = {o: v[split] for o, v in per_obj.items() if split in v}
         table, means = per_object_table(objs, set(symmetric_ids))
         with open(os.path.join(out_dir, f"table_{split}.md"), "w") as f:
-            f.write(f"{split}, GT boxes; ADD-S for symmetric objects\n\n{table}")
+            f.write(f"{split}, {boxes}; ADD-S for symmetric objects\n\n{table}")
         logging.info(f"{split}:\n{table}")
         summary[split] = {**objs, **means}
     summary["note"] = VSD_SKIPPED
@@ -430,7 +440,7 @@ def main() -> None:
     models = load_models_info(default_bop_root(), cfg["models_dataset"], cfg["obj_ids"])
     symmetric_ids = [o for o, sym in zip(cfg["obj_ids"], models["symmetric"]) if sym]
     if args.table_only:
-        write_tables(args.out_dir, args.splits, symmetric_ids)
+        write_tables(args.out_dir, args.splits, symmetric_ids, boxes_label(args))
         return
     if not args.model_weights:
         parser.error("--model_weights is required (unless --table_only)")
@@ -523,7 +533,7 @@ def main() -> None:
     for obj_id, d in per_obj.items():
         with open(os.path.join(args.out_dir, f"obj_{obj_id}", "summary.json"), "w") as f:
             json.dump(d, f, indent=2)
-    write_tables(args.out_dir, args.splits, symmetric_ids)
+    write_tables(args.out_dir, args.splits, symmetric_ids, boxes_label(args))
 
 
 if __name__ == "__main__":

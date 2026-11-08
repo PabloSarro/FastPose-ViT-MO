@@ -21,26 +21,26 @@ jobs; external = someone outside this project).
 - [ ] Optionally, the detector for YCB-V (21 classes), if the LM-O one holds up. Cost: train.
 
 ## 2. Evaluation only (no training)
-- [ ] **Ablations on one metric.** Today they mix driller-only ADD (depth mode, translation loss,
+- [x] **Ablations on one metric.** *Done 2026-11-08: `docs/BOP.md` §2, `TASKS.md` §9.* Today they mix driller-only ADD (depth mode, translation loss,
       augmentation, M3), LM real val ADD (conditioning, symmetric loss, compute, M4/M5) and test AR
       (crop source, M7). Re-evaluate the existing `last.pt` of every ablation run with official
       LM-O test AR and the default detections (`scripts/m7_det_eval.sh`), 2 seeds each, so that
       every ablation table uses the same metric. Check first which run folders still have
       `last.pt`. Cost: eval (~3 min per model + official eval).
-- [ ] **Seed spread of the headline numbers**: LM-O `tok4x2` was never evaluated on test with
+- [x] **Seed spread of the headline numbers** *Done 2026-11-08: LM-O 0.669 / 0.664 (mean 0.666), YCB-V 0.694 / 0.702.*: LM-O `tok4x2` was never evaluated on test with
       detections; report mean ± spread of the 2 seeds on LM-O (YCB-V has both: 0.694 / 0.702).
       Cost: eval.
-- [ ] **`model.pth` (best val) vs `last.pt` (final epoch)**: AR of both for the final models, to
+- [x] **`model.pth` (best val) vs `last.pt` (final epoch)** *Done 2026-11-08: identical (LM-O 0.6686 vs 0.6685, YCB-V 0.7021 both).*: AR of both for the final models, to
       justify reporting `last.pt` (reasons: one rule for every run, `model.pth` criterion changed
       over time, LM-O validation includes real images, the schedule ends at its LR minimum).
       Cost: eval.
-- [ ] **Per-object official AR** on LM-O and YCB-V (today only own per-object recalls exist in
+- [x] **Per-object official AR** *Done 2026-11-08: `docs/BOP.md` §2.1, `scripts/bop_per_object_ar.py`.* on LM-O and YCB-V (today only own per-object recalls exist in
       `table_test.md`). Cost: eval.
-- [ ] **Model size and compute table** (parameters, GFLOPs at 224 and 384 px, engine size), as
+- [x] **Model size and compute table** *Done 2026-11-08: `docs/BOP.md` §2.2 (86.1 M, 55.5 GMACs at 384 px; matches WACV Table 1).* (parameters, GFLOPs at 224 and 384 px, engine size), as
       Table 1 of the WACV paper. Cost: eval.
-- [ ] **Detection quality**: default detector (GDRNPPDet) vs ours, mAP / recall on the BOP test
+- [x] **Detection quality** *Default detections done 2026-11-08 (`docs/BOP.md` §2.3, `scripts/detection_map.py`); ours when the detector jobs finish.*: default detector (GDRNPPDet) vs ours, mAP / recall on the BOP test
       targets, to discuss what the detector costs in AR. Cost: eval.
-- [ ] Check that the M6–M8 BOP `time` columns are explained (old pipeline path, slower than the
+- [x] *Done 2026-11-08: re-timed, LM-O 134 → 98.5 ms, YCB-V 118 → 93.6 ms incl. detector, AR unchanged; `docs/BOP.md` §1 updated.* Check that the M6–M8 BOP `time` columns are explained (old pipeline path, slower than the
       M9 path) or recomputed with the current `estimate_image`. Cost: eval.
 
 ## 3. Studies not done on BOP (need training)

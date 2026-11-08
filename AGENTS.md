@@ -65,4 +65,5 @@ Exit codes: 0 ok · 1 job failed · 2 no such job · 3 still waiting · 4 runai 
   - BOP `cam_R_m2c` is used as is: it is the same R model→camera as SPEED's `quaternion_to_rotation_matrix(q_vbs2tango)`.
   - BOP translations are in mm.
   - The image-rotation augmentation is invalid for BOP, because the principal point is not the image centre.
+- `docs/WACV - FastPose-ViT Original Paper.md` (the published paper's text, read by `docs/PAPER_FEAT.md`) stays untracked: never commit it (user, 2026-11-08).
 - Keep this file as the only agent-instructions file. Don't add `CLAUDE.md`/`CLAUDE.local.md` unless its first line is `@AGENTS.md`.

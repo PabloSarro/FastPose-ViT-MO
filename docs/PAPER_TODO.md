@@ -44,11 +44,12 @@ jobs; external = someone outside this project).
       M9 path) or recomputed with the current `estimate_image`. Cost: eval.
 
 ## 3. Studies not done on BOP (need training)
-- [ ] **Apparent (allocentric) rotation vs absolute rotation** on BOP: the WACV paper's core
+- [~] *Added 2026-11-08 (user + supervisor):* **augmentation study**: no pixel aug / color / blur / noise / color + blur + noise / domain_gap at p = 0.8, 2 seeds each (`lmo-m10-aug*-001`), plus the bbox jitter values below.
+- [~] *Running (jobs `lmo-m10-absrot{,2}-001`, 2026-11-08).* **Apparent (allocentric) rotation vs absolute rotation** on BOP: the WACV paper's core
       contribution; reviewers will ask whether it still helps here. Cost: train (2 seeds).
-- [ ] **Pre-training**: SWAG vs plain ImageNet weights vs from scratch. Cost: train.
-- [ ] **Bounding-box perturbation**: 0 / 10 / 20 % (the WACV paper's Table 8, on BOP). Cost: train.
-- [ ] **`site` vs `legacy` depth on several objects / cameras** (so far: driller only, one
+- [~] *Running: SWAG vs scratch (`lmo-m10-scratch{,2}-001`); plain ImageNet weights not run (no 384 px ImageNet-1K ViT-B in torchvision).* **Pre-training**: SWAG vs plain ImageNet weights vs from scratch. Cost: train.
+- [~] *Running: 0 / 5 / 15 / 20 / 30 % (`lmo-m10-bbox{0,5,15,20,30}{,2}-001`; 10 % = baseline).* **Bounding-box perturbation**: 0 / 10 / 20 % (the WACV paper's Table 8, on BOP). Cost: train.
+- [~] *Running on LM-O, 8 objects (`lmo-m10-legacy{,2}-001`); YCB-V not run.* **`site` vs `legacy` depth on several objects / cameras** (so far: driller only, one
       camera): multi-object LM-O and/or YCB-V (two cameras), to support "camera- and
       object-size-independent". Cost: train.
 - [ ] Optionally, **object conditioning on YCB-V** (heads vs class token with 21 objects).
@@ -69,9 +70,9 @@ jobs; external = someone outside this project).
       paper argues reproducibility. Cost: external decision, then upload.
 
 ## 5. Scope decisions (user)
-- [ ] **T-LESS**: in or out? Most BOP papers report LM-O, T-LESS and YCB-V; T-LESS also brings
+- [x] *Decided 2026-11-08: in. Data, tree, index (+ multi-instance fix), overfit check (all 30 objects 1.000) done; jobs `tless-m10-tok4x{,2}-001` running (~83 h).* **T-LESS**: in or out? Most BOP papers report LM-O, T-LESS and YCB-V; T-LESS also brings
       several instances of the same object (D6). Cost: train if in.
-- [ ] **YCB-V `train_real` (D8)**: fix the real-image depth bias (+2.4 % median) by training on
+- [~] *2026-11-08: the user asks the supervisor; meanwhile the missing `.z01` was downloaded and the data extracted to `$NAS_HOME/datasets/ycbv_train_real/`. Training with it not decided.* **YCB-V `train_real` (D8)**: fix the real-image depth bias (+2.4 % median) by training on
       PBR + real, or keep the PBR-only result as a stated limitation. Cost: download 48 GB + train
       if in.
 

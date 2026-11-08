@@ -90,7 +90,7 @@ from src.checkpoint import (
 from src.scheduler import LogarithmicLR, CosineAnnealingLR, CosineAnnealingWithWarmRestarts
 
 # Datasets read through src/bop_dataset.py (lower-cased name = key in its SPLITS)
-BOP_DATASETS = ("LMO", "YCBV")
+BOP_DATASETS = ("LMO", "YCBV", "TLESS")
 
 
 def is_bop(args: argparse.Namespace) -> bool:
@@ -104,7 +104,7 @@ def bop_config(args: argparse.Namespace) -> dict:
 
 
 def create_bop_datasets(args: argparse.Namespace, img_size: int, logger) -> tuple:
-    """Train and validation BOPDataset for a BOP --dataset (LMO, YCBV), from the cached index.
+    """Train and validation BOPDataset for a BOP --dataset (LMO, YCBV, TLESS), from the cached index.
 
     --bop_obj_ids restricts both splits to some objects (heads stay one per dataset object).
     --bop_overfit N trains on N fixed training instances without augmentation and validates on

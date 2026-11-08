@@ -40,6 +40,8 @@ INDEX_VERSION = 1
 LMO_OBJ_IDS = (1, 5, 6, 8, 9, 10, 11, 12)
 # Objects of YCB-V (all 21; 13 and 18 have a continuous symmetry)
 YCBV_OBJ_IDS = tuple(range(1, 22))
+# Objects of T-LESS (all 30; 27 symmetric, 11 of them with a continuous symmetry)
+TLESS_OBJ_IDS = tuple(range(1, 31))
 
 
 @dataclass(frozen=True)
@@ -86,6 +88,17 @@ SPLITS = {
         "val_pbr": (Source("ycbv", "train_pbr", (48, 49)),),
         "val": (Source("ycbv", "train_pbr", (48, 49)),),
         "test": (Source("ycbv", "test", targets=True),),
+    },
+    # T-LESS (M10, user 2026-11-08): PBR only, as LM-O / YCB-V. Real test images from the
+    # Primesense sensor (BOP split "test", folder test_primesense); up to 7 instances of the same
+    # object per image (D6): each instance is one row, as everywhere. Val = held-out PBR scenes.
+    "tless": {
+        "obj_ids": TLESS_OBJ_IDS,
+        "models_dataset": "tless",
+        "train": (Source("tless", "train_pbr", tuple(range(0, 48))),),
+        "val_pbr": (Source("tless", "train_pbr", (48, 49)),),
+        "val": (Source("tless", "train_pbr", (48, 49)),),
+        "test": (Source("tless", "test_primesense", targets=True),),
     },
 }
 
@@ -297,12 +310,26 @@ def build_index(
             scene_camera = _load_json(os.path.join(scene_dir, "scene_camera.json"))
             for im_key in sorted(scene_gt, key=int):
                 im_id = int(im_key)
+                keep = None
+                if targets is not None:
+                    # A target lists inst_count instances of an object; T-LESS images can hold
+                    # more (e.g. a second one at visib_fract 0.114 that BOP's own visibility does
+                    # not count): keep the inst_count most visible ones. On LM-O and YCB-V the
+                    # counts always match, so all instances are kept, as before.
+                    cand: dict[int, list] = {}
+                    for gi, (gt, info) in enumerate(zip(scene_gt[im_key], scene_gt_info[im_key])):
+                        if (scene_id, im_id, gt["obj_id"]) in targets:
+                            cand.setdefault(gt["obj_id"], []).append((info["visib_fract"], gi))
+                    keep = set()
+                    for ob, lst in cand.items():
+                        n = targets[(scene_id, im_id, ob)]
+                        keep.update(gi for _, gi in sorted(lst, key=lambda c: -c[0])[:n])
                 for gt_id, (gt, info) in enumerate(zip(scene_gt[im_key], scene_gt_info[im_key])):
                     obj_id = gt["obj_id"]
                     if obj_id not in obj_to_idx:
                         continue
                     if targets is not None:
-                        if (scene_id, im_id, obj_id) not in targets:
+                        if gt_id not in keep:
                             continue
                     elif info["visib_fract"] < min_visib_fract or not _valid_bbox(
                         info["bbox_visib"]

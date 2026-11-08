@@ -86,7 +86,7 @@ def predict(model, dataset, args, device) -> dict:
     transformer = CoordinateTransformer(
         rotation_format="matrix",
         val_camera=dataset.camera,
-        no_rotation_compensation=False,
+        no_rotation_compensation=getattr(args, "no_rotation_compensation", False),
         depth_mode=args.depth_mode,
     )
     out = {"R": [], "t": []}
@@ -117,7 +117,7 @@ def pose_transformer(dataset, args) -> CoordinateTransformer:
     return CoordinateTransformer(
         rotation_format="matrix",
         val_camera=dataset.camera,
-        no_rotation_compensation=False,
+        no_rotation_compensation=getattr(args, "no_rotation_compensation", False),
         depth_mode=args.depth_mode,
     )
 
@@ -445,6 +445,11 @@ def main() -> None:
         "one split only (M7)",
     )
     parser.add_argument(
+        "--no_rotation_compensation",
+        action="store_true",
+        help="as train.py: the model regresses the absolute (egocentric) rotation, not the apparent one",
+    )
+    parser.add_argument(
         "--backend", default="torch", choices=["torch", "trt"], help="trt: TensorRT engine (M9)"
     )
     parser.add_argument("--trt_engine", default=None, help="engine file for --backend trt")
@@ -515,6 +520,7 @@ def main() -> None:
             augment=False,
             bbox_source=bbox_source,
             depth_mode=args.depth_mode,
+            no_rotation_compensation=args.no_rotation_compensation,
             img_size=VIT_MODELS[args.vit_model][3][0],
         )
         pred_det = predict(model, dataset, args, device)

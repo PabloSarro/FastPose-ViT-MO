@@ -197,6 +197,12 @@ class MSDeformAttn(nn.Module):
             attention_weights = attention_weights.view(
                 N, Len_q, self.n_heads, self.n_levels, self.n_points
             )
+            # The CUDA kernel has no bfloat16 version: run it in fp32 under bf16 autocast (M9)
+            dtype = value.dtype
+            if dtype == torch.bfloat16:
+                value = value.float()
+                sampling_locations = sampling_locations.float()
+                attention_weights = attention_weights.float()
             output = MSDeformAttnFunction.apply(
                 value,
                 input_spatial_shapes,
@@ -204,6 +210,6 @@ class MSDeformAttn(nn.Module):
                 sampling_locations,
                 attention_weights,
                 self.im2col_step,
-            )
+            ).to(dtype)
         output = self.output_proj(output)
         return output

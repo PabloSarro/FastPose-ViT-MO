@@ -17,7 +17,6 @@ No commands are needed to start working: the code is already on the NAS. If a co
 
 ```bash
 dev                                   # interactive GPU shell (job fastpose-dev)
-train NAME bash -c '<command>'        # long run in the background (new NAME each time)
 ```
 
 ## Claude Code in a job (optional)

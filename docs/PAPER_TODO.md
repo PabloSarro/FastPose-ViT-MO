@@ -44,7 +44,7 @@ jobs; external = someone outside this project).
       M9 path) or recomputed with the current `estimate_image`. Cost: eval.
 
 ## 3. Studies not done on BOP (need training)
-- [~] *Added 2026-11-08 (user + supervisor):* **augmentation study**: no pixel aug / color / blur / noise / color + blur + noise / domain_gap at p = 0.8, 2 seeds each (`lmo-m10-aug*-001`), plus the bbox jitter values below.
+- [~] *Added 2026-11-08 (user + supervisor):* **augmentation study**: no pixel aug / color / blur / noise / color + blur + noise / domain_gap at p = 0.8, 2 seeds each (`lmo-m10-aug*-001`), plus the bbox jitter values below. **On hold since 2026-11-08 (cluster queue, user priority 4 of 4): relaunch command in `TASKS.md` M10.**
 - [~] *Running (jobs `lmo-m10-absrot{,2}-001`, 2026-11-08).* **Apparent (allocentric) rotation vs absolute rotation** on BOP: the WACV paper's core
       contribution; reviewers will ask whether it still helps here. Cost: train (2 seeds).
 - [~] *Running: SWAG vs scratch (`lmo-m10-scratch{,2}-001`); plain ImageNet weights not run (no 384 px ImageNet-1K ViT-B in torchvision).* **Pre-training**: SWAG vs plain ImageNet weights vs from scratch. Cost: train.

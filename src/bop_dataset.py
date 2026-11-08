@@ -470,7 +470,9 @@ def summarize(index: dict) -> str:
     return f"{n} rows from {images} images; per object {{{per_obj_txt}}}"
 
 
-PIXEL_AUGS = ("none", "standard", "domain_gap")
+# M10 augmentation study (2026-11-08): color / blur / noise alone, simple = the three together,
+# domain_gap_strong = domain_gap with every op at p = 0.8 instead of 0.5
+PIXEL_AUGS = ("none", "standard", "domain_gap", "color", "blur", "noise", "simple", "domain_gap_strong")
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
 
@@ -559,6 +561,11 @@ def pixel_transform(pixel_aug: str, fast_sun_flare: bool = True) -> A.Compose:
     already outputs the model size) and, for "domain_gap", without OpticalDistortion: it is a
     geometric warp, so it would make the pose labels wrong. fast_sun_flare=False uses the original
     A.RandomSunFlare (same output, slower; kept for the equality test).
+
+    M10 augmentation study: "color" (brightness / contrast, gamma, hue-saturation), "blur"
+    (Gaussian, motion, defocus), "noise" (Gaussian, ISO sensor noise), "simple" (color + blur +
+    noise, without domain_gap's gray / tone curve / CLAHE / solarize / sun flare / compression),
+    "domain_gap_strong" (domain_gap with p = 0.8). Every op is applied independently with p = 0.5.
     """
     if pixel_aug not in PIXEL_AUGS:
         raise ValueError(f"pixel_aug must be one of {PIXEL_AUGS}, got {pixel_aug!r}")
@@ -576,22 +583,38 @@ def pixel_transform(pixel_aug: str, fast_sun_flare: bool = True) -> A.Compose:
                 p=0.5,
             ),
         ]
-    elif pixel_aug == "domain_gap":
+    elif pixel_aug in ("domain_gap", "domain_gap_strong"):
+        p = 0.8 if pixel_aug == "domain_gap_strong" else 0.5
         augs = [
-            A.ToGray(p=0.5),
-            A.RandomToneCurve(p=0.5),
-            A.RandomGamma(p=0.5),
-            A.CLAHE(p=0.5),
-            A.RandomBrightnessContrast(p=0.5),
-            A.Solarize(p=0.5),
+            A.ToGray(p=p),
+            A.RandomToneCurve(p=p),
+            A.RandomGamma(p=p),
+            A.CLAHE(p=p),
+            A.RandomBrightnessContrast(p=p),
+            A.Solarize(p=p),
             (FastRandomSunFlare if fast_sun_flare else A.RandomSunFlare)(
-                flare_roi=(0, 0, 1, 1), p=0.5
+                flare_roi=(0, 0, 1, 1), p=p
             ),
-            A.ISONoise(p=0.5),
-            A.MotionBlur(p=0.5),
-            A.Defocus(p=0.5),
-            A.OneOf([A.ImageCompression(p=1.0), A.Downscale(p=1.0)], p=0.5),
+            A.ISONoise(p=p),
+            A.MotionBlur(p=p),
+            A.Defocus(p=p),
+            A.OneOf([A.ImageCompression(p=1.0), A.Downscale(p=1.0)], p=p),
         ]
+    else:
+        color = [
+            A.RandomBrightnessContrast(p=0.5),
+            A.RandomGamma(p=0.5),
+            A.HueSaturationValue(p=0.5),
+        ]
+        blur = [A.GaussianBlur(blur_limit=(3, 7), p=0.5), A.MotionBlur(p=0.5), A.Defocus(p=0.5)]
+        noise = [A.GaussNoise(std_range=(0.02, 0.1), p=0.5), A.ISONoise(p=0.5)]
+        augs = {
+            "none": [],
+            "color": color,
+            "blur": blur,
+            "noise": noise,
+            "simple": color + blur + noise,
+        }[pixel_aug]
     return A.Compose(
         augs
         + [A.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD, max_pixel_value=1.0), ToTensorV2()]

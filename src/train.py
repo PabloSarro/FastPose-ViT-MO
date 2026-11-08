@@ -21,6 +21,7 @@ from src.optimizer import DistributedMuonWithAuxAdam, SingleDeviceMuonWithAuxAda
 import torch._inductor.config
 from src.datasets import SPEEDDataset, get_dataset_config
 from src.bop_dataset import (
+    PIXEL_AUGS,
     SPLITS,
     default_bop_root,
     symmetry_table,
@@ -1345,7 +1346,7 @@ if __name__ == "__main__":
         "--bop_pixel_aug",
         type=str,
         default="standard",
-        choices=["standard", "domain_gap"],
+        choices=[a for a in PIXEL_AUGS if a != "none"],
         help="BOP pixel augmentation (off with --no_pixel_augmentation)",
     )
     parser.add_argument(

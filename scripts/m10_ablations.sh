@@ -13,6 +13,14 @@
 #   bbox0    no bounding-box jitter (WACV Table 8: 0 %)
 #   bbox20   bounding-box jitter up to 20 % per side (default 10 %)
 #   legacy   the WACV alpha-based depth target instead of `site`, with 8 objects
+# Augmentation study (2026-11-08, user + supervisor; baseline pixel aug = domain_gap):
+#   augnone   no pixel augmentation
+#   augcolor  brightness / contrast, gamma, hue-saturation only     (src/bop_dataset.PIXEL_AUGS)
+#   augblur   Gaussian, motion, defocus blur only
+#   augnoise  Gaussian and ISO sensor noise only
+#   augsimple color + blur + noise
+#   augstrong domain_gap with every op at p = 0.8 instead of 0.5
+#   bbox5 bbox15 bbox30   bounding-box jitter up to 5 / 15 / 30 % per side (with bbox0, bbox20)
 set -euo pipefail
 : "${RUN_DIR:?run inside a train job (RUN_DIR not set)}"
 export PYTHONPATH=.
@@ -30,6 +38,15 @@ case $base in
     bbox0)   extra=(--bbox_crop_percent 0) ;;
     bbox20)  extra=(--bbox_crop_percent 20) ;;
     legacy)  DEPTH=legacy ;;
+    augnone)   extra=(--no_pixel_augmentation) ;;
+    augcolor)  extra=(--bop_pixel_aug color) ;;
+    augblur)   extra=(--bop_pixel_aug blur) ;;
+    augnoise)  extra=(--bop_pixel_aug noise) ;;
+    augsimple) extra=(--bop_pixel_aug simple) ;;
+    augstrong) extra=(--bop_pixel_aug domain_gap_strong) ;;
+    bbox5)   extra=(--bbox_crop_percent 5) ;;
+    bbox15)  extra=(--bbox_crop_percent 15) ;;
+    bbox30)  extra=(--bbox_crop_percent 30) ;;
     *) echo "unknown variant $v"; exit 5 ;;
 esac
 out=$RUN_DIR/$v

@@ -70,7 +70,7 @@ jobs; external = someone outside this project).
       paper argues reproducibility. Cost: external decision, then upload.
 
 ## 5. Scope decisions (user)
-- [x] *Decided 2026-11-08: in. Data, tree, index (+ multi-instance fix), overfit check (all 30 objects 1.000) done; jobs `tless-m10-tok4x{,2}` on hold since 2026-11-08 (priority 3; relaunch command in `TASKS.md` M10), ~83 h each.* **T-LESS**: in or out? Most BOP papers report LM-O, T-LESS and YCB-V; T-LESS also brings
+- [x] *Decided 2026-11-08: in. Data, tree, index (+ multi-instance fix), overfit check (all 30 objects 1.000) done; jobs `tless-m10-tok4x{,2}-002` queued 2026-11-08 ~23:20 (priority 3), ~83 h each.* **T-LESS**: in or out? Most BOP papers report LM-O, T-LESS and YCB-V; T-LESS also brings
       several instances of the same object (D6). Cost: train if in.
 - [~] *2026-11-08: the user asks the supervisor; meanwhile the missing `.z01` was downloaded and the data extracted to `$NAS_HOME/datasets/ycbv_train_real/`. Training with it not decided.* **YCB-V `train_real` (D8)**: fix the real-image depth bias (+2.4 % median) by training on
       PBR + real, or keep the PBR-only result as a stated limitation. Cost: download 48 GB + train

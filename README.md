@@ -16,6 +16,7 @@ FastPose-ViT is a Vision Transformer (ViT) pipeline for 6D spacecraft pose estim
 - [Training & Evaluation](#training--evaluation)
   - [Pose Estimator (ViT)](#pose-estimator-vit)
   - [Object Detector](#object-detector)
+- [Multi-Object 6D Pose on BOP](#multi-object-6d-pose-on-bop)
 - [Optimization & Deployment](#optimization--deployment)
   - [Pose Estimator (ViT)](#pose-estimator-vit-1)
   - [Object Detector](#object-detector-1)
@@ -29,6 +30,7 @@ FastPose-ViT is a Vision Transformer (ViT) pipeline for 6D spacecraft pose estim
 - Integrated object detector (LW-DETR variants) to generate spacecraft bounding boxes
 - End-to-end optimization pipeline with ONNX export and TensorRT for Jetson Orin Nano
 - Ready-to-run Docker image as well as local setups
+- Multi-object 6D pose on the BOP benchmark (LM-O, YCB-V) with one shared network, trained on synthetic images only
 
 ## Repository Layout
 - `assets/`: Figures and visual assets used across the documentation
@@ -349,6 +351,34 @@ python3 object_detector/predict_on_folder.py \
 --save_visualizations
 ```
 </details>
+
+## Multi-Object 6D Pose on BOP
+
+The same direct-regression design, extended to many objects: one network for all objects of a
+dataset (a per-object class token tells it which object a crop shows), trained on BOP's synthetic
+PBR images only, RGB only, no PnP and no refinement. Official BOP19 AR on the test sets, with the
+BOP default detections:
+
+| Dataset | AR | AR_VSD | AR_MSSD | AR_MSPD | Best PBR-only RGB entry |
+|---|---|---|---|---|---|
+| LM-O | **0.668** | 0.491 | 0.641 | 0.873 | 0.729 (ZebraPose), 0.713 (GDRNPP) |
+| YCB-V | **0.702** | 0.591 | 0.681 | 0.834 | 0.729 (ZebraPose), 0.713 (GDRNPP) |
+
+With TensorRT fp16 on an A100, the pose stage takes 14 ms for 8 objects (70 FPS) and loses no
+measurable AR. Full tables, ablations, latency and how to reproduce every number:
+[docs/BOP.md](docs/BOP.md).
+
+```bash
+# Evaluate the LM-O model with the BOP default detections, then the official BOP19 eval
+PYTHONPATH=. python src/bop_evaluate.py --dataset lmo --model_weights RUN/tok4x/last.pt \
+    --object_conditioning token --splits test --detections DETECTIONS.json --out_dir OUT
+bash scripts/bop_eval.sh OUT fastposevitmo_lmo-test.csv
+# Export to ONNX and build a TensorRT fp16 engine
+PYTHONPATH=. python optimization/bop_export.py --dataset lmo --model_weights RUN/tok4x/last.pt \
+    --onnx_path OUT/model.onnx
+PYTHONPATH=. python optimization/bop_trt.py --onnx_path OUT/model.onnx \
+    --engine_path OUT/model_fp16.engine --fp16
+```
 
 ## Optimization & Deployment
 

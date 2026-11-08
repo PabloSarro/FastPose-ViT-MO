@@ -35,6 +35,8 @@ from torch.amp import autocast
 from torch.utils.data import DataLoader
 
 from src.bop_dataset import (
+    IMAGENET_MEAN,
+    IMAGENET_STD,
     SPLITS,
     BOPDataset,
     bop_bbox_to_xyxy,
@@ -110,13 +112,68 @@ def predict(model, dataset, args, device) -> dict:
     return {k: np.concatenate(v) for k, v in out.items()}
 
 
+def pose_transformer(dataset, args) -> CoordinateTransformer:
+    """R, t recovery from the network outputs, as in predict()."""
+    return CoordinateTransformer(
+        rotation_format="matrix",
+        val_camera=dataset.camera,
+        no_rotation_compensation=False,
+        depth_mode=args.depth_mode,
+    )
+
+
+def normalize_crops(crops: np.ndarray, device) -> torch.Tensor:
+    """uint8 crops (N, S, S, 3) -> network input (N, 3, S, S) on `device`, normalised as
+    pixel_transform("none") (/255, ImageNet mean/std), but computed on the device."""
+    images = torch.from_numpy(crops).to(device).permute(0, 3, 1, 2).float().div_(255.0)
+    mean = torch.tensor(IMAGENET_MEAN, device=device).view(1, 3, 1, 1)
+    std = torch.tensor(IMAGENET_STD, device=device).view(1, 3, 1, 1)
+    return ((images - mean) / std).contiguous()
+
+
+def estimate_image(model, dataset, transformer, rows, image, device):
+    """Poses of the instances `rows` of one decoded image: (R (N, 3, 3), t (N, 3) mm) on the CPU.
+
+    The whole per-image path: crop and normalisation of every instance, the network on that
+    batch, and R, t recovery. Used for the BOP `time` (time_per_image) and the M9 latency
+    benchmark (optimization/bop_latency.py).
+    """
+    if dataset.augment:
+        raise ValueError("estimate_image needs a dataset without augmentation")
+    index = dataset.index
+    bboxes = [dataset.crop_bbox(r) for r in rows]
+    # Crops (uint8) on the CPU, normalisation on the GPU: the same ImageNet normalisation as
+    # BOPDataset's transform, but its CPU version cost ~2 ms per crop (M9 latency)
+    crops = np.stack([crop_image(image, b, dataset.img_size, dataset.crop_context) for b in bboxes])
+    images = normalize_crops(crops, device)
+    obj_idx = torch.as_tensor(index["obj_idx"][rows], device=device)
+    with autocast("cuda", enabled=device.type == "cuda"):
+        pred_t, pred_R = forward_model(model, images, obj_idx, merge_outputs=True)
+    # R, t recovery on the CPU, in fp32: N x 9 values, and on the GPU its masked ops synced it
+    # ~66 times per image (~9 ms, M9 latency)
+    pred_t, pred_R = pred_t.float().cpu(), pred_R.float().cpu()
+    pred_R = process_rotation(pred_R, "matrix")
+    n = len(rows)
+    abs_t, abs_q, _, _ = transformer.transform_to_absolute(
+        pred_t,
+        pred_R,
+        torch.zeros(n, 3),
+        torch.zeros(n, 3, 3),
+        torch.tensor(np.array(bboxes), dtype=torch.float32),
+        K=torch.from_numpy(index["K"][rows]).float(),
+        img_wh=torch.from_numpy(index["img_wh"][rows]).float(),
+        diameter=torch.from_numpy(index["diameters"][index["obj_idx"][rows]]).float(),
+    )
+    return quaternion_to_rotation_matrix(abs_q).numpy(), abs_t.numpy()
+
+
 def time_per_image(model, dataset, args, device, warmup: int = 3) -> dict:
     """BOP19 `time` per image: seconds to estimate the poses of all its objects (GT boxes).
 
-    Timed, for each image, from its decoded RGB in memory to the poses on the CPU: the crop and
-    normalisation of every instance, the network on that batch, and R, t recovery (with a CUDA
-    sync). Reading and decoding the image file is not timed (it measures the NAS, not the method).
-    The first `warmup` images are run once untimed first (cuDNN autotuning, allocations).
+    Timed, for each image, from its decoded RGB in memory to the poses on the CPU
+    (estimate_image, with a CUDA sync). Reading and decoding the image file is not timed (it
+    measures the NAS, not the method). The first `warmup` images are run once untimed first
+    (cuDNN autotuning, allocations).
 
     Returns:
         {(scene_id, im_id): seconds}
@@ -125,42 +182,10 @@ def time_per_image(model, dataset, args, device, warmup: int = 3) -> dict:
     groups: dict[tuple, list[int]] = {}
     for row in range(len(dataset)):
         groups.setdefault((int(index["scene_id"][row]), int(index["im_id"][row])), []).append(row)
-    transformer = CoordinateTransformer(
-        rotation_format="matrix",
-        val_camera=dataset.camera,
-        no_rotation_compensation=False,
-        depth_mode=args.depth_mode,
-    )
+    transformer = pose_transformer(dataset, args)
 
     def estimate(rows, image):
-        bboxes = [dataset.crop_bbox(r) for r in rows]
-        images = torch.stack(
-            [
-                dataset.transform(
-                    image=crop_image(image, b, dataset.img_size, dataset.crop_context).astype(
-                        np.float32
-                    )
-                    / 255.0
-                )["image"]
-                for b in bboxes
-            ]
-        ).to(device)
-        obj_idx = torch.as_tensor(index["obj_idx"][rows], device=device)
-        with autocast("cuda", enabled=device.type == "cuda"):
-            pred_t, pred_R = forward_model(model, images, obj_idx, merge_outputs=True)
-            pred_R = process_rotation(pred_R, "matrix")
-        n = len(rows)
-        abs_t, abs_q, _, _ = transformer.transform_to_absolute(
-            pred_t.float(),
-            pred_R.float(),
-            torch.zeros(n, 3, device=device),
-            torch.zeros(n, 3, 3, device=device),
-            torch.tensor(np.array(bboxes), dtype=torch.float32),
-            K=torch.from_numpy(index["K"][rows]).float(),
-            img_wh=torch.from_numpy(index["img_wh"][rows]).float(),
-            diameter=torch.from_numpy(index["diameters"][index["obj_idx"][rows]]).float(),
-        )
-        return quaternion_to_rotation_matrix(abs_q).cpu().numpy(), abs_t.cpu().numpy()
+        return estimate_image(model, dataset, transformer, rows, image, device)
 
     times = {}
     model.eval()

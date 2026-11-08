@@ -81,3 +81,17 @@ def test_trt_engine_matches_torch(tmp_path):
     torch.cuda.synchronize()
     assert out.shape == (7, 9)
     assert (out - ref).abs().max().item() < 1e-4
+
+
+def test_normalize_crops_matches_pixel_transform():
+    """The deployment path's tensor normalisation = BOPDataset's albumentations transform."""
+    from src.bop_dataset import pixel_transform
+    from src.bop_evaluate import normalize_crops
+
+    rng = np.random.default_rng(0)
+    crops = rng.integers(0, 256, size=(3, 32, 32, 3), dtype=np.uint8)
+    transform = pixel_transform("none")
+    ref = torch.stack([transform(image=c.astype(np.float32) / 255.0)["image"] for c in crops])
+    out = normalize_crops(crops, torch.device("cpu"))
+    assert out.shape == ref.shape
+    assert (out - ref).abs().max().item() < 1e-5

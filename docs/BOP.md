@@ -108,9 +108,12 @@ CPU (crop and normalise every instance, network, R, t recovery).
 | Pipeline, PyTorch fp16 autocast | 10.8 | 13.5 | 17.0 | 29.5 |
 | Pipeline, **TensorRT fp16** | **5.3** | **9.3** | **14.2** | **24.0** |
 | FPS, TensorRT pipeline (pose stage) | 189 | 108 | 70 | 42 |
+| *224 px backbone: network, TensorRT fp16* | *1.4* | *1.7* | *2.2* | *3.9* |
+| *224 px backbone: pipeline, TensorRT fp16* | *4.4* | *6.1* | *7.6* | *11.1* |
 | FPS including the BOP default detector (81.6 ms per image) | 11.5 | 11.0 | 10.4 | 9.5 |
 
-The pose stage is real time (70 FPS for 8 objects). With the default detector (GDRNPPDet, time
+The pose stage is real time (70 FPS for 8 objects; 130 FPS with the 224 px backbone, whose AR is
+*pending*, §2). With the default detector (GDRNPPDet, time
 reported by its authors), the whole method runs at ~10 FPS: the detector is the bottleneck, hence
 our own LW-DETR detector (*pending*). Jetson Orin numbers: not measured (no device).
 

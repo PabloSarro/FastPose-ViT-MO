@@ -1005,7 +1005,7 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
   - AR on LM-O and YCB-V vs RGB-only BOP entries without refinement.
   - Ablations (depth mode, conditioning, symmetry loss, augmentation, resolution 224/384).
   - Latency.
-- [~] README "BOP" section, `scripts/bop_*.sh`, merge `multi-object` into `main`. Paper guidelines `docs/PAPER_FEAT.md` (2026-11-08, user: structure, style and features of the WACV paper + reading list and outline for the follow-up paper). README section "Multi-Object 6D Pose on BOP" added 2026-11-08 (headline AR, latency, commands, link to `docs/BOP.md`). **Merge into `main`: ask the user first** (after the pending runs are in).
+- [~] README "BOP" section, `scripts/bop_*.sh`, merge `multi-object` into `main`. Paper guidelines `docs/PAPER_FEAT.md` and missing-pieces checklist `docs/PAPER_TODO.md` (2026-11-08, user: structure, style and features of the WACV paper + reading list and outline for the follow-up paper). README section "Multi-Object 6D Pose on BOP" added 2026-11-08 (headline AR, latency, commands, link to `docs/BOP.md`). **Merge into `main`: ask the user first** (after the pending runs are in).
 
 **GPU budget (A100, one job at a time):** about 50–65 GPU-h for the core path, 85–100 with stretch goals. Long runs are chained with resume across 12 h jobs. Multi-GPU (DDP) is planned in M6; before that every training run uses 1 GPU.
 

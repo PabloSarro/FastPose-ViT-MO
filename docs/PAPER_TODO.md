@@ -1,0 +1,93 @@
+# Missing pieces before writing the paper
+
+Everything still needed for the follow-up paper on the multi-object BOP work (companion to
+`docs/PAPER_FEAT.md`, which describes the paper's structure and style, and `docs/BOP.md`, the draft
+of the final tables). Listed 2026-11-08. Tick an item when done and write where its result is
+(`TASKS.md` §9 row, run folder, or `docs/BOP.md` section).
+
+Legend: **cost** = what it needs (eval = minutes in `dev`, no training; train = new training
+jobs; external = someone outside this project).
+
+## 1. Results still running
+- [ ] **Own multi-class LW-DETR detector**: LM-O AR with our detections vs the default ones (0.668),
+      val_pbr mAP, tiny vs small, seed spread. Jobs `lmo-m9-{dettiny,dettiny2,detsmall}-001`.
+      Cost: running.
+- [ ] **End-to-end latency with our detector**: TensorRT engine of the detector + pose pipeline,
+      per image vs number of objects (the real-time claim of the whole method). Cost: eval, after
+      the detector jobs.
+- [ ] **224 px vs 384 px AR** (D7): LM-O test AR with detections of the 224 px `tok4x` recipe
+      (2 seeds) vs `tok4x` / `tok4x2`; latency already measured (pipeline 7.6 vs 14.2 ms at 8
+      objects). Jobs `lmo-m10-r224tok4x{,2}-001`. Cost: running, then eval.
+- [ ] Optionally, the detector for YCB-V (21 classes), if the LM-O one holds up. Cost: train.
+
+## 2. Evaluation only (no training)
+- [ ] **Ablations on one metric.** Today they mix driller-only ADD (depth mode, translation loss,
+      augmentation, M3), LM real val ADD (conditioning, symmetric loss, compute, M4/M5) and test AR
+      (crop source, M7). Re-evaluate the existing `last.pt` of every ablation run with official
+      LM-O test AR and the default detections (`scripts/m7_det_eval.sh`), 2 seeds each, so that
+      every ablation table uses the same metric. Check first which run folders still have
+      `last.pt`. Cost: eval (~3 min per model + official eval).
+- [ ] **Seed spread of the headline numbers**: LM-O `tok4x2` was never evaluated on test with
+      detections; report mean ± spread of the 2 seeds on LM-O (YCB-V has both: 0.694 / 0.702).
+      Cost: eval.
+- [ ] **`model.pth` (best val) vs `last.pt` (final epoch)**: AR of both for the final models, to
+      justify reporting `last.pt` (reasons: one rule for every run, `model.pth` criterion changed
+      over time, LM-O validation includes real images, the schedule ends at its LR minimum).
+      Cost: eval.
+- [ ] **Per-object official AR** on LM-O and YCB-V (today only own per-object recalls exist in
+      `table_test.md`). Cost: eval.
+- [ ] **Model size and compute table** (parameters, GFLOPs at 224 and 384 px, engine size), as
+      Table 1 of the WACV paper. Cost: eval.
+- [ ] **Detection quality**: default detector (GDRNPPDet) vs ours, mAP / recall on the BOP test
+      targets, to discuss what the detector costs in AR. Cost: eval.
+- [ ] Check that the M6–M8 BOP `time` columns are explained (old pipeline path, slower than the
+      M9 path) or recomputed with the current `estimate_image`. Cost: eval.
+
+## 3. Studies not done on BOP (need training)
+- [ ] **Apparent (allocentric) rotation vs absolute rotation** on BOP: the WACV paper's core
+      contribution; reviewers will ask whether it still helps here. Cost: train (2 seeds).
+- [ ] **Pre-training**: SWAG vs plain ImageNet weights vs from scratch. Cost: train.
+- [ ] **Bounding-box perturbation**: 0 / 10 / 20 % (the WACV paper's Table 8, on BOP). Cost: train.
+- [ ] **`site` vs `legacy` depth on several objects / cameras** (so far: driller only, one
+      camera): multi-object LM-O and/or YCB-V (two cameras), to support "camera- and
+      object-size-independent". Cost: train.
+- [ ] Optionally, **object conditioning on YCB-V** (heads vs class token with 21 objects).
+      Cost: train.
+
+## 4. Needs outside input or resources
+- [ ] **Jetson Orin Nano latency** for BOP (the WACV paper's central claim was on-device; we only
+      have A100). Needs device access (supervisor question in `TASKS.md` §8). Cost: external.
+- [ ] **Verify the leaderboard entries by hand** on the BOP website (the numbers were read with an
+      automatic extractor): AR values, training data, and refinement for MRC-Net, PoseDETR and SC6D
+      (marked "?"). Note that competitors' times come from different hardware: say so or re-time
+      some of them. Cost: external / manual.
+- [ ] **Bibliography**: exact references for every compared and related method (ZebraPose,
+      GDRNPP, SurfEmb, CosyPose, CDPN, EPOS, MRC-Net, PoseDETR, SC6D, PViT-6D, MegaPose, LW-DETR,
+      BOP challenge papers, …). Cost: manual.
+- [ ] **Venue, page limit, authorship** (supervisor question "expected deliverable"). Cost: external.
+- [ ] **Release plan**: BOP weights (e.g. Hugging Face, as for the WACV weights) and code; the
+      paper argues reproducibility. Cost: external decision, then upload.
+
+## 5. Scope decisions (user)
+- [ ] **T-LESS**: in or out? Most BOP papers report LM-O, T-LESS and YCB-V; T-LESS also brings
+      several instances of the same object (D6). Cost: train if in.
+- [ ] **YCB-V `train_real` (D8)**: fix the real-image depth bias (+2.4 % median) by training on
+      PBR + real, or keep the PBR-only result as a stated limitation. Cost: download 48 GB + train
+      if in.
+
+## 6. Figures (none made yet)
+- [ ] **Teaser**: one image → detector → N crops batched through one shared ViT with per-object
+      class tokens → N poses.
+- [ ] **Concept figure** for the main new idea (class-token conditioning and/or the `site` depth).
+- [ ] **Qualitative results**: best / median / worst predictions per dataset (GT axes solid,
+      predictions dashed, errors under each image), as Figure 3 of the WACV paper.
+- [ ] **Failure cases**: occlusion (LM-O eggbox, duck) and the YCB-V depth bias, as Figure 4.
+- [ ] **Latency vs number of objects** plot (PyTorch vs TensorRT, 224 vs 384 px, with and without
+      the detector).
+- Reuse `vis/` (`bash vis/run_all.sh`, `vis/training_curves.py`) where possible.
+
+## Suggested order
+1. Section 2 (eval only, ~1 h of `dev`, while the section 1 jobs run).
+2. Section 1 as the jobs finish; update `docs/BOP.md`.
+3. Section 5 decisions, then section 3 jobs in parallel (one per config, 2 seeds, as usual).
+4. Section 6 figures and section 4 items alongside.

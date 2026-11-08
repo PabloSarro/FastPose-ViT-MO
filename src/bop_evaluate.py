@@ -17,6 +17,10 @@
 # detection counts as a failure.
 #
 # --dataset lmo (default) or ycbv (M8): objects, models and index from src/bop_dataset.py SPLITS.
+#
+# --backend trt --trt_engine FILE (M9): the network runs as a TensorRT engine built by
+# optimization/bop_trt.py instead of PyTorch; everything else (crops, R, t recovery, timing) is
+# the same. --model_weights is then not needed.
 
 import argparse
 import json
@@ -415,6 +419,10 @@ def main() -> None:
         help="Crop around these detections (BOP default detections JSON) instead of GT boxes; "
         "one split only (M7)",
     )
+    parser.add_argument(
+        "--backend", default="torch", choices=["torch", "trt"], help="trt: TensorRT engine (M9)"
+    )
+    parser.add_argument("--trt_engine", default=None, help="engine file for --backend trt")
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--num_workers", type=int, default=8)
     parser.add_argument("--method", default="fastposevitmo", help="BOP method name (no '_')")
@@ -442,11 +450,18 @@ def main() -> None:
     if args.table_only:
         write_tables(args.out_dir, args.splits, symmetric_ids, boxes_label(args))
         return
-    if not args.model_weights:
-        parser.error("--model_weights is required (unless --table_only)")
+    if args.backend == "trt" and not args.trt_engine:
+        parser.error("--backend trt needs --trt_engine")
+    if args.backend == "torch" and not args.model_weights:
+        parser.error("--model_weights is required (unless --table_only or --backend trt)")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = build_model(args, device)
+    if args.backend == "trt":
+        from optimization.bop_trt import TRTPoseModel  # TensorRT only needed here
+
+        model = TRTPoseModel(args.trt_engine)  # larger batches run in chunks of its profile
+    else:
+        model = build_model(args, device)
     bop_root = default_bop_root()
     os.makedirs(args.out_dir, exist_ok=True)
 

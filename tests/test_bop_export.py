@@ -43,3 +43,41 @@ def test_onnx_dynamic_batch_matches_torch(tmp_path, conditioning):
         # The object index matters (the graph did not freeze it)
         other = sess.run(["pose"], {"images": images.numpy(), "obj_idx": (obj_idx + 1).numpy() % 3})
         assert np.abs(other[0] - out).max() > 1e-3
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="TensorRT needs a GPU")
+def test_trt_engine_matches_torch(tmp_path):
+    """fp32 engine (TF32 off) = PyTorch; batches above the profile maximum run in chunks."""
+    pytest.importorskip("tensorrt")
+    from optimization.bop_trt import TRTPoseModel, build_engine
+
+    torch.manual_seed(0)
+    torch.backends.cuda.matmul.allow_tf32 = False
+    torch.backends.cudnn.allow_tf32 = False
+    model = FastPoseViT(
+        vit_model="vit_b_16_no_weights",
+        num_hidden_layers=0,
+        hidden_layer_dim=0,
+        out_dim_translation=3,
+        out_dim_rotation=6,
+        merge_outputs=True,
+        no_mlp=True,
+        num_objects=3,
+        object_conditioning="token",
+    ).eval()
+    with torch.no_grad():
+        model.object_token.normal_(std=0.5)
+    onnx_path, engine_path = str(tmp_path / "model.onnx"), str(tmp_path / "model.engine")
+    export_onnx(model, onnx_path, img_size=224)
+    build_engine(onnx_path, engine_path, fp16=False, min_batch=1, opt_batch=2, max_batch=4)
+
+    trt_model = TRTPoseModel(engine_path)
+    model = model.cuda()
+    images = torch.randn(7, 3, 224, 224, device="cuda")  # 7 > max_batch 4: two chunks
+    obj_idx = torch.arange(7, device="cuda") % 3
+    with torch.no_grad():
+        ref = model(images, obj_idx)
+    out = trt_model(images, obj_idx)
+    torch.cuda.synchronize()
+    assert out.shape == (7, 9)
+    assert (out - ref).abs().max().item() < 1e-4

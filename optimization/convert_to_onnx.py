@@ -260,13 +260,14 @@ def convert_onnx_to_tensorrt(args: argparse.Namespace, logger: logging.Logger) -
 
         # Parse ONNX model
         logger.info(f"Parsing ONNX model: {args.onnx_model_path}")
-        with open(args.onnx_model_path, "rb") as model_file:
-            if not parser.parse(model_file.read()):
-                logger.error("Failed to parse ONNX model")
-                for error_idx in range(parser.num_errors):
-                    error = parser.get_error(error_idx)
-                    logger.error(f"Parser error {error_idx}: {error}")
-                raise RuntimeError("ONNX parsing failed")
+        # parse_from_file finds the external weights (<model>.onnx.data, written by the torch 2.9
+        # dynamo exporter) next to the model; parse(bytes) does not (M9, 2026-11-08)
+        if not parser.parse_from_file(args.onnx_model_path):
+            logger.error("Failed to parse ONNX model")
+            for error_idx in range(parser.num_errors):
+                error = parser.get_error(error_idx)
+                logger.error(f"Parser error {error_idx}: {error}")
+            raise RuntimeError("ONNX parsing failed")
 
         logger.info(
             f"Successfully parsed ONNX model with {network.num_inputs} inputs and {network.num_outputs} outputs"

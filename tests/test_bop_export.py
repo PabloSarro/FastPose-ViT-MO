@@ -95,3 +95,27 @@ def test_normalize_crops_matches_pixel_transform():
     out = normalize_crops(crops, torch.device("cpu"))
     assert out.shape == ref.shape
     assert (out - ref).abs().max().item() < 1e-5
+
+
+def test_gather_sampler_matches_grid_sample():
+    """The TensorRT-safe deformable-attention sampling (gathers) = grid_sample, incl. points
+    outside the feature map (zeros padding), and the whole core with the flag on or off."""
+    from object_detector.LWDETR.lwdetr_ops.functions import ms_deform_attn_func as f
+
+    torch.manual_seed(0)
+    value = torch.randn(6, 8, 13, 17, dtype=torch.float64)
+    grid = torch.rand(6, 50, 4, 2, dtype=torch.float64) * 2.6 - 1.3
+    assert (f.bilinear_sample_gather(value, grid) - f._grid_sample(value, grid)).abs().max() < 1e-12
+
+    B, heads, dim, L, P, Q = 2, 4, 8, 2, 4, 30
+    shapes = [(13, 17), (7, 9)]
+    v = torch.randn(B, heads, dim, sum(h * w for h, w in shapes), dtype=torch.float64)
+    loc = torch.rand(B, Q, heads, L, P, 2, dtype=torch.float64) * 1.2 - 0.1
+    attn = torch.rand(B, Q, heads, L, P, dtype=torch.float64)
+    ref = f.ms_deform_attn_core_pytorch(v, shapes, loc, attn)
+    try:
+        f.GATHER_SAMPLER = True
+        out = f.ms_deform_attn_core_pytorch(v, shapes, loc, attn)
+    finally:
+        f.GATHER_SAMPLER = False
+    assert (out - ref).abs().max() < 1e-12

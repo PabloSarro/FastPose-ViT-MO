@@ -18,6 +18,39 @@ from __future__ import division
 
 import torch
 import torch.nn.functional as F
+
+
+# TensorRT 10.14 computes GridSample wrong for these shapes (also standalone, in fp32: max |diff|
+# ~3 vs PyTorch and onnxruntime, M9 stretch 2026-11-09). For the TensorRT export
+# (optimization/bop_det_trt.py) the sampling is done with gathers instead: set
+# GATHER_SAMPLER = True before exporting. Same result as grid_sample(bilinear, zeros,
+# align_corners=False).
+GATHER_SAMPLER = False
+
+
+def _grid_sample(value, grid):
+    return F.grid_sample(value, grid, mode="bilinear", padding_mode="zeros", align_corners=False)
+
+
+def bilinear_sample_gather(value, grid):
+    """grid_sample(value, grid, bilinear, zeros padding, align_corners=False) with gathers.
+    value (N, C, H, W), grid (N, Ho, Wo, 2) in [-1, 1] (x, y) -> (N, C, Ho, Wo)."""
+    N, C, H, W = value.shape
+    _, Ho, Wo, _ = grid.shape
+    x = ((grid[..., 0] + 1) * W - 1) / 2  # pixel coordinates, (N, Ho, Wo)
+    y = ((grid[..., 1] + 1) * H - 1) / 2
+    x0, y0 = torch.floor(x), torch.floor(y)
+    flat = value.reshape(N, C, H * W)
+    out = 0
+    for dx, dy in ((0, 0), (1, 0), (0, 1), (1, 1)):
+        xi, yi = x0 + dx, y0 + dy
+        wgt = (1 - (x - xi).abs()) * (1 - (y - yi).abs())  # bilinear weight of this corner
+        valid = (xi >= 0) & (xi <= W - 1) & (yi >= 0) & (yi <= H - 1)
+        wgt = wgt * valid.to(wgt.dtype)
+        idx = (yi.clamp(0, H - 1) * W + xi.clamp(0, W - 1)).long().reshape(N, 1, Ho * Wo)
+        vals = torch.gather(flat, 2, idx.expand(N, C, Ho * Wo)).reshape(N, C, Ho, Wo)
+        out = out + vals * wgt[:, None]
+    return out
 from torch.autograd import Function
 from torch.autograd.function import once_differentiable
 
@@ -107,9 +140,8 @@ def ms_deform_attn_core_pytorch(
         # B, Len_q, n_heads, P, 2 -> B, n_heads, Len_q, P, 2 -> B*n_heads, Len_q, P, 2
         sampling_grid_l_ = sampling_grids[:, :, :, lid_].transpose(1, 2).flatten(0, 1)
         # B*n_heads, head_dim, Len_q, P
-        sampling_value_l_ = F.grid_sample(
-            value_l_, sampling_grid_l_, mode="bilinear", padding_mode="zeros", align_corners=False
-        )
+        sample = bilinear_sample_gather if GATHER_SAMPLER else _grid_sample
+        sampling_value_l_ = sample(value_l_, sampling_grid_l_)
         sampling_value_list.append(sampling_value_l_)
     # (B, Len_q, n_heads, L * P) -> (B, n_heads, Len_q, L, P) -> (B*n_heads, 1, Len_q, L*P)
     attention_weights = attention_weights.transpose(1, 2).reshape(B * n_heads, 1, Len_q, L * P)

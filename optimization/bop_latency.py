@@ -119,8 +119,8 @@ def markdown(report: dict) -> str:
     lines = [
         f"Latency per image on {report['gpu']} ({report['cpus']} CPUs), median ms (p90). "
         f"Network = N crops on the GPU; pipeline = decoded image -> N poses "
-        f"(crop + network + R, t). Detector (BOP default detections, GDRNPPDet): "
-        f"{report['detector_ms']:.1f} ms per image on its authors' GPU.",
+        f"(crop + network + R, t). Detector ({report['detector_file']}): "
+        f"{report['detector_ms']:.1f} ms per image (mean of its `time` field).",
         "",
         "| Backend | Part | " + " | ".join(f"N = {n}" for n in ns) + " |",
         "|---|---|" + "---|" * len(ns),
@@ -155,6 +155,10 @@ def main() -> None:
     parser.add_argument("--n_objects", type=int, nargs="+", default=[1, 4, 8, 16])
     parser.add_argument("--warmup", type=int, default=30)
     parser.add_argument("--iters", type=int, default=200)
+    parser.add_argument(
+        "--detections", default=None,
+        help="detections JSON whose per-image `time` is the detector time (default: BOP default)",
+    )
     args = parser.parse_args()
     torch.backends.cuda.matmul.allow_tf32 = False
     torch.backends.cudnn.allow_tf32 = False
@@ -179,7 +183,9 @@ def main() -> None:
     image = dataset.load_image(image_rows[0])
     transformer = pose_transformer(dataset, args)
 
-    det_file = glob.glob(os.path.join(os.environ["NAS_HOME"], DET_GLOB.format(ds=args.dataset)))[0]
+    det_file = args.detections or glob.glob(
+        os.path.join(os.environ["NAS_HOME"], DET_GLOB.format(ds=args.dataset))
+    )[0]
     det_times = {(d["scene_id"], d["image_id"]): d["time"] for d in json.load(open(det_file))}
 
     report = {

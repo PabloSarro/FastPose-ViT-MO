@@ -382,14 +382,9 @@ class Detector:
         ]
 
 
-def predict(args) -> None:
-    device = torch.device("cuda")
-    model = build(args, device)
-    model.load_state_dict(torch.load(args.weights, map_location="cpu", weights_only=True))
-    obj_ids = SPLITS[args.dataset]["obj_ids"]
-    detector = Detector(model, args.img_size, obj_ids, args.top_k)
-    ds = BOPDetDataset(load_index(args.dataset, args.split), args.img_size, augment=False)
-    os.makedirs(args.out_dir, exist_ok=True)
+def detect_split(detector, ds) -> tuple[list[dict], list[float]]:
+    """Run `detector` on every image of `ds`: BOP detections (with the per-image time) and
+    the per-image times in seconds (3 warm-up calls on the first images, GPU synced)."""
     out, times = [], []
     for i in range(len(ds)):
         row = ds.images[i][0]
@@ -409,6 +404,18 @@ def predict(args) -> None:
                 time=elapsed,
             )
         out += dets
+    return out, times
+
+
+def predict(args) -> None:
+    device = torch.device("cuda")
+    model = build(args, device)
+    model.load_state_dict(torch.load(args.weights, map_location="cpu", weights_only=True))
+    obj_ids = SPLITS[args.dataset]["obj_ids"]
+    detector = Detector(model, args.img_size, obj_ids, args.top_k)
+    ds = BOPDetDataset(load_index(args.dataset, args.split), args.img_size, augment=False)
+    os.makedirs(args.out_dir, exist_ok=True)
+    out, times = detect_split(detector, ds)
     path = os.path.join(args.out_dir, f"lwdetr_{args.dataset}-{args.split}.json")
     with open(path, "w") as f:
         json.dump(out, f)

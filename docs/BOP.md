@@ -6,9 +6,9 @@ spacecraft (SPEED) to many objects on the [BOP benchmark](https://bop.felk.cvut.
 network for all objects of a dataset, trained on synthetic (PBR) images only, evaluated with the
 official BOP19 metric (AR = mean of AR_VSD, AR_MSSD, AR_MSPD, `bop_toolkit`).
 
-Status (2026-11-08): LM-O and YCB-V done, deployment (ONNX, TensorRT fp16, latency) done. Still
-running: our own multi-class detector (M9 stretch) and the 224 px resolution ablation; their rows
-are marked *pending*.
+Status (2026-11-09): LM-O and YCB-V done, deployment (ONNX, TensorRT fp16, latency) done, our own
+multi-class detector (M9 stretch) and the 224 px resolution ablation done. Still running: the
+paper ablations of `docs/PAPER_TODO.md` §3 and T-LESS; their rows are marked *pending*.
 
 ## 1. Results
 
@@ -31,7 +31,8 @@ Times are per image as submitted, on each author's hardware.
 | EPOS-BOP20-PBR | correspondences + PnP | no | 0.547 | 0.389 | 0.501 | 0.750 | 0.468 |
 | *Ours, GT boxes (oracle, upper bound of the detector)* | | | *0.689* | *0.514* | *0.660* | *0.892* | *0.053* |
 | *Ours, TensorRT fp16 engine, default detections* | | | *0.6685* | *0.4911* | *0.6415* | *0.8729* | |
-| *Ours, own LW-DETR detector* | | | *pending* | | | | |
+| *Ours, own LW-DETR small detector, full TensorRT fp16 pipeline* | | | *0.654* | | | | *see §3* |
+| *Ours, own LW-DETR small / tiny detector, PyTorch* | | | *0.654 / 0.645–0.650* | | | | |
 
 Our time is the BOP `time` of the evaluation run (A100, PyTorch, including the default detector's
 81.6 ms, re-timed 2026-11-08 with the current per-image path; the M7 run gave 0.134 s with the
@@ -104,10 +105,13 @@ Each block changes one thing; the bold row is the choice kept.
 | One model per object (M10, same total compute) | 8 single-object models | 0.672 (1 seed) | |
 | Checkpoint (final model) | `model.pth` (best val) vs **`last.pt`** | 0.6686 vs 0.6685 (YCB-V 0.7021 vs 0.7021) | |
 | Precision at deployment (M9) | PyTorch vs **TensorRT fp16** | 0.6685 vs 0.6685 (YCB-V 0.7021 vs 0.7017) | |
-| Backbone resolution (M10) | **384 px** vs 224 px | 0.666 (2 seeds) vs *pending* | |
+| Backbone resolution (M10) | **384 px** vs 224 px | 0.669 / 0.664 vs 0.643 / 0.643 | 0.666 vs 0.643 |
+| Rotation target (M10, symmetric loss, 2×) | **apparent (allocentric)** vs absolute (egocentric) | 0.655 / 0.655 vs 0.546 / 0.548 | 0.655 vs 0.547 |
 
 Reading (2026-11-08, replaces the earlier conclusions drawn from val ADD and driller ADD):
-- **Kept, clear effect**: `site` depth (+0.06 AR on the driller vs `legacy`), training compute
+- **Kept, clear effect**: the apparent (allocentric) rotation target (+0.11 AR vs the absolute
+  rotation, the WACV contribution holds on BOP), the 384 px backbone (+0.023 AR vs 224 px, at
+  about twice the pose time, §3), `site` depth (+0.06 AR on the driller vs `legacy`), training compute
   (1× → 2× → 4×: 0.639 → 0.650 → 0.661), class-token conditioning vs per-object heads (+0.005;
   heads + token "both" +0.010; both at about the seed spread).
 - **No measurable effect on test AR** (kept for other reasons): `domain_gap` augmentation (+0.002
@@ -211,7 +215,9 @@ the box the pose evaluation uses (top-1 detection of that object, `scripts/detec
 |---|---|---|---|---|---|---|
 | BOP default (GDRNPPDet-PBR) | LM-O | 0.657 | 0.929 | 0.721 | 6.3 % (eggbox 27 %, cat 13 %) | 81.6 ms (authors) |
 | BOP default (GDRNPPDet-PBR) | YCB-V | 0.758 | 0.962 | 0.813 | ≤ 6.7 % per object | 78.8 ms (authors) |
-| Own LW-DETR (tiny / small) | LM-O | *pending* | | | | |
+| Own LW-DETR tiny (2 seeds), PyTorch | LM-O | 0.628 / 0.631 | 0.925 / 0.930 | 0.703 / 0.706 | | 14.3 / 14.6 ms (A100, bf16) |
+| Own LW-DETR small, PyTorch | LM-O | 0.656 | 0.936 | 0.727 | | 16.8 ms (A100, bf16) |
+| Own LW-DETR small, **TensorRT fp16** | LM-O | 0.657 | | 0.728 | 7.6 % (eggbox 21 %, cat 14 %) | **3.3 ms** (A100, incl. resize, top-k) |
 
 Reading: the detector explains part of the GT-box → detection gap (LM-O AR 0.689 → 0.668): the
 eggbox, our weakest object, also has the worst detections (27 % wrong boxes).
@@ -243,11 +249,20 @@ CPU (crop and normalise every instance, network, R, t recovery).
 | *224 px backbone: network, TensorRT fp16* | *1.4* | *1.7* | *2.2* | *3.9* |
 | *224 px backbone: pipeline, TensorRT fp16* | *4.4* | *6.1* | *7.6* | *11.1* |
 | FPS including the BOP default detector (81.6 ms per image) | 11.5 | 11.0 | 10.4 | 9.5 |
+| **End to end with our LW-DETR small, TensorRT fp16 (3.3 ms median per image), 384 px** | **8.6 ms / 116 FPS** | **12.6 / 79** | **17.5 / 57** | **27.3 / 37** |
+| End to end with our LW-DETR small, TensorRT fp16, 224 px | 7.7 / 130 | 9.4 / 106 | 10.9 / 92 | 14.4 / 69 |
 
-The pose stage is real time (70 FPS for 8 objects; 130 FPS with the 224 px backbone, whose AR is
-*pending*, §2). With the default detector (GDRNPPDet, time
-reported by its authors), the whole method runs at ~10 FPS: the detector is the bottleneck, hence
-our own LW-DETR detector (*pending*). Jetson Orin numbers: not measured (no device).
+End-to-end rows = detector engine median (whole LM-O test, incl. resize, normalisation, top-k;
+mean 4.2 ms) + the pose pipeline medians above, measured separately (a joint timing run was
+interrupted on 2026-11-09; re-run `optimization/bop_latency.py --detections` to confirm). Our
+detector's engine needs the deformable-attention sampling written with gathers: TensorRT 10.14's
+GridSample is wrong for it (fp32 mAP 0.633 instead of 0.658); with gathers, engine mAP = PyTorch.
+
+The pose stage is real time (70 FPS for 8 objects; 130 FPS with the 224 px backbone, −0.023 AR,
+§2). With the default detector (GDRNPPDet, time reported by its authors), the whole method runs
+at ~10 FPS: the detector is the bottleneck. With our own LW-DETR small detector (TensorRT fp16,
+3.3 ms), the whole method runs at **57 FPS for 8 objects** for AR 0.654 (vs 0.668 with the default
+detector). Jetson Orin numbers: not measured (no device).
 
 ## 4. Known limitations
 - **Depth bias on real YCB-V images** (D8): every object is estimated ~2.4 % too far (median); the
@@ -273,6 +288,7 @@ next to the repo. All commands from the repo root with `PYTHONPATH=.`.
 | TensorRT engine | `python optimization/bop_trt.py --onnx_path OUT/model.onnx --engine_path OUT/model_fp16.engine --fp16` |
 | AR through the engine | `bash scripts/m9_trt_eval.sh OUT/model_fp16.engine` (`DATASET=ycbv` for YCB-V) |
 | Latency table | `python optimization/bop_latency.py --model_weights RUN/tok4x/last.pt --engine OUT/model_fp16.engine --out_dir OUT/latency` |
-| Own detector | `bash scripts/m9_det.sh tiny 0` (train, LM-O test detections, pose eval) |
+| Own detector | `bash scripts/m9_det.sh small 0` (train, LM-O test detections, pose eval) |
+| Detector TensorRT engine + detections | `python optimization/bop_det_trt.py --variant small --weights RUN/small/best.pth --out_dir OUT` |
 
 The full log of every experiment (configs, run folders, per-object tables) is in `TASKS.md`.

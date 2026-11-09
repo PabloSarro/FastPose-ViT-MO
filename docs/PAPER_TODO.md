@@ -9,13 +9,13 @@ Legend: **cost** = what it needs (eval = minutes in `dev`, no training; train = 
 jobs; external = someone outside this project).
 
 ## 1. Results still running
-- [ ] **Own multi-class LW-DETR detector**: LM-O AR with our detections vs the default ones (0.668),
+- [x] *Done 2026-11-09: tiny AR 0.645 / 0.650, small 0.654 (default 0.668), `docs/BOP.md`.* **Own multi-class LW-DETR detector**: LM-O AR with our detections vs the default ones (0.668),
       val_pbr mAP, tiny vs small, seed spread. Jobs `lmo-m9-{dettiny,dettiny2,detsmall}-001`.
       Cost: running.
-- [ ] **End-to-end latency with our detector**: TensorRT engine of the detector + pose pipeline,
+- [x] *Done 2026-11-09: 17.5 ms / 57 FPS for 8 objects (summed; joint re-run pending), `docs/BOP.md` §3.* **End-to-end latency with our detector**: TensorRT engine of the detector + pose pipeline,
       per image vs number of objects (the real-time claim of the whole method). Cost: eval, after
       the detector jobs.
-- [ ] **224 px vs 384 px AR** (D7): LM-O test AR with detections of the 224 px `tok4x` recipe
+- [x] *Done 2026-11-09: 0.643 / 0.643 vs 0.669 / 0.664.* **224 px vs 384 px AR** (D7): LM-O test AR with detections of the 224 px `tok4x` recipe
       (2 seeds) vs `tok4x` / `tok4x2`; latency already measured (pipeline 7.6 vs 14.2 ms at 8
       objects). Jobs `lmo-m10-r224tok4x{,2}-001`. Cost: running, then eval.
 - [ ] Optionally, the detector for YCB-V (21 classes), if the LM-O one holds up. Cost: train.
@@ -45,7 +45,7 @@ jobs; external = someone outside this project).
 
 ## 3. Studies not done on BOP (need training)
 - [~] *Added 2026-11-08 (user + supervisor):* **augmentation study**: no pixel aug / color / blur / noise / color + blur + noise / domain_gap at p = 0.8, 2 seeds each (`lmo-m10-aug*-001`), plus the bbox jitter values below. **On hold since 2026-11-08 (cluster queue, user priority 4 of 4): relaunch command in `TASKS.md` M10.**
-- [~] *Running (jobs `lmo-m10-absrot{,2}-001`, 2026-11-08).* **Apparent (allocentric) rotation vs absolute rotation** on BOP: the WACV paper's core
+- [x] *Done 2026-11-09: absolute 0.546 / 0.548 vs apparent 0.655 / 0.655 (`docs/BOP.md` §2).* **Apparent (allocentric) rotation vs absolute rotation** on BOP: the WACV paper's core
       contribution; reviewers will ask whether it still helps here. Cost: train (2 seeds).
 - [~] *Running: SWAG vs scratch (`lmo-m10-scratch{,2}-001`); plain ImageNet weights not run (no 384 px ImageNet-1K ViT-B in torchvision).* **Pre-training**: SWAG vs plain ImageNet weights vs from scratch. Cost: train.
 - [~] *Running: 0 / 5 / 15 / 20 / 30 % (`lmo-m10-bbox{0,5,15,20,30}{,2}-001`; 10 % = baseline).* **Bounding-box perturbation**: 0 / 10 / 20 % (the WACV paper's Table 8, on BOP). Cost: train.

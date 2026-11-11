@@ -31,7 +31,7 @@ and refer to it for their derivation.
 Let $(b_x, b_y)$, $w$ and $h$ be the centre, width and height of the bounding box in pixels, and
 $f_x, f_y, c_x, c_y$ the intrinsics of the image, which on BOP change from one image (and dataset)
 to the next. The lateral targets measure where the projected object centre lies relative to the
-box, in box units:
+box, in box units, as the scale-invariant translation of CDPN~\cite{li2019cdpn}:
 \begin{equation}
   U_x = \frac{f_x \, t_x / t_z + c_x - b_x}{w}, \qquad
   U_y = \frac{f_y \, t_y / t_z + c_y - b_y}{h}.
@@ -42,7 +42,8 @@ box size divided by the image size. This proxy is well scaled for a single objec
 camera, but on BOP it depends on the object size and the focal length: on LM-O it ranges from
 about 50 to 300 (with $t_z$ in mm), while $U_x$ and $U_y$ stay within about $\pm 0.5$, so a
 relative translation loss almost ignores the 2D position. We instead normalize by the focal length
-and the object diameter $D$:
+and the object diameter $D$, as the size-invariant depth of PViT-6D~\cite{stapf2023pvit6d}
+(which uses $s = \max(w, h)$):
 \begin{equation}
   U_z = \frac{t_z \, s}{\bar f \, D}, \qquad s = \frac{w + h}{2}, \quad
   \bar f = \frac{f_x + f_y}{2}.
@@ -60,8 +61,9 @@ size. At inference, we invert \cref{eq:uz,eq:uxy} with the intrinsics of the tes
 \end{equation}
 The translation loss is the L2 distance between predicted and target $\U$ relative to the norm of
 the target, as in~\cite{ancey2026fastposevit}; with \cref{eq:uz} all three components have the
-same scale. We call this formulation \emph{site} and the original one \emph{legacy}.
-\todo{Short justification of the name, or rename (e.g. ``size-normalized depth'').}
+same scale. We call this formulation \emph{size-invariant} and the original one \emph{legacy}.
+\todo{We found this target independently (code name \texttt{site}); credit PViT-6D as prior work
+and keep our contribution to the ablation on BOP (\cref{tab:abl_targets}).}
 
 \paragraph{Pixel conventions.}
 BOP boxes $[x, y, w, h]$ span the pixels $x$ to $x + w$ inclusive, and pixel $i$ is centred at

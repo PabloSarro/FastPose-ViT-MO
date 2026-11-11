@@ -29,7 +29,8 @@ render-and-compare methods add an iterative refinement stage~\cite{labbe2020cosy
 These designs are accurate but expensive: the reported times on BOP range from 0.2\,s to
 several seconds per image on desktop GPUs, and the number of networks grows with the number of
 objects. \emph{Direct-regression} methods predict the pose with a single forward pass and are
-much cheaper, but have so far lagged behind in accuracy.
+much cheaper; recent ones close much of the gap with a single model for all objects, \eg
+PViT-6D~\cite{stapf2023pvit6d} with a multi-scale ViT and PoseDETR as a single-stage detector.
 
 FastPose-ViT~\cite{ancey2026fastposevit} showed that a Vision Transformer that directly regresses
 a reformulated pose target from an object crop can be competitive with PnP-based methods for
@@ -38,25 +39,27 @@ object, seen by one camera. In this work we ask whether the same direct-regressi
 scales to the multi-object, multi-camera setting of BOP, with one network for all objects and
 synthetic training data only. To this end, we make the following contributions:
 \begin{itemize}
-  \item A \textbf{multi-object architecture} in which one ViT is shared by all objects of a
-        dataset and conditioned on the object identity by a learned per-object class token. It
-        adds fewer than 0.05\,M parameters to the single-object network, batches the crops of
-        different objects together, and matches eight single-object models trained with the same
-        total compute.
-  \item A \textbf{camera- and object-size-independent translation target}, which normalizes the
-        crop-depth proxy by the focal length and the object diameter and uses per-sample camera
-        intrinsics. It replaces the original image-size-based formulation, which fails across
-        objects of different sizes (+0.04 AR on LM-O).
+  \item A \textbf{multi-object extension of FastPose-ViT} that keeps its simplicity: one plain
+        ViT with a single linear layer, shared by all objects of a dataset and conditioned on the
+        object identity by a learned per-object class token. It adds fewer than 0.05\,M
+        parameters, batches the crops of different objects together, and matches eight
+        single-object models trained with the same total compute.
+  \item The \textbf{geometric targets for many objects and cameras}: per-image intrinsics and a
+        size-invariant depth target (as in~\cite{stapf2023pvit6d}) in place of the original
+        image-size-based one, which fails across objects of different sizes (+0.04 AR on LM-O),
+        together with the apparent rotation, which we show remains essential on BOP (+0.11 AR).
   \item A \textbf{symmetry-aware rotation loss with translation offsets}, which takes the
         minimum over the symmetric poses of an object, including symmetries that also shift the
         object, and stays valid on the apparent-rotation targets.
   \item A \textbf{deployment study} on BOP: batched TensorRT FP16 inference with no loss in AR,
         latency as a function of the number of objects, and a multi-class LW-DETR
-        detector~\cite{chen2024lwdetr} that brings the full pipeline to 57 frames per second for
+        detector~\cite{chen2024lwdetr} that brings the full pipeline to 55 frames per second for
         8 objects on an A100.
 \end{itemize}
 Trained on PBR images only, \ours{} reaches an AR of 0.668 on LM-O~\cite{brachmann2014lmo} and
-0.702 on YCB-V~\cite{xiang2018posecnn} with the standard BOP detections. This is the best result
-among direct-regression methods without refinement, and it is competitive with PnP-based methods
-that use one model per object, at a fraction of their inference time.
+0.702 on YCB-V~\cite{xiang2018posecnn} with the standard BOP detections. On YCB-V, this is the
+best result among PBR-only RGB methods with one model for all objects, behind only two methods
+that train one network per object; on LM-O, it is within 0.07 AR of the best PBR-only RGB methods.
+\todo{Positioning to agree with the supervisor: PViT-6D (0.740) and PoseDETR (0.695) are more
+accurate on LM-O.}
 \pending{T-LESS result (jobs running), to add to this paragraph.}

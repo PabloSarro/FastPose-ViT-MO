@@ -22,13 +22,19 @@ refinement; our estimates could serve as initialization for such a stage.
 Direct methods regress the rotation and translation from image features in a single forward
 pass. The choice of the targets matters: continuous rotation representations~\cite{zhou2019continuity},
 allocentric (apparent) rotations~\cite{kundu20183drcnn}, and scale-invariant translation
-targets~\cite{li2019cdpn,wang2021gdrnet}. PViT-6D~\cite{stapf2023pvit6d} applies a Vision
-Transformer~\cite{dosovitskiy2021vit} to pose regression on BOP, with a more complex architecture
-and without released weights. FastPose-ViT~\cite{ancey2026fastposevit} regresses normalized
+targets~\cite{li2019cdpn,wang2021gdrnet}. PViT-6D~\cite{stapf2023pvit6d} regresses the pose
+of each detection with a multi-scale ViT (MViTv2) shared by all objects: separate rotation and
+translation tokens, initialized with a learned embedding of the detected class, feed two MLP
+heads; it introduces a size-invariant depth target that normalizes the depth by the object
+diameter, which we also use (\cref{sec:method:translation}), and reaches 0.73--0.74 AR on LM-O
+with PBR training. PoseDETR and RACE-6D (BOP leaderboard submissions) predict instances and poses
+in a single stage at about 12\,ms per image. FastPose-ViT~\cite{ancey2026fastposevit} regresses normalized
 translation targets and the apparent rotation from object crops with a ViT and a single linear
 head, and runs in real time on a Jetson Orin Nano, but for one object and one camera only. We
-extend it to many objects and cameras, and evaluate it on BOP.
-\todo{Position against PoseDETR, SC6D and MRC-Net (YCB-V table) once their papers are checked.}
+extend it to many objects and cameras with a plain ViT and a single linear layer, and evaluate it
+on BOP. \todo{Sharpen the difference with PViT-6D (plain ViT-B and one linear layer vs MViTv2 with
+pose tokens and MLP heads; symmetric loss with offsets; deployment study) and cite PoseDETR /
+RACE-6D papers when available.}
 
 \paragraph{Fast object detectors.}
 Two-stage pose pipelines depend on a 2D detector. The BOP default detections for the 2023

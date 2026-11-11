@@ -2,18 +2,19 @@
 \label{sec:conclusion}
 
 We presented \ours{}, a multi-object extension of FastPose-ViT that regresses the 6D pose of every
-object of a BOP dataset directly from its image crop, with one Vision Transformer shared by all
-objects and conditioned on the object identity by a per-object class token. A translation target
-normalized by the focal length and the object diameter makes the formulation independent of the
-camera and of the object size, and a symmetry-aware rotation loss with translation offsets handles
-symmetric objects; the apparent rotation of the original method remains the most important
-ingredient (+0.11 AR). Trained on PBR images only, \ours{} is the best direct-regression method
-on LM-O (0.668 AR) and YCB-V (0.702 AR), within 0.03--0.06 AR of the best PBR-only RGB methods,
-and it loses no accuracy in TensorRT FP16. With our own multi-class detector, the full pipeline
-runs at 57 FPS for 8 objects on an A100.
+object of a BOP dataset directly from its image crop, with one plain Vision Transformer and a
+single linear layer shared by all objects, conditioned on the object identity by a per-object
+class token. A size-invariant depth target makes the formulation independent of the camera and of
+the object size, and a symmetry-aware rotation loss with translation offsets handles symmetric
+objects; the apparent rotation of the original method remains the most important ingredient
+(+0.11 AR). Trained on PBR images only, \ours{} reaches 0.668 AR on LM-O and 0.702 AR on YCB-V,
+the best YCB-V result among PBR-only RGB methods with one model for all objects, and it loses no
+accuracy in TensorRT FP16. With our own multi-class detector, the full pipeline runs at 55 FPS
+for 8 objects on an A100.
 
 Our main limitations are the depth accuracy of the directly regressed translation, which explains
 most of the gap in the 3D metrics, heavily occluded objects, and a depth bias on real YCB-V
 images that synthetic training data alone does not remove. Training with the real images of
 YCB-V, measuring the latency on embedded hardware, and \pending{T-LESS} are the next steps.
-\todo{Rewrite once T-LESS and the augmentation study are in.}
+\todo{Rewrite once T-LESS and the augmentation study are in, and once the positioning against
+PViT-6D and PoseDETR is agreed.}

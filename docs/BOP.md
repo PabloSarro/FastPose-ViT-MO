@@ -258,21 +258,21 @@ CPU (crop and normalise every instance, network, R, t recovery).
 | Pipeline, **TensorRT fp16** | **5.3** | **9.3** | **14.2** | **24.0** |
 | FPS, TensorRT pipeline (pose stage) | 189 | 108 | 70 | 42 |
 | *224 px backbone: network, TensorRT fp16* | *1.4* | *1.7* | *2.2* | *3.9* |
-| *224 px backbone: pipeline, TensorRT fp16* | *4.4* | *6.1* | *7.6* | *11.1* |
+| *224 px backbone: pipeline, TensorRT fp16* | *4.3* | *5.8* | *7.1* | *10.6* |
 | FPS including the BOP default detector (81.6 ms per image) | 11.5 | 11.0 | 10.4 | 9.5 |
-| **End to end with our LW-DETR small, TensorRT fp16 (3.3 ms median per image), 384 px** | **8.6 ms / 116 FPS** | **12.6 / 79** | **17.5 / 57** | **27.3 / 37** |
-| End to end with our LW-DETR small, TensorRT fp16, 224 px | 7.7 / 130 | 9.4 / 106 | 10.9 / 92 | 14.4 / 69 |
+| **FPS end to end with our LW-DETR small, TensorRT fp16 (4.2 ms mean per image), 384 px** | **105** | **74** | **55** | **35** |
+| FPS end to end with our LW-DETR small, TensorRT fp16, 224 px | 118 | 100 | 88 | 68 |
 
-End-to-end rows = detector engine median (whole LM-O test, incl. resize, normalisation, top-k;
-mean 4.2 ms) + the pose pipeline medians above, measured separately (a joint timing run was
-interrupted on 2026-11-09; re-run `optimization/bop_latency.py --detections` to confirm). Our
+End-to-end rows (re-measured 2026-11-11, `$NAS_HOME/results/m9/det-small-trt/latency_{384,224}/`)
+= the pose pipeline median + the detector engine's mean time per image over LM-O test (incl.
+resize, normalisation, top-k; median 3.3 ms), same GPU, run one after the other. Our
 detector's engine needs the deformable-attention sampling written with gathers: TensorRT 10.14's
 GridSample is wrong for it (fp32 mAP 0.633 instead of 0.658); with gathers, engine mAP = PyTorch.
 
 The pose stage is real time (70 FPS for 8 objects; 130 FPS with the 224 px backbone, −0.023 AR,
 §2). With the default detector (GDRNPPDet, time reported by its authors), the whole method runs
 at ~10 FPS: the detector is the bottleneck. With our own LW-DETR small detector (TensorRT fp16,
-3.3 ms), the whole method runs at **57 FPS for 8 objects** for AR 0.654 (vs 0.668 with the default
+4.2 ms mean), the whole method runs at **55 FPS for 8 objects** for AR 0.654 (vs 0.668 with the default
 detector). Jetson Orin numbers: not measured (no device).
 
 ## 4. Known limitations

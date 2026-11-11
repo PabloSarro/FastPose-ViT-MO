@@ -41,77 +41,92 @@ and the symmetry-aware rotation loss of \cref{eq:symloss}, with equal weights.
 \subsection{Comparison with the State of the Art}
 \label{sec:exp:sota}
 
-\Cref{tab:lmo,tab:ycbv} compare \ours{} with the RGB methods of the BOP leaderboard that are
-trained on PBR images only. On LM-O, \ours{} reaches 0.668 AR with the default detections, above
-the render-and-compare methods SurfEmb (0.663) and CosyPose (0.633), and 0.045 below GDRNPP,
-which trains one model per object. On YCB-V, it reaches 0.702, above all PBR-only entries except
-two submissions of ZebraPose and GDRNPP (0.713--0.729). In both cases it is the best method that
-regresses the pose directly, and on LM-O it is 2 to 100 times faster than the methods it is
-compared with (\cref{tab:lmo}).
+\Cref{tab:lmo,tab:ycbv} compare \ours{} with the RGB entries of the BOP leaderboard that are
+trained on the provided PBR images only (training data, number of models and refinement as stated
+on each submission page). On YCB-V, \ours{} reaches 0.702 AR and ranks third among these methods,
+behind ZebraPose and GDRNPP (0.729 and 0.713), which train one network per object, and ahead of
+every other method that uses one model for all objects, including the direct methods PoseDETR
+(0.679) and MRC-Net (0.681). On LM-O, it reaches 0.668: here several single-model methods are more
+accurate, in particular the ViT-based direct regression PViT-6D~\cite{stapf2023pvit6d} (0.740),
+the single-stage PoseDETR (0.695) and RACE-6D (0.683), and the render-and-compare methods MRPE and
+RADet+PFA. \todo{Positioning to decide with the supervisor (see the note in the PR / summary):
+the draft can no longer claim ``best direct-regression method''.}
 
-Our 2D alignment (AR$_\mathrm{MSPD}$) matches the best methods (0.873 vs.\ 0.888 on LM-O, 0.834
-vs.\ 0.831 on YCB-V); the gap lies in the 3D metrics (VSD and MSSD), which are dominated by the
-depth of the directly regressed translation, while correspondence-based methods recover the depth
-from many 2D--3D matches. \todo{Turn this into the ``honest weaknesses'' paragraph of the WACV
-paper: PBR-only, no refinement, one network, released data only, reproducible.}
+Our 2D alignment (AR$_\mathrm{MSPD}$) is close to the best methods (0.873 vs.\ 0.877--0.889 on
+LM-O, 0.834 vs.\ 0.821--0.831 on YCB-V, where it is the highest of the table); the gap lies in the
+3D metrics (VSD and MSSD), which are dominated by the depth of the directly regressed
+translation. \todo{Turn this into the ``honest weaknesses'' paragraph of the WACV paper: PBR-only,
+no refinement, one network, plain ViT with a linear head, released data only, reproducible.}
 
 \begin{table*}[t]
   \centering
   \small
   \begin{tabular}{lllcccccc}
     \toprule
-    Method & Pose from & Refinement & AR$\uparrow$ & AR$_\mathrm{VSD}\uparrow$ &
-    AR$_\mathrm{MSSD}\uparrow$ & AR$_\mathrm{MSPD}\uparrow$ & Models & Time [s]$\downarrow$ \\
+    Method & Pose from & Ref. & Models & AR$\uparrow$ & AR$_\mathrm{VSD}\uparrow$ &
+    AR$_\mathrm{MSSD}\uparrow$ & AR$_\mathrm{MSPD}\uparrow$ & Time [s]$\downarrow$ \\
     \midrule
-    ZebraPose~\cite{su2022zebrapose} & corresp.\ + PnP & No & 0.729 & 0.562 & 0.736 & 0.888 & \todo{?} & 0.250 \\
-    GDRNPP~\cite{liu2022gdrnpp} & geometry-guided regr. & No & 0.713 & 0.549 & 0.701 & 0.887 & per object & 0.206 \\
-    \textbf{\ours{} (Ours)} & \textbf{direct regression} & \textbf{No} & \textbf{0.668} & 0.491 & 0.641 & 0.873 & \textbf{one} & \textbf{0.099} \\
-    SurfEmb~\cite{haugaard2022surfemb} & corresp.\ + PnP & Yes & 0.663 & 0.497 & 0.640 & 0.851 & \todo{?} & 11.8 \\
-    CosyPose~\cite{labbe2020cosypose} & render-and-compare & Yes & 0.633 & 0.480 & 0.606 & 0.812 & \todo{?} & 0.550 \\
-    CDPNv2~\cite{li2019cdpn} & corresp.\ + PnP & No & 0.624 & 0.445 & 0.612 & 0.815 & \todo{?} & 0.163 \\
-    EPOS~\cite{hodan2020epos} & corresp.\ + PnP & No & 0.547 & 0.389 & 0.501 & 0.750 & \todo{?} & 0.468 \\
+    RADet+PFA~\cite{hai2023radet,hu2022pfa} & flow to renderings & Yes & one & 0.745 & 0.597 & 0.761 & 0.877 & 2.604 \\
+    PViT-6D~\cite{stapf2023pvit6d} & direct regression (ViT) & No & one & 0.740 & 0.588 & 0.753 & 0.877 & 0.250 \\
+    ZebraPose~\cite{su2022zebrapose} & corresp.\ + PnP & No & per object & 0.729 & 0.562 & 0.736 & 0.888 & 0.250 \\
+    MRPE & render-and-compare & Yes & one & 0.715 & 0.555 & 0.701 & 0.889 & 0.097 \\
+    GDRNPP~\cite{liu2022gdrnpp} & geometry-guided regr. & No & per object & 0.713 & 0.549 & 0.701 & 0.887 & 0.206 \\
+    PoseDETR & direct, single stage & No & one & 0.695 & 0.543 & 0.695 & 0.847 & 0.012 \\
+    MRC-Net~\cite{li2024mrcnet} & regression + residual corr. & ? & one & 0.685 & 0.523 & 0.678 & 0.853 & 1.420 \\
+    RACE-6D & single stage & ? & one & 0.683 & 0.534 & 0.684 & 0.832 & 0.012 \\
+    \textbf{\ours{} (Ours)} & \textbf{direct regression (ViT)} & \textbf{No} & \textbf{one} & \textbf{0.668} & 0.491 & 0.641 & 0.873 & 0.099 \\
+    SurfEmb~\cite{haugaard2022surfemb} & corresp.\ + pose scoring & Yes & ? & 0.663 & 0.497 & 0.640 & 0.851 & 11.804 \\
+    CosyPose~\cite{labbe2020cosypose} & render-and-compare & Yes & one & 0.633 & 0.480 & 0.606 & 0.812 & 0.550 \\
+    CDPNv2~\cite{li2019cdpn} & corresp.\ + PnP & No & ? & 0.624 & 0.445 & 0.612 & 0.815 & 0.163 \\
+    EPOS~\cite{hodan2020epos} & corresp.\ + PnP & No & one & 0.547 & 0.389 & 0.501 & 0.750 & 0.468 \\
     \midrule
-    \ours{}, ground-truth boxes (oracle) & & & 0.689 & 0.514 & 0.660 & 0.892 & one & 0.053 \\
-    \ours{}, TensorRT FP16 & & & 0.669 & 0.491 & 0.642 & 0.873 & one & \\
-    \ours{}, own LW-DETR, TensorRT FP16 & & & 0.654 & & & & one & see \cref{tab:latency} \\
+    \ours{}, ground-truth boxes (oracle) & & & one & 0.689 & 0.514 & 0.660 & 0.892 & 0.053 \\
+    \ours{}, TensorRT FP16 & & & one & 0.669 & 0.491 & 0.642 & 0.873 & \\
+    \ours{}, own LW-DETR, TensorRT FP16 & & & one & 0.654 & & & & see \cref{tab:latency} \\
     \bottomrule
   \end{tabular}
-  \caption{\textbf{LM-O test, RGB methods trained on PBR images only}, BOP19 metrics with the
-  default detections of the BOP 2023 challenge unless stated otherwise. Times per image as
-  submitted to the BOP leaderboard, on each author's hardware; ours on one A100 (PyTorch,
-  including the 81.6\,ms of the default detector as reported by its authors). The last row is the
-  full TensorRT pipeline with our detector (\cref{sec:exp:deployment}).
-  \todo{Verify every leaderboard value and the ``Models'' column on the BOP website; the values were
-  read with an automatic extractor. Add the missing AR components of our own-detector row.}}
+  \caption{\textbf{LM-O test, RGB methods trained on the provided PBR images only}, BOP19 metrics
+  (BOP leaderboard, checked 2026-11-11). ``Ref.'': iterative refinement or render-and-compare;
+  ``?'': not stated on the submission page. Times per image as submitted, on each author's
+  hardware (PoseDETR: RTX 4090 with TensorRT FP16; RACE-6D: RTX 3090; ours: one A100, PyTorch,
+  including the 81.6\,ms of the default detector as reported by its authors). PoseDETR and RACE-6D
+  include their own detection; we use the default detections of the BOP 2023 challenge.
+  \todo{Entries with unknown training data (IL-Pose 0.772, ModalOcclusion-RGB 0.717) are left out;
+  methods trained on real images too (HccePose, HGBPose, GPose) are not listed. Cite MRPE,
+  PoseDETR and RACE-6D (CVPR 2026 Findings) once their papers are out; add our AR components for the
+  own-detector row.}}
   \label{tab:lmo}
 \end{table*}
 
 \begin{table}[t]
   \centering
-  \setlength{\tabcolsep}{3pt}
+  \setlength{\tabcolsep}{2.5pt}
   \footnotesize
-  \begin{tabular}{lccccc}
+  \begin{tabular}{lcccccc}
     \toprule
-    Method & Ref. & AR$\uparrow$ & VSD & MSSD & MSPD \\
+    Method & Ref. & Models & AR$\uparrow$ & VSD & MSSD & MSPD \\
     \midrule
-    ZebraPose~\cite{su2022zebrapose} (2023 det.) & No & 0.729 & 0.640 & 0.725 & 0.821 \\
-    GDRNPP~\cite{liu2022gdrnpp} & No & 0.713 & 0.599 & 0.708 & 0.831 \\
-    \textbf{\ours{} (Ours)} & \textbf{No} & \textbf{0.702} & 0.591 & 0.681 & 0.834 \\
-    ZebraPose~\cite{su2022zebrapose} & No & 0.691 & 0.607 & 0.686 & 0.780 \\
-    MRC-Net~\cite{li2024mrcnet} & ? & 0.681 & 0.572 & 0.666 & 0.804 \\
-    PoseDETR & ? & 0.679 & 0.578 & 0.682 & 0.779 \\
-    SurfEmb~\cite{haugaard2022surfemb} & Yes & 0.647 & 0.548 & 0.620 & 0.773 \\
-    SC6D~\cite{cai2022sc6d} & ? & 0.612 & 0.506 & 0.589 & 0.741 \\
-    CosyPose~\cite{labbe2020cosypose} & Yes & 0.574 & 0.516 & 0.554 & 0.653 \\
-    EPOS~\cite{hodan2020epos} & No & 0.499 & 0.411 & 0.464 & 0.621 \\
+    ZebraPose~\cite{su2022zebrapose} (2023 det.) & No & per obj. & 0.729 & 0.640 & 0.725 & 0.821 \\
+    GDRNPP~\cite{liu2022gdrnpp} & No & per obj. & 0.713 & 0.599 & 0.708 & 0.831 \\
+    \textbf{\ours{} (Ours)} & \textbf{No} & \textbf{one} & \textbf{0.702} & 0.591 & 0.681 & \textbf{0.834} \\
+    ZebraPose~\cite{su2022zebrapose} & No & per obj. & 0.691 & 0.607 & 0.686 & 0.780 \\
+    MRC-Net~\cite{li2024mrcnet} & ? & one & 0.681 & 0.572 & 0.666 & 0.804 \\
+    PoseDETR & No & one & 0.679 & 0.578 & 0.682 & 0.779 \\
+    RADet+PFA~\cite{hai2023radet,hu2022pfa} & Yes & one & 0.648 & 0.550 & 0.623 & 0.771 \\
+    SurfEmb~\cite{haugaard2022surfemb} & Yes & ? & 0.647 & 0.548 & 0.620 & 0.773 \\
+    SC6D~\cite{cai2022sc6d} & ? & ? & 0.612 & 0.506 & 0.589 & 0.741 \\
+    CosyPose~\cite{labbe2020cosypose} & Yes & one & 0.574 & 0.516 & 0.554 & 0.653 \\
+    MRPE & Yes & one & 0.552 & 0.490 & 0.528 & 0.638 \\
+    EPOS~\cite{hodan2020epos} & No & one & 0.499 & 0.411 & 0.464 & 0.621 \\
     \midrule
-    Ours, GT boxes (oracle) & & 0.707 & & & \\
-    Ours, TensorRT FP16 & & 0.702 & 0.591 & 0.681 & 0.834 \\
+    Ours, GT boxes (oracle) & & one & 0.707 & & & \\
+    Ours, TensorRT FP16 & & one & 0.702 & 0.591 & 0.681 & 0.834 \\
     \bottomrule
   \end{tabular}
   \caption{\textbf{YCB-V test, RGB methods trained on PBR images only} (no real training images),
-  BOP19 metrics with the default detections. ``Ref.'': refinement; ``?'': not checked.
-  \todo{Verify on the BOP website; fill the ``?''; add times; PoseDETR reference.}}
+  BOP19 metrics (leaderboard, checked 2026-11-11). Methods trained on the real YCB-V images reach
+  up to 0.86 (\eg PViT-6D 0.832, RACE-6D 0.782). ``Ref.'': refinement; ``?'': not stated.
+  \todo{Check SC6D and SurfEmb details; add times.}}
   \label{tab:ycbv}
 \end{table}
 
@@ -287,18 +302,18 @@ processes 8 objects in 14.2\,ms (70 FPS).
     Network, TensorRT FP16 & \textbf{1.8} & \textbf{3.5} & \textbf{5.7} & \textbf{11.0} \\
     Pipeline, PyTorch FP16 & 10.8 & 13.5 & 17.0 & 29.5 \\
     Pipeline, TensorRT FP16 & \textbf{5.3} & \textbf{9.3} & \textbf{14.2} & \textbf{24.0} \\
-    Pipeline, TensorRT FP16, 224 px & 4.4 & 6.1 & 7.6 & 11.1 \\
+    Pipeline, TensorRT FP16, 224 px & 4.3 & 5.8 & 7.1 & 10.6 \\
     \midrule
     + default detector (81.6\,ms) [FPS] & 11.5 & 11.0 & 10.4 & 9.5 \\
-    + our LW-DETR (3.3\,ms) [FPS] & 116 & 79 & 57 & 37 \\
-    + our LW-DETR, 224 px [FPS] & 130 & 106 & 92 & 69 \\
+    + our LW-DETR (4.2\,ms) [FPS] & 105 & 74 & 55 & 35 \\
+    + our LW-DETR, 224 px [FPS] & 118 & 100 & 88 & 68 \\
     \bottomrule
   \end{tabular}
   \caption{\textbf{Latency per image vs.\ number of objects $N$} on one NVIDIA A100 (median of
   200 runs, LM-O model, 384 px unless stated). Network: the $N$ crops already on the GPU. Pipeline:
-  decoded image to $N$ poses. Default detector time as reported by its authors.
-  \todo{The rows with our detector add two separately measured medians; confirm them with one
-  joint timing run.}}
+  decoded image to $N$ poses. Default detector time as reported by its authors; our detector:
+  mean time per image of its TensorRT FP16 engine over the LM-O test images (median 3.3\,ms),
+  measured on the same GPU and added to the pipeline time, since both run one after the other.}
   \label{tab:latency}
 \end{table}
 
@@ -310,8 +325,9 @@ the default detections (0.657), and gives 0.654 AR with our pose model (0.645--0
 smaller ``tiny'' variant). Exporting it to TensorRT required one change: TensorRT 10.14's
 \texttt{GridSample} returns wrong values for the deformable attention of LW-DETR (mAP 0.633 even
 in FP32), so we implement the bilinear sampling with gather operations, which gives the same
-output as PyTorch. The FP16 engine runs in 3.3\,ms per image with the same mAP (0.657), and the
-full pipeline reaches 57 FPS for 8 objects at 384 px (0.654 AR), or 92 FPS at 224 px, where the
+output as PyTorch. The FP16 engine runs in 4.2\,ms per image on average (median 3.3\,ms,
+including resizing, normalization and top-$k$ selection) with the same mAP (0.657), and the full
+pipeline reaches 55 FPS for 8 objects at 384 px (0.654 AR), or 88 FPS at 224 px, where the
 backbone costs 0.023 AR (0.643 vs.\ 0.666, two seeds each).
 \todo{Jetson Orin numbers, if a device becomes available; otherwise state it as a limitation.}
 

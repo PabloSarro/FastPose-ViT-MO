@@ -8,6 +8,8 @@ of the final tables). Listed 2026-11-08. Tick an item when done and write where 
 Legend: **cost** = what it needs (eval = minutes in `dev`, no training; train = new training
 jobs; external = someone outside this project).
 
+**Draft (2026-11-11):** LaTeX draft in `paper/` (Overleaf-ready, see `paper/README.md`); pending results and TODOs are marked in it.
+
 ## 1. Results still running
 - [x] *Done 2026-11-09: tiny AR 0.645 / 0.650, small 0.654 (default 0.668), `docs/BOP.md`.* **Own multi-class LW-DETR detector**: LM-O AR with our detections vs the default ones (0.668),
       val_pbr mAP, tiny vs small, seed spread. Jobs `lmo-m9-{dettiny,dettiny2,detsmall}-001`.

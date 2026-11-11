@@ -1,5 +1,7 @@
-% Bibliography of the draft. Entries marked "% CHECK" were written from memory: verify authors,
-% venue and year against the publisher page before submission (docs/PAPER_TODO.md §4).
+% Bibliography of the draft. Verified 2026-11-11 against arXiv / publisher pages: FastPose-ViT,
+% LW-DETR, GDRNPP, PViT-6D, MRC-Net, SC6D, RADet, Muon. The classic entries (BOP, datasets, ViT,
+% SWAG, 6D rotation, CosyPose, SurfEmb, EPOS, CDPN, ZebraPose, MegaPose, 3D-RCNN, BlenderProc) are
+% standard and were written from memory: spot-check pages / author lists before submission.
 
 @inproceedings{ancey2026fastposevit,
   title     = {{FastPose-ViT}: A Vision Transformer for Real-Time Spacecraft Pose Estimation},
@@ -8,8 +10,6 @@
   pages     = {7873--7882},
   year      = {2026}
 }
-% CHECK: first names of the WACV authors (the paper text only gives initials: P. Ancey, A. Price,
-% S. Javed, M. Salzmann).
 
 @inproceedings{hodan2018bop,
   title     = {{BOP}: Benchmark for 6{D} Object Pose Estimation},
@@ -94,7 +94,8 @@
   howpublished = {\url{https://kellerjordan.github.io/posts/muon/}},
   year         = {2024}
 }
-% CHECK: author list of the Muon blog post; cite as in the WACV paper.
+% Authors as in the Muon repository's citation block (verified 2026-11-11); check the spelling
+% "Cesista" vs "Cecista".
 
 @article{chen2024lwdetr,
   title   = {{LW-DETR}: A Transformer Replacement to {YOLO} for Real-Time Detection},
@@ -102,7 +103,6 @@
   journal = {arXiv preprint arXiv:2406.03459},
   year    = {2024}
 }
-% CHECK: author list.
 
 @inproceedings{su2022zebrapose,
   title     = {{ZebraPose}: Coarse to Fine Surface Encoding for 6{DoF} Object Pose Estimation},
@@ -118,13 +118,14 @@
   year      = {2021}
 }
 
-@misc{liu2022gdrnpp,
-  title        = {{GDRNPP}: A Geometry-Guided and Fully Learning-Based Object Pose Estimator},
-  author       = {Liu, Xingyu and Zhang, Ruida and Zhang, Chenyangguang and Wang, Gu and Tang, Jiwen and Li, Zhigang and Ji, Xiangyang},
-  howpublished = {arXiv preprint},
-  year         = {2022}
+@article{liu2022gdrnpp,
+  title   = {{GDRNPP}: A Geometry-Guided and Fully Learning-Based Object Pose Estimator},
+  author  = {Liu, Xingyu and Zhang, Ruida and Zhang, Chenyangguang and Wang, Gu and Tang, Jiwen and Li, Zhigang and Ji, Xiangyang},
+  journal = {IEEE Transactions on Pattern Analysis and Machine Intelligence (TPAMI)},
+  note    = {arXiv:2102.12145},
+  year    = {2025}
 }
-% CHECK: title, authors, arXiv id and year (GDRNPP report / GitHub repository).
+% Verified 2026-11-11 on arXiv (v5, accepted by TPAMI); check the TPAMI year / volume.
 
 @inproceedings{hodan2020epos,
   title     = {{EPOS}: Estimating 6{D} Pose of Objects with Symmetries},
@@ -167,7 +168,6 @@
   howpublished = {arXiv preprint arXiv:2311.17504},
   year         = {2023}
 }
-% CHECK: authors and arXiv id.
 
 @inproceedings{li2024mrcnet,
   title     = {{MRC-Net}: 6-{DoF} Pose Estimation with {MultiScale} Residual Correlation},
@@ -175,15 +175,14 @@
   booktitle = {IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
   year      = {2024}
 }
-% CHECK: authors.
 
 @inproceedings{cai2022sc6d,
   title     = {{SC6D}: Symmetry-Agnostic and Correspondence-Free 6{D} Object Pose Estimation},
   author    = {Cai, Dingding and Heikkil{\"a}, Janne and Rahtu, Esa},
   booktitle = {International Conference on 3D Vision (3DV)},
+  pages     = {536--546},
   year      = {2022}
 }
-% CHECK: venue.
 
 @inproceedings{hai2023radet,
   title     = {Rigidity-Aware Detection for 6{D} Object Pose Estimation},
@@ -191,7 +190,6 @@
   booktitle = {IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
   year      = {2023}
 }
-% CHECK: author list.
 
 @inproceedings{hu2022pfa,
   title     = {Perspective Flow Aggregation for Data-Limited 6{D} Object Pose Estimation},

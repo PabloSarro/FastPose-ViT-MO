@@ -14,7 +14,7 @@ jobs; external = someone outside this project).
 - [x] *Done 2026-11-09: tiny AR 0.645 / 0.650, small 0.654 (default 0.668), `docs/BOP.md`.* **Own multi-class LW-DETR detector**: LM-O AR with our detections vs the default ones (0.668),
       val_pbr mAP, tiny vs small, seed spread. Jobs `lmo-m9-{dettiny,dettiny2,detsmall}-001`.
       Cost: running.
-- [x] *Done 2026-11-09: 17.5 ms / 57 FPS for 8 objects (summed; joint re-run pending), `docs/BOP.md` §3.* **End-to-end latency with our detector**: TensorRT engine of the detector + pose pipeline,
+- [x] *Done 2026-11-09, re-measured 2026-11-11: 55 FPS for 8 objects (pipeline 14.1 ms + detector 4.2 ms mean), `docs/BOP.md` §3.* **End-to-end latency with our detector**: TensorRT engine of the detector + pose pipeline,
       per image vs number of objects (the real-time claim of the whole method). Cost: eval, after
       the detector jobs.
 - [x] *Done 2026-11-09: 0.643 / 0.643 vs 0.669 / 0.664.* **224 px vs 384 px AR** (D7): LM-O test AR with detections of the 224 px `tok4x` recipe
@@ -60,11 +60,18 @@ jobs; external = someone outside this project).
 ## 4. Needs outside input or resources
 - [ ] **Jetson Orin Nano latency** for BOP (the WACV paper's central claim was on-device; we only
       have A100). Needs device access (supervisor question in `TASKS.md` §8). Cost: external.
-- [ ] **Verify the leaderboard entries by hand** on the BOP website (the numbers were read with an
+- [x] *Done 2026-11-11: every LM-O / YCB-V entry checked on its BOP submission page (training data,
+      number of models, refinement); tables rebuilt in `paper/sections/experiments.tex`. Finding:
+      PViT-6D (0.740 LM-O, PBR only) and PoseDETR (0.695, 12 ms) are more accurate on LM-O; PViT-6D
+      already published our `site` depth (SIZP) and a shared class-conditioned model, so the
+      contributions were reframed (see the draft's TODOs; positioning to agree with the
+      supervisor).* **Verify the leaderboard entries by hand** on the BOP website (the numbers were read with an
       automatic extractor): AR values, training data, and refinement for MRC-Net, PoseDETR and SC6D
       (marked "?"). Note that competitors' times come from different hardware: say so or re-time
       some of them. Cost: external / manual.
-- [ ] **Bibliography**: exact references for every compared and related method (ZebraPose,
+- [x] *Done 2026-11-11 for the recent entries (FastPose-ViT, LW-DETR, GDRNPP, PViT-6D, MRC-Net,
+      SC6D, RADet, PFA, Muon); classic entries to spot-check. MRPE, PoseDETR, RACE-6D (CVPR 2026
+      Findings) have no citable paper in the bib yet.* **Bibliography**: exact references for every compared and related method (ZebraPose,
       GDRNPP, SurfEmb, CosyPose, CDPN, EPOS, MRC-Net, PoseDETR, SC6D, PViT-6D, MegaPose, LW-DETR,
       BOP challenge papers, …). Cost: manual.
 - [ ] **Venue, page limit, authorship** (supervisor question "expected deliverable"). Cost: external.
@@ -79,13 +86,13 @@ jobs; external = someone outside this project).
       if in.
 
 ## 6. Figures (none made yet)
-- [ ] **Teaser**: one image → detector → N crops batched through one shared ViT with per-object
+- [x] *Done 2026-11-11 (`paper/figures/`, scripts `vis/paper_*.py`).* **Teaser**: one image → detector → N crops batched through one shared ViT with per-object
       class tokens → N poses.
 - [ ] **Concept figure** for the main new idea (class-token conditioning and/or the `site` depth).
-- [ ] **Qualitative results**: best / median / worst predictions per dataset (GT axes solid,
+- [x] *Done 2026-11-11 (`paper/figures/`, scripts `vis/paper_*.py`).* **Qualitative results**: best / median / worst predictions per dataset (GT axes solid,
       predictions dashed, errors under each image), as Figure 3 of the WACV paper.
-- [ ] **Failure cases**: occlusion (LM-O eggbox, duck) and the YCB-V depth bias, as Figure 4.
-- [ ] **Latency vs number of objects** plot (PyTorch vs TensorRT, 224 vs 384 px, with and without
+- [x] *Done 2026-11-11 (`paper/figures/`, scripts `vis/paper_*.py`).* **Failure cases**: occlusion (LM-O eggbox, duck) and the YCB-V depth bias, as Figure 4.
+- [x] *Done 2026-11-11 (`paper/figures/`, scripts `vis/paper_*.py`).* **Latency vs number of objects** plot (PyTorch vs TensorRT, 224 vs 384 px, with and without
       the detector).
 - Reuse `vis/` (`bash vis/run_all.sh`, `vis/training_curves.py`) where possible.
 

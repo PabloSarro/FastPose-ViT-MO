@@ -135,5 +135,8 @@ principal point is at the image centre and $f_x = f_y$, which does not hold for 
 For a fully real-time pipeline, we train one LW-DETR~\cite{chen2024lwdetr} for all objects of a
 dataset on the same PBR images, with the original LW-DETR recipe (group DETR with 13 query
 groups, IoU-aware classification loss, EMA, AdamW, COCO-pretrained weights except the class head)
-and the same pixel augmentations plus horizontal flips, at $640 \times 640$ pixels.
-\todo{Training details: 50 epochs, batch size, learning rates, training time.}
+and the same pixel augmentations plus horizontal flips, at $640 \times 640$ pixels. We train for
+50 epochs over the 48,000 PBR images of LM (batch size 32, learning rate $10^{-4}$, $1.5 \cdot
+10^{-4}$ for the encoder, weight decay $10^{-4}$, 500 warm-up iterations, EMA decay 0.9997,
+gradient clipping at 0.1) and keep the checkpoint with the best COCO mAP on the held-out PBR
+scenes. Training takes about 12\,h (``tiny'' variant) and 22\,h (``small'') on one A100.

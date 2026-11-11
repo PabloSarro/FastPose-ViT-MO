@@ -61,8 +61,15 @@ images (best RGB: 0.86); we do not (open issue D8, see §4).
 | *Ours, GT boxes (oracle)* | | *0.707* | | | | |
 | *Ours, TensorRT fp16 engine, default detections* | | *0.7017* | *0.5908* | *0.6806* | *0.8338* | |
 
-Reading: on both datasets FastPose-ViT is the best direct-regression entry and within 0.01–0.05 AR
-of the best PBR-only RGB methods, with one network for all objects and no PnP. Our 2D alignment
+Reading (corrected 2026-11-11 after checking every submission page; the tables above are
+incomplete, the verified ones are in `paper/sections/experiments.tex`): on **YCB-V** (PBR only) we
+are 3rd, behind ZebraPose and GDRNPP, which train one network per object, and first among methods
+with one model for all objects. On **LM-O** (PBR only) we are about 9th: PViT-6D (ViT direct
+regression, one model, 0.740), RADet+PFA (0.745), MRPE (0.715), PoseDETR (single-stage direct, one
+model, 0.695, 12 ms on an RTX 4090 with TensorRT), MRC-Net (0.685) and RACE-6D (0.683, 12 ms) are
+above us. **The earlier claim "best direct-regression entry" is wrong.** PViT-6D (arXiv 2311.17504)
+also already uses the size-invariant depth target we call `site` (its "SIZP", with s = max(w, h)),
+a shared model for all objects with a class embedding, and allocentric 6D rotations. Our 2D alignment
 (AR_MSPD) is at their level; the gap is in the 3D metrics (VSD, MSSD), dominated by the depth
 error of the directly regressed translation.
 

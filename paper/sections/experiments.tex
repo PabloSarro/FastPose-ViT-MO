@@ -205,9 +205,29 @@ model (0.668), with eight times as many parameters and no batching across object
 \end{table}
 
 \paragraph{Training compute.}
-Doubling the number of samples per epoch helps up to the 4$\times$ budget: 0.639, 0.650 and 0.661
-AR for 1$\times$, 2$\times$ and 4$\times$ (per-object heads); on YCB-V, 4$\times$ beats
-2$\times$ by 0.013 AR. \todo{Small table or a plot of AR vs.\ budget.}
+\Cref{tab:abl_budget} varies the number of samples per epoch at a fixed number of epochs. More
+compute helps on both datasets: on LM-O, AR rises from 0.639 to 0.661 between the 1$\times$ and
+4$\times$ budgets (per-object heads); on YCB-V, with 21 objects, 4$\times$ beats 2$\times$ by
+0.013 AR, and both 4$\times$ seeds are above both 2$\times$ seeds. We use 4$\times$ for the final
+models and 2$\times$ for the ablations.
+
+\begin{table}[t]
+  \centering
+  \small
+  \begin{tabular}{llccc}
+    \toprule
+    Dataset & Conditioning & 1$\times$ & 2$\times$ & 4$\times$ \\
+    \midrule
+    LM-O & heads & 0.641 / 0.637 & 0.650 / 0.650 & 0.661 \\
+    LM-O & token & & 0.659 / 0.651 & 0.669 / 0.664 \\
+    YCB-V & token & & 0.681 / 0.689 & 0.694 / 0.702 \\
+    \bottomrule
+  \end{tabular}
+  \caption{\textbf{Training budget}, test AR with default detections (seed a / b). 1$\times$ =
+  5,276 samples per object and epoch, 150 epochs. The final YCB-V model (0.702) was selected on
+  the PBR validation split.}
+  \label{tab:abl_budget}
+\end{table}
 
 \paragraph{Components without a measurable effect.}
 Several choices did not change the test AR beyond the seed spread: the ``domain gap''
@@ -251,8 +271,8 @@ baseline.}
 With ground-truth boxes, the AR rises from 0.668 to 0.689 on LM-O and from 0.702 to 0.707 on
 YCB-V: the detector accounts for a small part of the remaining error. On LM-O, the eggbox, our
 weakest object (0.36 AR), also has the worst detections: 27\,\% of its default boxes overlap the
-ground truth by less than 0.5 IoU (6.3\,\% over all objects). \todo{Per-object AR table, here
-or in the supplementary.}
+ground truth by less than 0.5 IoU (6.3\,\% over all objects). Per-object results are in
+\cref{sec:appendix:perobject}.
 
 \subsection{Model Compression and Deployment}
 \label{sec:exp:deployment}

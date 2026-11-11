@@ -1,19 +1,18 @@
 \section{Introduction}
 \label{sec:intro}
 
-\begin{figure}[t]
+\begin{figure*}[t]
   \centering
-  \figplaceholder{4.2cm}{\textbf{Teaser figure (to draw).} One RGB image $\rightarrow$ multi-class
-  detector $\rightarrow$ $N$ crops, batched through one shared ViT with per-object class tokens
-  $\rightarrow$ $N$ poses (axes drawn on the image). Inset: latency vs.\ number of objects
-  $N$ (TensorRT FP16, with and without the detector).}
+  \includegraphics[width=\linewidth]{figures/teaser.pdf}
   \caption{\textbf{Overview of \ours.} (1) A detector finds every object of the dataset in the
   image; (2) each detection is cropped and all crops are processed in one batch by a single
   Vision Transformer, conditioned on the object identity by a per-object class token; (3) the
   regressed normalized translation and apparent rotation are converted in closed form into the
-  full-frame pose. \todo{final caption once the figure exists.}}
+  full-frame pose. Real LM-O test image with the default detections and our predictions.
+  \todo{First version made from real data; redraw as a clean diagram if preferred, and add the
+  latency inset (\cref{fig:latency}).}}
   \label{fig:teaser}
-\end{figure}
+\end{figure*}
 
 Estimating the 3D rotation and translation (6D pose) of known objects from a single RGB image is a
 key component of robotic grasping, augmented reality and autonomous inspection. The BOP

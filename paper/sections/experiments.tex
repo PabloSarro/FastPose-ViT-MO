@@ -288,7 +288,8 @@ the network once on all crops, and recover $\R$ and $\T$. Two engineering change
 2--3 times faster than a direct port of the single-object code: normalizing the crops on the GPU
 instead of with Albumentations on the CPU (2.1\,ms per crop), and recovering the poses on the CPU
 in one vectorized step instead of many small GPU operations. With TensorRT FP16, the pose stage
-processes 8 objects in 14.2\,ms (70 FPS).
+processes 8 objects in 14.2\,ms (70 FPS), and the latency grows linearly with $N$
+(\cref{fig:latency}).
 
 \begin{table}[t]
   \centering
@@ -317,6 +318,15 @@ processes 8 objects in 14.2\,ms (70 FPS).
   \label{tab:latency}
 \end{table}
 
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/latency.pdf}
+  \caption{\textbf{Latency per image vs.\ number of objects} (pose pipeline from the decoded
+  image to $N$ poses; LM-O model, one A100). With TensorRT FP16 and our detector, the full
+  method stays above 30 FPS up to 16 objects.}
+  \label{fig:latency}
+\end{figure}
+
 \paragraph{Detector.}
 With the default detector (about 80\,ms per image as reported by its authors), the detector
 dominates the run time and the whole method runs at about 10 FPS. Our multi-class LW-DETR
@@ -335,22 +345,34 @@ backbone costs 0.023 AR (0.643 vs.\ 0.666, two seeds each).
 \label{sec:exp:qualitative}
 \begin{figure*}[t]
   \centering
-  \figplaceholder{4cm}{\textbf{Qualitative results (to make).} Best / median / worst predictions on
-  LM-O and YCB-V, ground-truth axes solid, predictions dashed, errors under each image.}
-  \caption{\textbf{Qualitative results} on LM-O (top) and YCB-V (bottom). \todo{caption.}}
+  \includegraphics[width=\linewidth]{figures/qualitative.pdf}
+  \caption{\textbf{Qualitative results} on LM-O (top) and YCB-V (bottom) with the default
+  detections: the best, median, 90th-percentile and worst test instance, ranked by the MSSD error
+  relative to the object diameter. Ground-truth axes are solid (for symmetric objects, under the
+  symmetry closest to the prediction), predictions dashed; below each crop, the object, its
+  visible fraction, and the translation [mm] and rotation [deg] errors. The worst LM-O case is a
+  wrong detection: the predicted pose lies outside the crop.}
   \label{fig:qualitative}
 \end{figure*}
 
 \begin{figure}[t]
   \centering
-  \figplaceholder{3.5cm}{\textbf{Failure cases (to make).} Heavy occlusion (LM-O eggbox, duck)
-  and the depth bias on real YCB-V images.}
-  \caption{\textbf{Failure cases.} \todo{caption.}}
+  \includegraphics[width=\linewidth]{figures/failures.pdf}
+  \caption{\textbf{Failure cases.} Left: heavily occluded LM-O objects (eggbox, duck), where the
+  regressed depth and, for the eggbox, the rotation fail. Right: the depth bias on real YCB-V
+  images; the rotation is accurate ($< 5^\circ$) but the object is estimated too far
+  ($\Delta t_z > 0$).}
   \label{fig:failures}
 \end{figure}
 
-\todo{Describe \cref{fig:qualitative,fig:failures}. Failure modes to show: heavily occluded
-objects (LM-O eggbox, duck), and the depth bias on real YCB-V images: every object is estimated
-about 2.4\,\% too far (median), because the real objects appear smaller in the images than the
-PBR renders at the same depth; the weakest YCB-V objects (wood block 0.39, scissors 0.41 AR) are
-the most affected.}
+\Cref{fig:qualitative} shows typical predictions. The median errors over all test instances are
+19\,mm and 4.3\textdegree{} on LM-O, and 22\,mm and 3.8\textdegree{} on YCB-V: the rotation is
+usually accurate, and most of the error lies in the depth. \Cref{fig:failures} shows the two main
+failure modes. First, heavily occluded objects: with less than half of the eggbox or the duck
+visible, the crop contains too little of the object to regress its depth, and the eggbox, whose
+appearance is ambiguous, also gets a wrong rotation. Second, a systematic depth bias on the real
+YCB-V images: 89\,\% of the YCB-V instances are estimated too far (median +20\,mm), against 48\,\%
+on LM-O (median $-1$\,mm). The real objects appear smaller in the images than their PBR renders
+at the same depth, so a network trained on PBR images only overestimates their depth; the
+weakest YCB-V objects (wood block 0.39 AR, scissors 0.41) are the most affected. Training with
+the real YCB-V images should remove this bias, as it does for the methods trained on them.

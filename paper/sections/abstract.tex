@@ -1,0 +1,18 @@
+\begin{abstract}
+Estimating the 6D pose of every object in an RGB image is a core problem for robotic
+manipulation and augmented reality. The strongest RGB methods on the BOP benchmark predict 2D--3D
+correspondences and solve for the pose with PnP, often train one network per object, and many add
+an iterative render-and-compare refinement, which makes them slow and hard to deploy on embedded
+hardware. We present \ours{}, a multi-object extension of FastPose-ViT that regresses the full 6D
+pose of every detected object directly from its image crop, with one Vision Transformer shared by
+all objects of a dataset and no PnP or refinement. A per-object class token conditions the shared
+network on the object identity, a camera- and object-size-independent translation target makes
+the formulation valid across objects and cameras, and a symmetry-aware rotation loss with
+translation offsets handles symmetric objects. Trained on synthetic (PBR) images only, \ours{}
+reaches an average recall of 0.668 on LM-O and 0.702 on YCB-V with the standard BOP detections,
+the best result among direct-regression methods and within 0.03--0.06 of the best PBR-only RGB
+methods. Exported to TensorRT in FP16 without any loss in accuracy, the pose stage processes 8
+objects in 14.2\,ms on an NVIDIA A100; with our own multi-class detector, the full pipeline runs
+at 57 frames per second for 8 objects.
+\todo{Update with T-LESS and the final latency numbers; check the word count (WACV: ~200 words).}
+\end{abstract}

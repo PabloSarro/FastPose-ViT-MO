@@ -1,0 +1,37 @@
+\section{Related Work}
+\label{sec:related}
+
+\paragraph{Correspondence-based 6D pose estimation.}
+Most leading RGB methods on BOP predict 2D--3D correspondences and solve for the pose with
+PnP. EPOS~\cite{hodan2020epos} predicts dense surface fragments, CDPN~\cite{li2019cdpn}
+disentangles rotation (from correspondences) and translation (regressed),
+ZebraPose~\cite{su2022zebrapose} encodes surface points with hierarchical binary codes, and
+GDR-Net / GDRNPP~\cite{wang2021gdrnet,liu2022gdrnpp} learn the PnP step from geometric
+intermediate maps. These methods top the PBR-only RGB leaderboards, but most of them train one
+network per object, and their inference includes PnP-RANSAC or several stages. In contrast, we
+regress the pose directly with one network shared by all objects.
+
+\paragraph{Render-and-compare and refinement.}
+CosyPose~\cite{labbe2020cosypose}, SurfEmb~\cite{haugaard2022surfemb} and
+MegaPose~\cite{labbe2022megapose} refine an initial estimate by rendering the object model and
+comparing it with the image, iteratively. Refinement improves accuracy, but it multiplies the
+inference time (up to seconds per image) and requires a renderer at test time. We use no
+refinement; our estimates could serve as initialization for such a stage.
+
+\paragraph{Direct regression and Transformers.}
+Direct methods regress the rotation and translation from image features in a single forward
+pass. The choice of the targets matters: continuous rotation representations~\cite{zhou2019continuity},
+allocentric (apparent) rotations~\cite{kundu20183drcnn}, and scale-invariant translation
+targets~\cite{li2019cdpn,wang2021gdrnet}. PViT-6D~\cite{stapf2023pvit6d} applies a Vision
+Transformer~\cite{dosovitskiy2021vit} to pose regression on BOP, with a more complex architecture
+and without released weights. FastPose-ViT~\cite{ancey2026fastposevit} regresses normalized
+translation targets and the apparent rotation from object crops with a ViT and a single linear
+head, and runs in real time on a Jetson Orin Nano, but for one object and one camera only. We
+extend it to many objects and cameras, and evaluate it on BOP.
+\todo{Position against PoseDETR, SC6D and MRC-Net (YCB-V table) once their papers are checked.}
+
+\paragraph{Fast object detectors.}
+Two-stage pose pipelines depend on a 2D detector. The BOP default detections for the 2023
+challenge come from the GDRNPP detector~\cite{liu2022gdrnpp}, which takes about 80\,ms per image.
+Real-time DETR variants such as LW-DETR~\cite{chen2024lwdetr} make the detector much cheaper; we
+train a multi-class LW-DETR on the same PBR images to obtain a fully real-time pipeline.

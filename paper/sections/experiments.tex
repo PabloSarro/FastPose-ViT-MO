@@ -1,0 +1,340 @@
+\section{Experiments and Results}
+\label{sec:exp}
+
+\subsection{Experimental Setup}
+\label{sec:exp:setup}
+
+\paragraph{Data.}
+We evaluate on three core datasets of the BOP benchmark~\cite{hodan2020bop}.
+\textbf{LM-O}~\cite{brachmann2014lmo}: 8 objects, test on 200 real images with 1,445 annotated
+instances (BOP19 targets), training on the PBR images of LM~\cite{hinterstoisser2012lm} (320,959 instances in scenes 0--47).
+\textbf{YCB-V}~\cite{xiang2018posecnn}: 21 objects, test on 900 real images with 4,123
+instances, training on 626,520 PBR instances; unlike most YCB-V entries, we do not use the real
+training images. \textbf{T-LESS}~\cite{hodan2017tless}: 30 texture-less industrial objects, 27 of
+them symmetric, several instances of the same object per image; test on the 1,000 Primesense images
+of the BOP19 targets (6,423 instances). \pending{T-LESS training is running.}
+
+\paragraph{Evaluation metrics.}
+We report the official BOP19 average recall, $\mathrm{AR} = (\mathrm{AR}_{\mathrm{VSD}} +
+\mathrm{AR}_{\mathrm{MSSD}} + \mathrm{AR}_{\mathrm{MSPD}})/3$, computed with the BOP
+toolkit~\cite{hodan2020bop}. VSD measures the visible-surface discrepancy, MSSD the maximum 3D
+surface distance, and MSPD the maximum 2D projection distance, each averaged over a range of
+thresholds and over the symmetric poses of the object. Unless stated otherwise, we use the
+default 2D detections of the BOP 2023 challenge (GDRNPP detector trained on PBR
+images~\cite{liu2022gdrnpp}), which makes our numbers comparable with the leaderboard; results with
+ground-truth boxes are given as an upper bound of the detector.
+
+\paragraph{Implementation details.}
+We use ViT-B/16 at $384 \times 384$ pixels with SWAG weights~\cite{singh2022swag}, the Muon
+optimizer~\cite{jordan2024muon} without weight decay, a learning rate decaying from
+$10^{-4}$ to $10^{-6}$ with cosine warm restarts ($T_0 = 10$ epochs, $T_\mathrm{mult} = 2$), 150
+epochs and a batch size of 32. An epoch contains 21,104 instances per object (``4$\times$''
+budget: 168,832 per epoch on LM-O, 443,184 on YCB-V); ablations use half of it (``2$\times$'').
+The final LM-O model trains in about 34\,h on one NVIDIA A100. We report the weights of the last
+epoch, which give the same AR as the best validation checkpoint (0.6685 vs.\ 0.6686 on LM-O,
+0.7021 for both on YCB-V). Every ablation is trained with two random seeds.
+
+\paragraph{Training losses.}
+The total loss is the sum of the relative translation loss on $\U$ (\cref{sec:method:translation})
+and the symmetry-aware rotation loss of \cref{eq:symloss}, with equal weights.
+
+\subsection{Comparison with the State of the Art}
+\label{sec:exp:sota}
+
+\Cref{tab:lmo,tab:ycbv} compare \ours{} with the RGB methods of the BOP leaderboard that are
+trained on PBR images only. On LM-O, \ours{} reaches 0.668 AR with the default detections, above
+the render-and-compare methods SurfEmb (0.663) and CosyPose (0.633), and 0.045 below GDRNPP,
+which trains one model per object. On YCB-V, it reaches 0.702, above all PBR-only entries except
+two submissions of ZebraPose and GDRNPP (0.713--0.729). In both cases it is the best method that
+regresses the pose directly, and on LM-O it is 2 to 100 times faster than the methods it is
+compared with (\cref{tab:lmo}).
+
+Our 2D alignment (AR$_\mathrm{MSPD}$) matches the best methods (0.873 vs.\ 0.888 on LM-O, 0.834
+vs.\ 0.831 on YCB-V); the gap lies in the 3D metrics (VSD and MSSD), which are dominated by the
+depth of the directly regressed translation, while correspondence-based methods recover the depth
+from many 2D--3D matches. \todo{Turn this into the ``honest weaknesses'' paragraph of the WACV
+paper: PBR-only, no refinement, one network, released data only, reproducible.}
+
+\begin{table*}[t]
+  \centering
+  \small
+  \begin{tabular}{lllcccccc}
+    \toprule
+    Method & Pose from & Refinement & AR$\uparrow$ & AR$_\mathrm{VSD}\uparrow$ &
+    AR$_\mathrm{MSSD}\uparrow$ & AR$_\mathrm{MSPD}\uparrow$ & Models & Time [s]$\downarrow$ \\
+    \midrule
+    ZebraPose~\cite{su2022zebrapose} & corresp.\ + PnP & No & 0.729 & 0.562 & 0.736 & 0.888 & \todo{?} & 0.250 \\
+    GDRNPP~\cite{liu2022gdrnpp} & geometry-guided regr. & No & 0.713 & 0.549 & 0.701 & 0.887 & per object & 0.206 \\
+    \textbf{\ours{} (Ours)} & \textbf{direct regression} & \textbf{No} & \textbf{0.668} & 0.491 & 0.641 & 0.873 & \textbf{one} & \textbf{0.099} \\
+    SurfEmb~\cite{haugaard2022surfemb} & corresp.\ + PnP & Yes & 0.663 & 0.497 & 0.640 & 0.851 & \todo{?} & 11.8 \\
+    CosyPose~\cite{labbe2020cosypose} & render-and-compare & Yes & 0.633 & 0.480 & 0.606 & 0.812 & \todo{?} & 0.550 \\
+    CDPNv2~\cite{li2019cdpn} & corresp.\ + PnP & No & 0.624 & 0.445 & 0.612 & 0.815 & \todo{?} & 0.163 \\
+    EPOS~\cite{hodan2020epos} & corresp.\ + PnP & No & 0.547 & 0.389 & 0.501 & 0.750 & \todo{?} & 0.468 \\
+    \midrule
+    \ours{}, ground-truth boxes (oracle) & & & 0.689 & 0.514 & 0.660 & 0.892 & one & 0.053 \\
+    \ours{}, TensorRT FP16 & & & 0.669 & 0.491 & 0.642 & 0.873 & one & \\
+    \ours{}, own LW-DETR, TensorRT FP16 & & & 0.654 & & & & one & see \cref{tab:latency} \\
+    \bottomrule
+  \end{tabular}
+  \caption{\textbf{LM-O test, RGB methods trained on PBR images only}, BOP19 metrics with the
+  default detections of the BOP 2023 challenge unless stated otherwise. Times per image as
+  submitted to the BOP leaderboard, on each author's hardware; ours on one A100 (PyTorch,
+  including the 81.6\,ms of the default detector as reported by its authors). The last row is the
+  full TensorRT pipeline with our detector (\cref{sec:exp:deployment}).
+  \todo{Verify every leaderboard value and the ``Models'' column on the BOP website; the values were
+  read with an automatic extractor. Add the missing AR components of our own-detector row.}}
+  \label{tab:lmo}
+\end{table*}
+
+\begin{table}[t]
+  \centering
+  \setlength{\tabcolsep}{3pt}
+  \footnotesize
+  \begin{tabular}{lccccc}
+    \toprule
+    Method & Ref. & AR$\uparrow$ & VSD & MSSD & MSPD \\
+    \midrule
+    ZebraPose~\cite{su2022zebrapose} (2023 det.) & No & 0.729 & 0.640 & 0.725 & 0.821 \\
+    GDRNPP~\cite{liu2022gdrnpp} & No & 0.713 & 0.599 & 0.708 & 0.831 \\
+    \textbf{\ours{} (Ours)} & \textbf{No} & \textbf{0.702} & 0.591 & 0.681 & 0.834 \\
+    ZebraPose~\cite{su2022zebrapose} & No & 0.691 & 0.607 & 0.686 & 0.780 \\
+    MRC-Net~\cite{li2024mrcnet} & ? & 0.681 & 0.572 & 0.666 & 0.804 \\
+    PoseDETR & ? & 0.679 & 0.578 & 0.682 & 0.779 \\
+    SurfEmb~\cite{haugaard2022surfemb} & Yes & 0.647 & 0.548 & 0.620 & 0.773 \\
+    SC6D~\cite{cai2022sc6d} & ? & 0.612 & 0.506 & 0.589 & 0.741 \\
+    CosyPose~\cite{labbe2020cosypose} & Yes & 0.574 & 0.516 & 0.554 & 0.653 \\
+    EPOS~\cite{hodan2020epos} & No & 0.499 & 0.411 & 0.464 & 0.621 \\
+    \midrule
+    Ours, GT boxes (oracle) & & 0.707 & & & \\
+    Ours, TensorRT FP16 & & 0.702 & 0.591 & 0.681 & 0.834 \\
+    \bottomrule
+  \end{tabular}
+  \caption{\textbf{YCB-V test, RGB methods trained on PBR images only} (no real training images),
+  BOP19 metrics with the default detections. ``Ref.'': refinement; ``?'': not checked.
+  \todo{Verify on the BOP website; fill the ``?''; add times; PoseDETR reference.}}
+  \label{tab:ycbv}
+\end{table}
+
+\paragraph{T-LESS.}
+\pending{T-LESS results (\texttt{tless-m10-tok4x\{,2\}}, running): AR with default detections and
+with GT boxes, comparison table as for LM-O and YCB-V.}
+
+\subsection{Ablation Studies}
+\label{sec:exp:ablations}
+All ablations are evaluated with the official AR on LM-O test with the default detections. Unless
+stated otherwise, each experiment changes one component of the ablation baseline: our final
+configuration at the 2$\times$ budget (AR 0.655 for both seeds). We report both seeds; the seed
+spread is typically 0.002--0.008 AR, so smaller differences are not significant.
+
+\paragraph{Translation and rotation targets.}
+\Cref{tab:abl_targets} validates the two geometric choices. Regressing the absolute rotation
+instead of the apparent one costs 0.108 AR, and every object loses (the eggbox the most, from
+0.32 to 0.18): the main finding of~\cite{ancey2026fastposevit} holds in the multi-object setting.
+The original depth target costs 0.038 AR; the loss is largest for the large objects (driller
+0.79 $\rightarrow$ 0.70, can 0.80 $\rightarrow$ 0.75), as expected from a target that scales with
+the object size. On the driller alone, the gap was already 0.06 AR (0.844 vs.\ 0.785, single-object
+models).
+
+\begin{table}[t]
+  \centering
+  \small
+  \begin{tabular}{llcc}
+    \toprule
+    Component & Choice & AR (seed a / b)$\uparrow$ & Mean \\
+    \midrule
+    \multirow{2}{*}{Rotation target} & \textbf{apparent} & \textbf{0.655 / 0.655} & \textbf{0.655} \\
+     & absolute & 0.546 / 0.548 & 0.547 \\
+    \midrule
+    \multirow{2}{*}{Depth target} & \textbf{site, \cref{eq:uz}} & \textbf{0.655 / 0.655} & \textbf{0.655} \\
+     & legacy~\cite{ancey2026fastposevit} & 0.610 / 0.625 & 0.617 \\
+    \midrule
+    \multirow{2}{*}{Pre-training} & \textbf{SWAG} & \textbf{0.655 / 0.655} & \textbf{0.655} \\
+     & none (scratch) & 0.516 / 0.517 & 0.517 \\
+    \bottomrule
+  \end{tabular}
+  \caption{\textbf{Targets and pre-training}, LM-O test AR with default detections, ablation
+  baseline (2$\times$ budget, bold).}
+  \label{tab:abl_targets}
+\end{table}
+
+\paragraph{Pre-training.}
+Training from a random initialization with the same budget loses 0.138 AR
+(\cref{tab:abl_targets}), on all objects: as for spacecraft~\cite{ancey2026fastposevit},
+large-scale pre-training is essential when only synthetic images are available.
+
+\paragraph{One network for all objects.}
+\Cref{tab:abl_objects} compares the ways to share the network. The class token is slightly better
+than per-object heads (+0.005) and combining both brings another 0.005, both at about the seed
+spread; we keep the class token alone, which needs no per-object output layer. Eight
+single-object models, trained with the same total compute, reach 0.672 AR, the same as the shared
+model (0.668), with eight times as many parameters and no batching across objects.
+
+\begin{table}[t]
+  \centering
+  \small
+  \begin{tabular}{lcc}
+    \toprule
+    Conditioning (2$\times$) & AR (seed a / b)$\uparrow$ & Mean \\
+    \midrule
+    per-object heads & 0.650 / 0.650 & 0.650 \\
+    \textbf{per-object class token} & \textbf{0.659 / 0.651} & \textbf{0.655} \\
+    heads + class token & 0.660 / 0.661 & 0.660 \\
+    \midrule
+    Final model (token, 4$\times$) & 0.669 / 0.664 & 0.666 \\
+    8 single-object models (4$\times$ total) & 0.672 (1 seed) & \\
+    \bottomrule
+  \end{tabular}
+  \caption{\textbf{Sharing one network across the 8 LM-O objects}, LM-O test AR with default
+  detections.}
+  \label{tab:abl_objects}
+\end{table}
+
+\paragraph{Training compute.}
+Doubling the number of samples per epoch helps up to the 4$\times$ budget: 0.639, 0.650 and 0.661
+AR for 1$\times$, 2$\times$ and 4$\times$ (per-object heads); on YCB-V, 4$\times$ beats
+2$\times$ by 0.013 AR. \todo{Small table or a plot of AR vs.\ budget.}
+
+\paragraph{Components without a measurable effect.}
+Several choices did not change the test AR beyond the seed spread: the ``domain gap''
+augmentation vs.\ a standard photometric set (0.639 vs.\ 0.637), the symmetry-aware loss (0.655
+both; it is needed for symmetries with offsets on YCB-V, \cref{sec:method:symmetry}), the training
+crop (visible box 0.655, amodal box 0.648, random mix 0.652), and a decoupled translation loss. We
+report them for completeness. \todo{Decide which of these go to the supplementary material.}
+
+\paragraph{Bounding-box perturbation.}
+\Cref{tab:abl_bbox} shows that perturbing the training boxes is important: without it, the AR drops
+by 0.030. Perturbations of 10\,\% and 20\,\% per side give the same AR.
+\pending{5\,\%, 15\,\% and 30\,\% (jobs queued).}
+
+\begin{table}[t]
+  \centering
+  \small
+  \begin{tabular}{lcc}
+    \toprule
+    Perturbation per side & AR (seed a / b)$\uparrow$ & Mean \\
+    \midrule
+    0\,\% & 0.625 / 0.625 & 0.625 \\
+    5\,\% & \pending{} & \\
+    \textbf{10\,\%} & \textbf{0.655 / 0.655} & \textbf{0.655} \\
+    15\,\% & \pending{} & \\
+    20\,\% & 0.650 / 0.651 & 0.650 \\
+    30\,\% & \pending{} & \\
+    \bottomrule
+  \end{tabular}
+  \caption{\textbf{Bounding-box perturbation during training}, LM-O test AR with default
+  detections, ablation baseline.}
+  \label{tab:abl_bbox}
+\end{table}
+
+\paragraph{Pixel augmentations.}
+\label{sec:exp:augmentations}
+\pending{Augmentation study (jobs queued, 2 seeds each): none, color only, blur only, noise
+only, color + blur + noise, and ``domain gap'' with $p = 0.8$, against the ``domain gap''
+baseline.}
+
+\paragraph{Detection quality.}
+With ground-truth boxes, the AR rises from 0.668 to 0.689 on LM-O and from 0.702 to 0.707 on
+YCB-V: the detector accounts for a small part of the remaining error. On LM-O, the eggbox, our
+weakest object (0.36 AR), also has the worst detections: 27\,\% of its default boxes overlap the
+ground truth by less than 0.5 IoU (6.3\,\% over all objects). \todo{Per-object AR table, here
+or in the supplementary.}
+
+\subsection{Model Compression and Deployment}
+\label{sec:exp:deployment}
+
+\paragraph{Export.}
+We export the network to ONNX with a dynamic batch dimension (one crop per detected object, plus
+the object index of each crop) and build a TensorRT engine with one optimization profile for 1 to
+16 crops. The ONNX outputs match PyTorch to $3 \cdot 10^{-6}$, and the FP16 engine changes the AR
+by at most 0.0004 (LM-O 0.6685 for both, YCB-V 0.7017 vs.\ 0.7021). \Cref{tab:size} gives the size
+of the network: sharing it across objects costs fewer than 0.05\,M parameters.
+
+\begin{table}[t]
+  \centering
+  \small
+  \begin{tabular}{lccc}
+    \toprule
+    Input & Objects & Params [M] & GFLOPs / crop \\
+    \midrule
+    224 px & 8 / 21 & 85.81 / 85.82 & 17.6 \\
+    384 px & 8 / 21 & 86.10 / 86.11 & 55.5 \\
+    \bottomrule
+  \end{tabular}
+  \caption{\textbf{Network size}, with per-object class tokens. GFLOPs counted as multiply-adds,
+  as in~\cite{ancey2026fastposevit}. TensorRT FP16 engine: 167\,MB.}
+  \label{tab:size}
+\end{table}
+
+\paragraph{Latency.}
+\Cref{tab:latency} reports the latency per image as a function of the number of objects $N$, on one
+NVIDIA A100 (CUDA 13, TensorRT 10.14, PyTorch 2.9). The \emph{pipeline} time starts from the decoded
+image and the boxes and ends with the $N$ absolute poses: crop and normalize every instance, run
+the network once on all crops, and recover $\R$ and $\T$. Two engineering changes made the pipeline
+2--3 times faster than a direct port of the single-object code: normalizing the crops on the GPU
+instead of with Albumentations on the CPU (2.1\,ms per crop), and recovering the poses on the CPU
+in one vectorized step instead of many small GPU operations. With TensorRT FP16, the pose stage
+processes 8 objects in 14.2\,ms (70 FPS).
+
+\begin{table}[t]
+  \centering
+  \setlength{\tabcolsep}{4pt}
+  \small
+  \begin{tabular}{lcccc}
+    \toprule
+    ms per image & $N{=}1$ & $N{=}4$ & $N{=}8$ & $N{=}16$ \\
+    \midrule
+    Network, PyTorch FP16 & 7.2 & 7.6 & 8.7 & 15.9 \\
+    Network, TensorRT FP16 & \textbf{1.8} & \textbf{3.5} & \textbf{5.7} & \textbf{11.0} \\
+    Pipeline, PyTorch FP16 & 10.8 & 13.5 & 17.0 & 29.5 \\
+    Pipeline, TensorRT FP16 & \textbf{5.3} & \textbf{9.3} & \textbf{14.2} & \textbf{24.0} \\
+    Pipeline, TensorRT FP16, 224 px & 4.4 & 6.1 & 7.6 & 11.1 \\
+    \midrule
+    + default detector (81.6\,ms) [FPS] & 11.5 & 11.0 & 10.4 & 9.5 \\
+    + our LW-DETR (3.3\,ms) [FPS] & 116 & 79 & 57 & 37 \\
+    + our LW-DETR, 224 px [FPS] & 130 & 106 & 92 & 69 \\
+    \bottomrule
+  \end{tabular}
+  \caption{\textbf{Latency per image vs.\ number of objects $N$} on one NVIDIA A100 (median of
+  200 runs, LM-O model, 384 px unless stated). Network: the $N$ crops already on the GPU. Pipeline:
+  decoded image to $N$ poses. Default detector time as reported by its authors.
+  \todo{The rows with our detector add two separately measured medians; confirm them with one
+  joint timing run.}}
+  \label{tab:latency}
+\end{table}
+
+\paragraph{Detector.}
+With the default detector (about 80\,ms per image as reported by its authors), the detector
+dominates the run time and the whole method runs at about 10 FPS. Our multi-class LW-DETR
+(\cref{sec:method:detector}) reaches a COCO mAP of 0.656 on the LM-O test targets, on par with
+the default detections (0.657), and gives 0.654 AR with our pose model (0.645--0.650 with the
+smaller ``tiny'' variant). Exporting it to TensorRT required one change: TensorRT 10.14's
+\texttt{GridSample} returns wrong values for the deformable attention of LW-DETR (mAP 0.633 even
+in FP32), so we implement the bilinear sampling with gather operations, which gives the same
+output as PyTorch. The FP16 engine runs in 3.3\,ms per image with the same mAP (0.657), and the
+full pipeline reaches 57 FPS for 8 objects at 384 px (0.654 AR), or 92 FPS at 224 px, where the
+backbone costs 0.023 AR (0.643 vs.\ 0.666, two seeds each).
+\todo{Jetson Orin numbers, if a device becomes available; otherwise state it as a limitation.}
+
+\subsection{Qualitative Results}
+\label{sec:exp:qualitative}
+\begin{figure*}[t]
+  \centering
+  \figplaceholder{4cm}{\textbf{Qualitative results (to make).} Best / median / worst predictions on
+  LM-O and YCB-V, ground-truth axes solid, predictions dashed, errors under each image.}
+  \caption{\textbf{Qualitative results} on LM-O (top) and YCB-V (bottom). \todo{caption.}}
+  \label{fig:qualitative}
+\end{figure*}
+
+\begin{figure}[t]
+  \centering
+  \figplaceholder{3.5cm}{\textbf{Failure cases (to make).} Heavy occlusion (LM-O eggbox, duck)
+  and the depth bias on real YCB-V images.}
+  \caption{\textbf{Failure cases.} \todo{caption.}}
+  \label{fig:failures}
+\end{figure}
+
+\todo{Describe \cref{fig:qualitative,fig:failures}. Failure modes to show: heavily occluded
+objects (LM-O eggbox, duck), and the depth bias on real YCB-V images: every object is estimated
+about 2.4\,\% too far (median), because the real objects appear smaller in the images than the
+PBR renders at the same depth; the weakest YCB-V objects (wood block 0.39, scissors 0.41 AR) are
+the most affected.}

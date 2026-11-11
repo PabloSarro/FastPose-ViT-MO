@@ -1,0 +1,137 @@
+\section{Methodology}
+\label{sec:method}
+
+Given an RGB image with known camera intrinsics $\K$ and a set of known objects, our goal is to
+predict, for every visible object instance, its rotation $\R \in SO(3)$ and translation
+$\T \in \mathbb{R}^3$ from the model frame to the camera frame. As in
+FastPose-ViT~\cite{ancey2026fastposevit}, a 2D detector first provides a bounding box and an
+object label for each instance; the pose network then works on the image crop around each box.
+\Cref{sec:method:recap} summarizes the original formulation, and
+\cref{sec:method:translation,sec:method:conditioning,sec:method:symmetry,sec:method:training}
+describe what changes for multiple objects and cameras.
+
+\subsection{Recap: FastPose-ViT}
+\label{sec:method:recap}
+The crop is resized to the input size of a ViT-B/16~\cite{dosovitskiy2021vit} pretrained with
+SWAG~\cite{singh2022swag}, and a single linear layer on the [CLS] token outputs nine values: three
+normalized translation parameters $\U = (U_x, U_y, U_z)$ and a 6D rotation
+representation~\cite{zhou2019continuity}, converted into a rotation matrix by Gram--Schmidt
+orthonormalization. The network does not regress the absolute rotation $\R$, which depends on
+where the object lies in the image, but the \emph{apparent rotation}
+$\R' = \Delta\R\,\R$, where $\Delta\R$ rotates the viewing ray of the object centre
+$\hat{\T} = \T / \|\T\|$ onto the optical axis $\mathbf{e}_z$. $\Delta\R$ has axis
+$\mathbf{u} = \hat{\T} \times \mathbf{e}_z$ and angle $\theta = \arccos(\hat{\T}^\top
+\mathbf{e}_z)$, and is computed in closed form with Rodrigues' formula; at inference,
+$\R = \Delta\R^\top \R'$ once $\T$ is known. We keep the apparent rotation, the 6D
+representation and the relative Frobenius rotation loss of~\cite{ancey2026fastposevit} unchanged,
+and refer to it for their derivation.
+
+\subsection{Camera- and size-independent translation}
+\label{sec:method:translation}
+Let $(b_x, b_y)$, $w$ and $h$ be the centre, width and height of the bounding box in pixels, and
+$f_x, f_y, c_x, c_y$ the intrinsics of the image, which on BOP change from one image (and dataset)
+to the next. The lateral targets measure where the projected object centre lies relative to the
+box, in box units:
+\begin{equation}
+  U_x = \frac{f_x \, t_x / t_z + c_x - b_x}{w}, \qquad
+  U_y = \frac{f_y \, t_y / t_z + c_y - b_y}{h}.
+  \label{eq:uxy}
+\end{equation}
+For the depth, the original formulation used a crop-depth proxy proportional to $t_z$ times the
+box size divided by the image size. This proxy is well scaled for a single object and a single
+camera, but on BOP it depends on the object size and the focal length: on LM-O it ranges from
+about 50 to 300 (with $t_z$ in mm), while $U_x$ and $U_y$ stay within about $\pm 0.5$, so a
+relative translation loss almost ignores the 2D position. We instead normalize by the focal length
+and the object diameter $D$:
+\begin{equation}
+  U_z = \frac{t_z \, s}{\bar f \, D}, \qquad s = \frac{w + h}{2}, \quad
+  \bar f = \frac{f_x + f_y}{2}.
+  \label{eq:uz}
+\end{equation}
+Under the pinhole model, an object of diameter $D$ at depth $t_z$ spans about $\bar f D / t_z$
+pixels, so $U_z$ is the ratio between the observed box size and the size the object would have if
+fully visible: it is dimensionless, close to one, and independent of the camera and of the object
+size. At inference, we invert \cref{eq:uz,eq:uxy} with the intrinsics of the test image:
+\begin{equation}
+  t_z = \frac{U_z \, \bar f \, D}{s}, \quad
+  t_x = \frac{(U_x w + b_x - c_x)\, t_z}{f_x}, \quad
+  t_y = \frac{(U_y h + b_y - c_y)\, t_z}{f_y}.
+  \label{eq:inverse}
+\end{equation}
+The translation loss is the L2 distance between predicted and target $\U$ relative to the norm of
+the target, as in~\cite{ancey2026fastposevit}; with \cref{eq:uz} all three components have the
+same scale. We call this formulation \emph{site} and the original one \emph{legacy}.
+\todo{Short justification of the name, or rename (e.g. ``size-normalized depth'').}
+
+\paragraph{Pixel conventions.}
+BOP boxes $[x, y, w, h]$ span the pixels $x$ to $x + w$ inclusive, and pixel $i$ is centred at
+$i + 0.5$ in the coordinates of $\K$. We convert every ground-truth and detected box to
+$[x, y, x + w + 1, y + h + 1]$ and map it to the crop with one affine warp that accounts for the
+half-pixel offsets, so that the box centre lands exactly on the crop centre (checked to
+$10^{-5}$ pixels). The crop is the square of side $\max(w, h)$ around the box, so the object keeps
+its aspect ratio; areas outside the image are filled with zeros.
+
+\subsection{One network for all objects}
+\label{sec:method:conditioning}
+A single network must know which object it is looking at, since the same crop content can mean
+different poses for different objects (and symmetric objects share appearance). We condition the
+shared ViT on the object label $k$ given by the detector with a \emph{per-object class token}: the
+[CLS] token of the ViT is replaced by $\mathbf{c} + \mathbf{e}_k$, where $\mathbf{c}$ is the
+pretrained class token and $\mathbf{e}_k \in \mathbb{R}^{768}$ a learned embedding of object $k$,
+initialized at zero so that training starts from the pretrained network. All objects share the
+same transformer layers and the same linear head. Compared with one output head per object
+(selecting the nine outputs of object $k$), the token lets the object identity influence every
+layer of the transformer. It adds $768$ parameters per object (\cref{tab:size}), and the crops of
+different objects of one image form one batch at inference. We compare both options, and one model
+per object, in \cref{sec:exp:ablations}.
+
+\subsection{Symmetric objects}
+\label{sec:method:symmetry}
+For an object with a set of symmetry transformations $\{(\mathbf{S}_j, \mathbf{s}_j)\}$ (from the
+BOP model information, continuous symmetries discretized), the poses $(\R\mathbf{S}_j,\ \T +
+\R\mathbf{s}_j)$ are all correct. The offset $\mathbf{s}_j$ is zero when the symmetry axis
+passes through the model origin, but not always (\eg{} about 19\,mm for the YCB-V clamps). Our
+rotation loss takes, per sample, the minimum of the relative Frobenius loss over the symmetric
+targets:
+\begin{equation}
+  \mathcal{L}_R = \min_j \frac{\| \mathbf{r}_{6D} - \mathrm{6D}(\R'_j) \|}
+  {\| \mathrm{6D}(\R'_j) \|},
+  \label{eq:symloss}
+\end{equation}
+where $\R'_j$ is the apparent rotation of the $j$-th symmetric pose. Since the symmetries act on
+the right (model frame) and the apparent-rotation correction on the left (camera frame), the
+symmetric targets are obtained directly from the apparent rotation when $\mathbf{s}_j = 0$. When
+$\mathbf{s}_j \neq 0$, the symmetric pose has its own translation, hence its own $\U$ and its own
+correction $\Delta\R$: we build the labels of every symmetric pose from the original ground truth,
+take the minimum of \cref{eq:symloss}, and use the translation label of the chosen symmetry in the
+translation loss.
+
+\subsection{Training data and augmentations}
+\label{sec:method:training}
+
+\paragraph{Data.}
+We train only on the PBR images provided by BOP~\cite{denninger2019blenderproc}: for each
+dataset, the instances of the test objects with a visible fraction of at least 10\,\%, cropped
+around their visible bounding box (\texttt{bbox\_visib}), which is what a detector sees. Two PBR
+scenes are held out for validation. Objects are sampled in balanced epochs: every epoch draws the
+same number of instances per object, so frequent objects do not dominate.
+
+\paragraph{Augmentations.}
+Pixel-level augmentations are applied independently with probability 0.5 each, with
+Albumentations: brightness and contrast, gamma, hue and saturation, gray, tone curve, CLAHE,
+solarize, sun flare, Gaussian, motion and defocus blur, Gaussian and ISO noise, downscaling and
+JPEG compression (the ``domain gap'' set of~\cite{ancey2026fastposevit} without its geometric
+distortion, which would change the pose labels). The bounding box is perturbed with probability
+0.5 by up to 10\,\% of its size on each side. We do not use the in-plane rotation augmentation of
+the original method: rotating the image about its centre is a pure camera roll only if the
+principal point is at the image centre and $f_x = f_y$, which does not hold for the BOP cameras
+(on LM, it would cause label errors of about 20\,mm at 180\textdegree).
+\pending{Augmentation study (\cref{sec:exp:augmentations}) may change this paragraph.}
+
+\subsection{Multi-class detector}
+\label{sec:method:detector}
+For a fully real-time pipeline, we train one LW-DETR~\cite{chen2024lwdetr} for all objects of a
+dataset on the same PBR images, with the original LW-DETR recipe (group DETR with 13 query
+groups, IoU-aware classification loss, EMA, AdamW, COCO-pretrained weights except the class head)
+and the same pixel augmentations plus horizontal flips, at $640 \times 640$ pixels.
+\todo{Training details: 50 epochs, batch size, learning rates, training time.}

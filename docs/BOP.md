@@ -106,11 +106,22 @@ Each block changes one thing; the bold row is the choice kept.
 | Checkpoint (final model) | `model.pth` (best val) vs **`last.pt`** | 0.6686 vs 0.6685 (YCB-V 0.7021 vs 0.7021) | |
 | Precision at deployment (M9) | PyTorch vs **TensorRT fp16** | 0.6685 vs 0.6685 (YCB-V 0.7021 vs 0.7017) | |
 | Backbone resolution (M10) | **384 px** vs 224 px | 0.669 / 0.664 vs 0.643 / 0.643 | 0.666 vs 0.643 |
-| Rotation target (M10, symmetric loss, 2×) | **apparent (allocentric)** vs absolute (egocentric) | 0.655 / 0.655 vs 0.546 / 0.548 | 0.655 vs 0.547 |
+| **Paper ablations (M10)**: each = baseline token, 2×, symmetric loss, `domain_gap`, 10 % jitter, `site`, SWAG, apparent rotation (0.655 / 0.655) with one change | | | |
+| Rotation target | **apparent (allocentric)** vs absolute (egocentric) | 0.546 / 0.548 | 0.547 (−0.108) |
+| Pre-training | **SWAG** vs random init (scratch) | 0.516 / 0.517 | 0.517 (−0.138) |
+| Depth target, 8 objects | **`site`** vs `legacy` (WACV α-based) | 0.610 / 0.625 | 0.617 (−0.038) |
+| Bounding-box jitter (per side) | 0 % | 0.625 / 0.625 | 0.625 (−0.030) |
+| | **10 %** | 0.655 / 0.655 | 0.655 |
+| | 20 % | 0.650 / 0.651 | 0.650 (−0.005) |
+| | 5 / 15 / 30 % | *pending* | |
 
 Reading (2026-11-08, replaces the earlier conclusions drawn from val ADD and driller ADD):
-- **Kept, clear effect**: the apparent (allocentric) rotation target (+0.11 AR vs the absolute
-  rotation, the WACV contribution holds on BOP), the 384 px backbone (+0.023 AR vs 224 px, at
+- **Kept, clear effect** (paper ablations, 2 seeds each, seed spread ≤ 0.002 except `legacy`
+  0.016): SWAG pre-training (+0.14 AR vs scratch), the apparent (allocentric) rotation target
+  (+0.11 AR vs absolute, the WACV contribution holds on BOP; every object loses, eggbox the most,
+  0.32 → 0.18), `site` depth on all 8 objects (+0.04 AR vs `legacy`; the WACV α depth loses most
+  on the driller 0.79 → 0.70 and the can 0.80 → 0.75, i.e. larger objects), bbox jitter (0 % costs
+  0.030, 20 % ≈ 10 %, −0.005; WACV Table 8 found the same direction), the 384 px backbone (+0.023 AR vs 224 px, at
   about twice the pose time, §3), `site` depth (+0.06 AR on the driller vs `legacy`), training compute
   (1× → 2× → 4×: 0.639 → 0.650 → 0.661), class-token conditioning vs per-object heads (+0.005;
   heads + token "both" +0.010; both at about the seed spread).

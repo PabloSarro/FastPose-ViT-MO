@@ -47,9 +47,9 @@ jobs; external = someone outside this project).
 - [~] *Added 2026-11-08 (user + supervisor):* **augmentation study**: no pixel aug / color / blur / noise / color + blur + noise / domain_gap at p = 0.8, 2 seeds each (`lmo-m10-aug*-001`), plus the bbox jitter values below. **On hold since 2026-11-08 (cluster queue, user priority 4 of 4): relaunch command in `TASKS.md` M10.**
 - [x] *Done 2026-11-09: absolute 0.546 / 0.548 vs apparent 0.655 / 0.655 (`docs/BOP.md` §2).* **Apparent (allocentric) rotation vs absolute rotation** on BOP: the WACV paper's core
       contribution; reviewers will ask whether it still helps here. Cost: train (2 seeds).
-- [~] *Running: SWAG vs scratch (`lmo-m10-scratch{,2}-001`); plain ImageNet weights not run (no 384 px ImageNet-1K ViT-B in torchvision).* **Pre-training**: SWAG vs plain ImageNet weights vs from scratch. Cost: train.
-- [~] *Running: 0 / 5 / 15 / 20 / 30 % (`lmo-m10-bbox{0,5,15,20,30}{,2}-001`; 10 % = baseline).* **Bounding-box perturbation**: 0 / 10 / 20 % (the WACV paper's Table 8, on BOP). Cost: train.
-- [~] *Running on LM-O, 8 objects (`lmo-m10-legacy{,2}-001`); YCB-V not run.* **`site` vs `legacy` depth on several objects / cameras** (so far: driller only, one
+- [x] *Done 2026-11-11: scratch 0.516 / 0.517 vs SWAG 0.655 (`docs/BOP.md` §2); plain ImageNet weights not run (no 384 px ImageNet-1K ViT-B in torchvision).* **Pre-training**: SWAG vs plain ImageNet weights vs from scratch. Cost: train.
+- [~] *0 % 0.625, 20 % 0.650 vs 10 % 0.655 (done 2026-11-11); 5 / 15 / 30 % queued (`lmo-m10-bbox{5,15,30}{,2}-002`).* **Bounding-box perturbation**: 0 / 10 / 20 % (the WACV paper's Table 8, on BOP). Cost: train.
+- [x] *Done 2026-11-11 on LM-O, 8 objects: `legacy` 0.610 / 0.625 vs `site` 0.655; YCB-V not run.* **`site` vs `legacy` depth on several objects / cameras** (so far: driller only, one
       camera): multi-object LM-O and/or YCB-V (two cameras), to support "camera- and
       object-size-independent". Cost: train.
 - [ ] Optionally, **object conditioning on YCB-V** (heads vs class token with 21 objects).

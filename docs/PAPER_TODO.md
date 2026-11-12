@@ -70,7 +70,8 @@ jobs; external = someone outside this project).
       (marked "?"). Note that competitors' times come from different hardware: say so or re-time
       some of them. Cost: external / manual.
 - [x] *Done 2026-11-11 for the recent entries (FastPose-ViT, LW-DETR, GDRNPP, PViT-6D, MRC-Net,
-      SC6D, RADet, PFA, Muon); classic entries to spot-check. MRPE, PoseDETR, RACE-6D (CVPR 2026
+      SC6D, RADet, PFA, Muon); classic entries spot-checked 2026-11-12 (BOP 2018 / 2020,
+      BlenderProc, SWAG, ZebraPose, MegaPose, T-LESS, LM: all matched; pages added). MRPE, PoseDETR, RACE-6D (CVPR 2026
       Findings) have no citable paper in the bib yet.* **Bibliography**: exact references for every compared and related method (ZebraPose,
       GDRNPP, SurfEmb, CosyPose, CDPN, EPOS, MRC-Net, PoseDETR, SC6D, PViT-6D, MegaPose, LW-DETR,
       BOP challenge papers, …). Cost: manual.

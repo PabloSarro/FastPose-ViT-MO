@@ -32,9 +32,16 @@ in a single stage at about 12\,ms per image. FastPose-ViT~\cite{ancey2026fastpos
 translation targets and the apparent rotation from object crops with a ViT and a single linear
 head, and runs in real time on a Jetson Orin Nano, but for one object and one camera only. We
 extend it to many objects and cameras with a plain ViT and a single linear layer, and evaluate it
-on BOP. \todo{Sharpen the difference with PViT-6D (plain ViT-B and one linear layer vs MViTv2 with
-pose tokens and MLP heads; symmetric loss with offsets; deployment study) and cite PoseDETR /
-RACE-6D papers when available.}
+on BOP. Our formulation is closest to PViT-6D; the differences are in the architecture and in
+the scope of the study. PViT-6D uses a multi-scale MViTv2 backbone at $224 \times 224$ pixels,
+two dedicated pose tokens initialized with the class embedding, and an MLP head per token;
+\ours{} keeps the plain ViT-B/16 of FastPose-ViT, its pretrained [CLS] token shifted by a learned
+per-object embedding, and a single linear layer, so that any standard ViT export path applies. We
+handle symmetries whose transformation also shifts the object (\cref{sec:method:symmetry}), we
+report results with the public default detections of the BOP 2023 challenge rather than FCOS
+detections, and we study the deployment of the shared model: batched TensorRT inference, latency
+as a function of the number of objects, and a fully real-time pipeline with our own detector.
+\todo{Cite the PoseDETR and RACE-6D papers when available.}
 
 \paragraph{Fast object detectors.}
 Two-stage pose pipelines depend on a 2D detector. The BOP default detections for the 2023

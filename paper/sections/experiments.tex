@@ -52,11 +52,24 @@ the single-stage PoseDETR (0.695) and RACE-6D (0.683), and the render-and-compar
 RADet+PFA. \todo{Positioning to decide with the supervisor (see the note in the PR / summary):
 the draft can no longer claim ``best direct-regression method''.}
 
-Our 2D alignment (AR$_\mathrm{MSPD}$) is close to the best methods (0.873 vs.\ 0.877--0.889 on
-LM-O, 0.834 vs.\ 0.821--0.831 on YCB-V, where it is the highest of the table); the gap lies in the
-3D metrics (VSD and MSSD), which are dominated by the depth of the directly regressed
-translation. \todo{Turn this into the ``honest weaknesses'' paragraph of the WACV paper: PBR-only,
-no refinement, one network, plain ViT with a linear head, released data only, reproducible.}
+\paragraph{Where we lose, and why.}
+Our 2D alignment (AR$_\mathrm{MSPD}$) is at the level of the best methods (0.873 vs.\
+0.877--0.889 on LM-O; 0.834 on YCB-V, the highest of \cref{tab:ycbv}). The gap lies in the 3D
+metrics, VSD and MSSD, which depend on the depth: a direct regression infers the depth of the whole
+object from the apparent size of its crop, while correspondence-based methods recover it from many
+2D--3D matches, and render-and-compare methods correct it against renderings of the model. Two
+conditions make this harder. First, occlusion: LM-O is heavily occluded, and with less than half
+of an object visible its crop says little about its size (\cref{fig:failures}); this is where the
+gap to PViT-6D is largest (0.07 AR on LM-O). Second, the domain gap on real images: on YCB-V,
+89\,\% of our estimates are too far (\cref{sec:exp:qualitative}), a bias that the methods trained
+on the real YCB-V images do not have (up to 0.86 AR). These results come from deliberate choices:
+we train on the provided PBR images only, use one network for all objects with a plain ViT and a
+single linear layer, add no refinement, and evaluate with the public default detections, so that
+every number can be reproduced from released data. Within these constraints, \ours{} is the most
+accurate single-model method on YCB-V, and with our detector it is the fastest pipeline of
+\cref{tab:lmo} apart from the single-stage PoseDETR and RACE-6D (times as submitted, on different
+GPUs). \todo{Check the last claim once the positioning is agreed; add
+the release of code and weights.}
 
 \begin{table*}[t]
   \centering
@@ -82,19 +95,20 @@ no refinement, one network, plain ViT with a linear head, released data only, re
     \midrule
     \ours{}, ground-truth boxes (oracle) & & & one & 0.689 & 0.514 & 0.660 & 0.892 & 0.053 \\
     \ours{}, TensorRT FP16 & & & one & 0.669 & 0.491 & 0.642 & 0.873 & \\
-    \ours{}, own LW-DETR, TensorRT FP16 & & & one & 0.654 & & & & see \cref{tab:latency} \\
+    \ours{}, own LW-DETR, PyTorch & & & one & 0.654 & 0.486 & 0.627 & 0.848 & 0.035 \\
+    \ours{}, own LW-DETR, TensorRT FP16 & & & one & 0.654 & 0.486 & 0.628 & 0.848 & 0.020 \\
     \bottomrule
   \end{tabular}
   \caption{\textbf{LM-O test, RGB methods trained on the provided PBR images only}, BOP19 metrics
   (BOP leaderboard, checked 2026-11-11). ``Ref.'': iterative refinement or render-and-compare;
   ``?'': not stated on the submission page. Times per image as submitted, on each author's
   hardware (PoseDETR: RTX 4090 with TensorRT FP16; RACE-6D: RTX 3090; ours: one A100, PyTorch,
-  including the 81.6\,ms of the default detector as reported by its authors). PoseDETR and RACE-6D
+  including the 81.6\,ms of the default detector as reported by its authors; with our own
+  LW-DETR, the BOP time of the whole pipeline on the same GPU). PoseDETR and RACE-6D
   include their own detection; we use the default detections of the BOP 2023 challenge.
   \todo{Entries with unknown training data (IL-Pose 0.772, ModalOcclusion-RGB 0.717) are left out;
   methods trained on real images too (HccePose, HGBPose, GPose) are not listed. Cite MRPE,
-  PoseDETR and RACE-6D (CVPR 2026 Findings) once their papers are out; add our AR components for the
-  own-detector row.}}
+  PoseDETR and RACE-6D (CVPR 2026 Findings) once their papers are out.}}
   \label{tab:lmo}
 \end{table*}
 
@@ -377,7 +391,11 @@ With the default detector (about 80\,ms per image as reported by its authors), t
 dominates the run time and the whole method runs at about 10 FPS. Our multi-class LW-DETR
 (\cref{sec:method:detector}) reaches a COCO mAP of 0.656 on the LM-O test targets, on par with
 the default detections (0.657), and gives 0.654 AR with our pose model (0.645--0.650 with the
-smaller ``tiny'' variant). Exporting it to TensorRT required one change: TensorRT 10.14's
+smaller ``tiny'' variant). The loss of 0.014 AR comes from the 2D alignment (AR$_\mathrm{MSPD}$
+0.848 vs.\ 0.873; VSD and MSSD drop by 0.005 and 0.013) and mostly from the smallest object: 11\,\%
+of our ape boxes overlap the ground truth by less than 0.5 IoU (1.7\,\% for the default
+detector), and the ape loses 0.05 AR (0.696 $\rightarrow$ 0.645), while the duck and the eggbox
+gain slightly. Exporting it to TensorRT required one change: TensorRT 10.14's
 \texttt{GridSample} returns wrong values for the deformable attention of LW-DETR (mAP 0.633 even
 in FP32), so we implement the bilinear sampling with gather operations, which gives the same
 output as PyTorch. The FP16 engine runs in 4.2\,ms per image on average (median 3.3\,ms,

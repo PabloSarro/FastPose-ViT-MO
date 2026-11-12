@@ -31,8 +31,13 @@ Times are per image as submitted, on each author's hardware.
 | EPOS-BOP20-PBR | correspondences + PnP | no | 0.547 | 0.389 | 0.501 | 0.750 | 0.468 |
 | *Ours, GT boxes (oracle, upper bound of the detector)* | | | *0.689* | *0.514* | *0.660* | *0.892* | *0.053* |
 | *Ours, TensorRT fp16 engine, default detections* | | | *0.6685* | *0.4911* | *0.6415* | *0.8729* | |
-| *Ours, own LW-DETR small detector, full TensorRT fp16 pipeline* | | | *0.654* | | | | *see §3* |
-| *Ours, own LW-DETR small / tiny detector, PyTorch* | | | *0.654 / 0.645–0.650* | | | | |
+| *Ours, own LW-DETR small detector, full TensorRT fp16 pipeline* | | | *0.654* | *0.486* | *0.628* | *0.848* | *0.020* |
+| *Ours, own LW-DETR small detector, PyTorch* | | | *0.654* | *0.486* | *0.627* | *0.848* | *0.035* |
+| *Ours, own LW-DETR tiny detector (2 seeds), PyTorch* | | | *0.645 / 0.650* | *0.475 / 0.478* | *0.619 / 0.619* | *0.843 / 0.851* | *0.032* |
+
+Own detector vs default: −0.014 AR, mostly MSPD (0.848 vs 0.873) and the smallest object (ape
+0.696 → 0.645; 11.4 % of our ape boxes have IoU < 0.5 vs 1.7 % for the default detector); duck and
+eggbox gain slightly. Per object: `$NAS_HOME/results/paper/per_object_ar_lmo_tok4x_ownsmall_trt.md`.
 
 Our time is the BOP `time` of the evaluation run (A100, PyTorch, including the default detector's
 81.6 ms, re-timed 2026-11-08 with the current per-image path; the M7 run gave 0.134 s with the

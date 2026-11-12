@@ -1,7 +1,10 @@
 % Bibliography of the draft. Verified 2026-11-11 against arXiv / publisher pages: FastPose-ViT,
 % LW-DETR, GDRNPP, PViT-6D, MRC-Net, SC6D, RADet, Muon. The classic entries (BOP, datasets, ViT,
 % SWAG, 6D rotation, CosyPose, SurfEmb, EPOS, CDPN, ZebraPose, MegaPose, 3D-RCNN, BlenderProc) are
-% standard and were written from memory: spot-check pages / author lists before submission.
+% standard. Spot-checked on 2026-11-12 (author lists and order, venue, pages added where found):
+% BOP 2018, BOP 2020, BlenderProc, SWAG, ZebraPose, MegaPose, T-LESS, LM (Hinterstoisser), Muon;
+% all matched. Not re-checked online: ViT, Zhou et al., 3D-RCNN, GDR-Net, EPOS, CDPN, CosyPose,
+% SurfEmb, PoseCNN, LM-O (Brachmann), PFA.
 
 @inproceedings{ancey2026fastposevit,
   title     = {{FastPose-ViT}: A Vision Transformer for Real-Time Spacecraft Pose Estimation},
@@ -15,6 +18,7 @@
   title     = {{BOP}: Benchmark for 6{D} Object Pose Estimation},
   author    = {Hoda{\v{n}}, Tom{\'a}{\v{s}} and Michel, Frank and Brachmann, Eric and Kehl, Wadim and Glent Buch, Anders and Kraft, Dirk and Drost, Bertram and Vidal, Joel and Ihrke, Stephan and Zabulis, Xenophon and Sahin, Caner and Manhardt, Fabian and Tombari, Federico and Kim, Tae-Kyun and Matas, Ji{\v{r}}{\'\i} and Rother, Carsten},
   booktitle = {European Conference on Computer Vision (ECCV)},
+  pages     = {19--34},
   year      = {2018}
 }
 
@@ -57,6 +61,7 @@
   title     = {{T-LESS}: An {RGB-D} Dataset for 6{D} Pose Estimation of Texture-less Objects},
   author    = {Hoda{\v{n}}, Tom{\'a}{\v{s}} and Haluza, Pavel and Obdr{\v{z}}{\'a}lek, {\v{S}}t{\v{e}}p{\'a}n and Matas, Ji{\v{r}}{\'\i} and Lourakis, Manolis and Zabulis, Xenophon},
   booktitle = {IEEE Winter Conference on Applications of Computer Vision (WACV)},
+  pages     = {880--888},
   year      = {2017}
 }
 
@@ -71,6 +76,7 @@
   title     = {Revisiting Weakly Supervised Pre-Training of Visual Perception Models},
   author    = {Singh, Mannat and Gustafson, Laura and Adcock, Aaron and de Freitas Reis, Vinicius and Gedik, Bugra and Kosaraju, Raj Prateek and Mahajan, Dhruv and Girshick, Ross and Doll{\'a}r, Piotr and van der Maaten, Laurens},
   booktitle = {IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  pages     = {804--814},
   year      = {2022}
 }
 
@@ -90,12 +96,11 @@
 
 @misc{jordan2024muon,
   title        = {Muon: An Optimizer for Hidden Layers in Neural Networks},
-  author       = {Jordan, Keller and Jin, Yuchen and Boza, Vlado and You, Jiacheng and Cesista, Franz and Newhouse, Laker and Bernstein, Jeremy},
+  author       = {Keller Jordan and Yuchen Jin and Vlado Boza and You Jiacheng and Franz Cesista and Laker Newhouse and Jeremy Bernstein},
   howpublished = {\url{https://kellerjordan.github.io/posts/muon/}},
   year         = {2024}
 }
-% Authors as in the Muon repository's citation block (verified 2026-11-11); check the spelling
-% "Cesista" vs "Cecista".
+% Author list exactly as the citation block of github.com/KellerJordan/Muon (verified 2026-11-12).
 
 @article{chen2024lwdetr,
   title   = {{LW-DETR}: A Transformer Replacement to {YOLO} for Real-Time Detection},
@@ -159,6 +164,9 @@
   title     = {{MegaPose}: 6{D} Pose Estimation of Novel Objects via Render \& Compare},
   author    = {Labb{\'e}, Yann and Manuelli, Lucas and Mousavian, Arsalan and Tyree, Stephen and Birchfield, Stan and Tremblay, Jonathan and Carpentier, Justin and Aubry, Mathieu and Fox, Dieter and Sivic, Josef},
   booktitle = {Conference on Robot Learning (CoRL)},
+  series    = {Proceedings of Machine Learning Research},
+  volume    = {205},
+  pages     = {715--725},
   year      = {2022}
 }
 

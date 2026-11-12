@@ -87,7 +87,7 @@ jobs; external = someone outside this project).
       if in.
 
 ## 6. Figures (none made yet)
-- [x] *Done 2026-11-11 (`paper/figures/`, scripts `vis/paper_*.py`).* **Teaser**: one image → detector → N crops batched through one shared ViT with per-object
+- [x] *Done 2026-11-11 (`paper/figures/`, scripts `vis/paper_*.py`); clean diagram version 2026-11-12 (`teaser_diagram.pdf`, used in the draft).* **Teaser**: one image → detector → N crops batched through one shared ViT with per-object
       class tokens → N poses.
 - [ ] **Concept figure** for the main new idea (class-token conditioning and/or the `site` depth).
 - [x] *Done 2026-11-11 (`paper/figures/`, scripts `vis/paper_*.py`).* **Qualitative results**: best / median / worst predictions per dataset (GT axes solid,

@@ -3,14 +3,14 @@
 
 \begin{figure*}[t]
   \centering
-  \includegraphics[width=\linewidth]{figures/teaser.pdf}
-  \caption{\textbf{Overview of \ours.} (1) A detector finds every object of the dataset in the
-  image; (2) each detection is cropped and all crops are processed in one batch by a single
-  Vision Transformer, conditioned on the object identity by a per-object class token; (3) the
-  regressed normalized translation and apparent rotation are converted in closed form into the
-  full-frame pose. Real LM-O test image with the default detections and our predictions.
-  \todo{First version made from real data; redraw as a clean diagram if preferred, and add the
-  latency inset (\cref{fig:latency}).}}
+  \includegraphics[width=\linewidth]{figures/teaser_diagram.pdf}
+  % Alternative, photo-only version: figures/teaser.pdf (vis/paper_teaser.py)
+  \caption{\textbf{Overview of \ours.} A detector finds every object of the dataset in the image;
+  each detection is cropped, and all crops are processed in one batch by a single ViT-B/16, whose
+  class token is shifted by a learned embedding $\mathbf{e}_k$ of the detected object $k$. A
+  linear head regresses the normalized translation $\mathbf{U}$ and the apparent rotation
+  $\mathbf{R}'$ of each crop, which are converted in closed form into the full-frame pose
+  $(\mathbf{R}, \mathbf{T})$. Real LM-O test image, default detections and our predictions.}
   \label{fig:teaser}
 \end{figure*}
 

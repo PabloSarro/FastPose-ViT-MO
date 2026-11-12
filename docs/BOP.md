@@ -121,6 +121,8 @@ Each block changes one thing; the bold row is the choice kept.
 | | **10 %** | 0.655 / 0.655 | 0.655 |
 | | 20 % | 0.650 / 0.651 | 0.650 (−0.005) |
 | | 5 / 15 / 30 % | *pending* | |
+| Pixel augmentation | **`domain_gap` (p = 0.5)** vs none | 0.626 / 0.629 | 0.628 (−0.028) |
+| | color / blur / noise / color + blur + noise / `domain_gap` p = 0.8 | *pending* | |
 
 Reading (2026-11-08, replaces the earlier conclusions drawn from val ADD and driller ADD):
 - **Kept, clear effect** (paper ablations, 2 seeds each, seed spread ≤ 0.002 except `legacy`

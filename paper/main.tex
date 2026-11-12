@@ -3,13 +3,22 @@
 % numbers come from docs/BOP.md and TASKS.md §9. Sections whose results are still running
 % are marked with \pending{...}. Compile with pdflatex + bibtex (Overleaf: default settings).
 %
-% Template: with the official WACV/CVF style files (wacv.sty, ieeenat_fullname.bst) uploaded next
-% to this file, the draft compiles in the WACV review format; without them it falls back to a
-% plain two-column article so that it compiles anywhere.
+% Template: with the official WACV/CVF style files (wacv.sty and ieeenat_fullname.bst or
+% ieee_fullname.bst) uploaded next to this file, the draft compiles in the WACV review format;
+% without them it falls back to a plain two-column article so that it compiles anywhere.
+%
+% Status (2026-11-12):
+%   done     LM-O, YCB-V, ablations (incl. paper section 3: rotation target, pre-training, depth
+%            target, bbox jitter 0 / 20 %), deployment and latency, own detector, figures
+%            (paper/figures, made by vis/paper_*.py), verified leaderboard and bibliography.
+%   running  T-LESS (tless-m10-tok4x{,2}-002); augmentation study (color, blur, noise, simple,
+%            strong; "none" done: 0.626 / 0.629); bbox jitter 5 / 15 / 30 %.
+%   open     positioning vs PViT-6D / PoseDETR (to agree with the supervisor), venue and page
+%            limit, authors, Jetson latency. Search for \pending and \todo.
 \documentclass[10pt,twocolumn,letterpaper]{article}
 
 \IfFileExists{wacv.sty}{%
-  \usepackage[review,algorithms]{wacv}
+  \usepackage[review]{wacv}
   \def\paperID{*****}
   \def\confName{WACV}
   \def\confYear{2027}
@@ -45,7 +54,7 @@
 \author{%
   Pablo Sarro\\
   EPFL\\
-  {\tt\small \todo{email, co-authors and affiliations}}
+  {\tt\small \todo{email; co-authors and affiliations (e.g.\ supervisors) to agree}}
 }
 
 \begin{document}
@@ -59,7 +68,8 @@
 \input{sections/conclusion}
 
 {\small
-\IfFileExists{ieee_fullname.bst}{\bibliographystyle{ieee_fullname}}{\bibliographystyle{ieeetr}}
+\IfFileExists{ieeenat_fullname.bst}{\bibliographystyle{ieeenat_fullname}}{%
+  \IfFileExists{ieee_fullname.bst}{\bibliographystyle{ieee_fullname}}{\bibliographystyle{ieeetr}}}
 \bibliography{references}
 }
 

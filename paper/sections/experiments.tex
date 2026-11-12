@@ -230,8 +230,9 @@ models and 2$\times$ for the ablations.
 \end{table}
 
 \paragraph{Components without a measurable effect.}
-Several choices did not change the test AR beyond the seed spread: the ``domain gap''
-augmentation vs.\ a standard photometric set (0.639 vs.\ 0.637), the symmetry-aware loss (0.655
+Several choices did not change the test AR beyond the seed spread: the choice between the
+``domain gap'' augmentation and a standard photometric set (0.639 vs.\ 0.637; using no
+augmentation at all does hurt, \cref{tab:abl_aug}), the symmetry-aware loss (0.655
 both; it is needed for symmetries with offsets on YCB-V, \cref{sec:method:symmetry}), the training
 crop (visible box 0.655, amodal box 0.648, random mix 0.652), and a decoupled translation loss. We
 report them for completeness. \todo{Decide which of these go to the supplementary material.}
@@ -263,9 +264,33 @@ by 0.030. Perturbations of 10\,\% and 20\,\% per side give the same AR.
 
 \paragraph{Pixel augmentations.}
 \label{sec:exp:augmentations}
-\pending{Augmentation study (jobs queued, 2 seeds each): none, color only, blur only, noise
-only, color + blur + noise, and ``domain gap'' with $p = 0.8$, against the ``domain gap''
-baseline.}
+Photometric augmentation is needed to cross the gap from PBR training images to real test
+images: without it, the AR drops by 0.028 (\cref{tab:abl_aug}), with the largest losses on the
+glue (0.67 $\rightarrow$ 0.53) and the can (0.80 $\rightarrow$ 0.75). Which operations matter
+is less clear: the ``domain gap'' set and a standard photometric set give the same AR (0.639 vs.\
+0.637 with per-object heads, 1$\times$). \pending{Color, blur and noise alone, their
+combination, and ``domain gap'' with $p = 0.8$ (jobs running).}
+
+\begin{table}[t]
+  \centering
+  \small
+  \begin{tabular}{lcc}
+    \toprule
+    Pixel augmentation & AR (seed a / b)$\uparrow$ & Mean \\
+    \midrule
+    none & 0.626 / 0.629 & 0.628 \\
+    color only & \pending{} & \\
+    blur only & \pending{} & \\
+    noise only & \pending{} & \\
+    color + blur + noise & \pending{} & \\
+    \textbf{domain gap ($p = 0.5$)} & \textbf{0.655 / 0.655} & \textbf{0.655} \\
+    domain gap ($p = 0.8$) & \pending{} & \\
+    \bottomrule
+  \end{tabular}
+  \caption{\textbf{Pixel augmentations}, LM-O test AR with default detections, ablation
+  baseline. Each operation is applied independently with probability $p$.}
+  \label{tab:abl_aug}
+\end{table}
 
 \paragraph{Detection quality.}
 With ground-truth boxes, the AR rises from 0.668 to 0.689 on LM-O and from 0.702 to 0.707 on

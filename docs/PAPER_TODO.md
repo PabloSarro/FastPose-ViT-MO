@@ -46,7 +46,7 @@ jobs; external = someone outside this project).
       M9 path) or recomputed with the current `estimate_image`. Cost: eval.
 
 ## 3. Studies not done on BOP (need training)
-- [~] *Added 2026-11-08 (user + supervisor):* **augmentation study**: no pixel aug / color / blur / noise / color + blur + noise / domain_gap at p = 0.8, 2 seeds each (`lmo-m10-aug*-001`), plus the bbox jitter values below. **On hold since 2026-11-08 (cluster queue, user priority 4 of 4): relaunch command in `TASKS.md` M10.**
+- [x] *Done 2026-11-14: none 0.627, color 0.645, blur 0.629, noise 0.627, color + blur + noise 0.642, `domain_gap` 0.655 (kept), `domain_gap` p = 0.8 0.636; bbox 15 / 30 % seed b 0.651 / 0.643, the rest rerunning (`lmo-m10-bbox{5,52,15,30}-003`, node failure).* ~~**augmentation study**: no pixel aug / color / blur / noise / color + blur + noise / domain_gap at p = 0.8, 2 seeds each (`lmo-m10-aug*-001`), plus the bbox jitter values below. **On hold since 2026-11-08 (cluster queue, user priority 4 of 4): relaunch command in `TASKS.md` M10.**~~
 - [x] *Done 2026-11-09: absolute 0.546 / 0.548 vs apparent 0.655 / 0.655 (`docs/BOP.md` §2).* **Apparent (allocentric) rotation vs absolute rotation** on BOP: the WACV paper's core
       contribution; reviewers will ask whether it still helps here. Cost: train (2 seeds).
 - [x] *Done 2026-11-11: scratch 0.516 / 0.517 vs SWAG 0.655 (`docs/BOP.md` §2); plain ImageNet weights not run (no 384 px ImageNet-1K ViT-B in torchvision).* **Pre-training**: SWAG vs plain ImageNet weights vs from scratch. Cost: train.
@@ -86,7 +86,12 @@ jobs; external = someone outside this project).
       PBR + real, or keep the PBR-only result as a stated limitation. Cost: download 48 GB + train
       if in.
 
-## 6. Figures (none made yet)
+## 6. Figures and supplementary
+- [x] *Done 2026-11-14:* **Supplementary material** as a separate document `paper/supplementary.tex`
+      (S1 implementation details, S2 symmetries, S3 full ablation tables, S4 detection quality, S5
+      deployment details, S6 YCB-V depth bias with a histogram, S7 per-object tables, S8
+      reproducibility); the main paper keeps 6 tables (recipe tables merged into one) and 3
+      figures. Learning rate in the draft corrected to 8e-4 -> 8e-6 (linear scaling from batch 4).
 - [x] *Done 2026-11-11 (`paper/figures/`, scripts `vis/paper_*.py`); clean diagram version 2026-11-12 (`teaser_diagram.pdf`, used in the draft).* **Teaser**: one image → detector → N crops batched through one shared ViT with per-object
       class tokens → N poses.
 - [ ] **Concept figure** for the main new idea (class-token conditioning and/or the `site` depth).

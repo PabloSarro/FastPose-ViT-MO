@@ -125,9 +125,20 @@ Each block changes one thing; the bold row is the choice kept.
 | Bounding-box jitter (per side) | 0 % | 0.625 / 0.625 | 0.625 (−0.030) |
 | | **10 %** | 0.655 / 0.655 | 0.655 |
 | | 20 % | 0.650 / 0.651 | 0.650 (−0.005) |
-| | 5 / 15 / 30 % | *pending* | |
-| Pixel augmentation | **`domain_gap` (p = 0.5)** vs none | 0.626 / 0.629 | 0.628 (−0.028) |
-| | color / blur / noise / color + blur + noise / `domain_gap` p = 0.8 | *pending* | |
+| | 15 % / 30 % (seed b; seed a rerunning) | – / 0.651, – / 0.643 | |
+| | 5 % | *pending (rerunning after a node failure)* | |
+| Pixel augmentation (study, 2026-11-14) | none | 0.626 / 0.629 | 0.627 |
+| | color (brightness / contrast, gamma, hue-saturation) | 0.649 / 0.641 | 0.645 |
+| | blur (Gaussian, motion, defocus) | 0.628 / 0.630 | 0.629 |
+| | noise (Gaussian, ISO) | 0.627 / 0.627 | 0.627 |
+| | color + blur + noise | 0.641 / 0.643 | 0.642 |
+| | **`domain_gap`, p = 0.5** | **0.655 / 0.655** | **0.655** |
+| | `domain_gap`, p = 0.8 | 0.641 / 0.631 | 0.636 |
+
+Augmentation reading: augmentation matters (none −0.028); only color helps alone; blur or noise
+alone = none; `domain_gap` (adds gray, tone curve, CLAHE, solarize, sun flare, compression /
+downscale) is best, but only at p = 0.5 (p = 0.8: −0.019). Box jitter: 10–20 % plateau, 0 % and
+30 % worse. Kept: `domain_gap` p = 0.5, 10 %.
 
 Reading (2026-11-08, replaces the earlier conclusions drawn from val ADD and driller ADD):
 - **Kept, clear effect** (paper ablations, 2 seeds each, seed spread ≤ 0.002 except `legacy`

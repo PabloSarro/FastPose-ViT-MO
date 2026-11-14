@@ -12,7 +12,7 @@ symmetry-aware rotation loss with translation offsets handles symmetric objects.
 synthetic (PBR) images only, \ours{} reaches an average recall of 0.668 on LM-O and 0.702 on
 YCB-V with the standard BOP detections; on YCB-V, this is the best result among PBR-only RGB
 methods that use one model for all objects. Exported to TensorRT in FP16 without any loss in accuracy, the pose stage processes 8
-objects in 14.2\,ms on an NVIDIA A100; with our own multi-class detector, the full pipeline runs
+objects in 14.1\,ms on an NVIDIA A100; with our own multi-class detector, the full pipeline runs
 at 55 frames per second for 8 objects.
 \todo{Update with T-LESS and the final latency numbers; check the word count (WACV: ~200 words).}
 \end{abstract}

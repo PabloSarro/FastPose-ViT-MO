@@ -65,13 +65,10 @@ same scale. We call this formulation \emph{size-invariant} and the original one 
 \todo{We found this target independently (code name \texttt{site}); credit PViT-6D as prior work
 and keep our contribution to the ablation on BOP (\cref{tab:abl_targets}).}
 
-\paragraph{Pixel conventions.}
-BOP boxes $[x, y, w, h]$ span the pixels $x$ to $x + w$ inclusive, and pixel $i$ is centred at
-$i + 0.5$ in the coordinates of $\K$. We convert every ground-truth and detected box to
-$[x, y, x + w + 1, y + h + 1]$ and map it to the crop with one affine warp that accounts for the
-half-pixel offsets, so that the box centre lands exactly on the crop centre (checked to
-$10^{-5}$ pixels). The crop is the square of side $\max(w, h)$ around the box, so the object keeps
-its aspect ratio; areas outside the image are filled with zeros.
+\paragraph{Crops.}
+The crop is the square of side $\max(w, h)$ around the box, resized to the network input in one
+affine warp, so the object keeps its aspect ratio; we follow the BOP pixel and box conventions
+exactly, so that the box centre lands on the crop centre (Supp.~Sec.~S1).
 
 \subsection{One network for all objects}
 \label{sec:method:conditioning}
@@ -83,7 +80,7 @@ pretrained class token and $\mathbf{e}_k \in \mathbb{R}^{768}$ a learned embeddi
 initialized at zero so that training starts from the pretrained network. All objects share the
 same transformer layers and the same linear head. Compared with one output head per object
 (selecting the nine outputs of object $k$), the token lets the object identity influence every
-layer of the transformer. It adds $768$ parameters per object (\cref{tab:size}), and the crops of
+layer of the transformer. It adds $768$ parameters per object, and the crops of
 different objects of one image form one batch at inference. We compare both options, and one model
 per object, in \cref{sec:exp:ablations}.
 
@@ -106,7 +103,7 @@ symmetric targets are obtained directly from the apparent rotation when $\mathbf
 $\mathbf{s}_j \neq 0$, the symmetric pose has its own translation, hence its own $\U$ and its own
 correction $\Delta\R$: we build the labels of every symmetric pose from the original ground truth,
 take the minimum of \cref{eq:symloss}, and use the translation label of the chosen symmetry in the
-translation loss.
+translation loss. Details on the symmetry sets are in Supp.~Sec.~S2.
 
 \subsection{Training data and augmentations}
 \label{sec:method:training}
@@ -119,24 +116,18 @@ scenes are held out for validation. Objects are sampled in balanced epochs: ever
 same number of instances per object, so frequent objects do not dominate.
 
 \paragraph{Augmentations.}
-Pixel-level augmentations are applied independently with probability 0.5 each, with
-Albumentations: brightness and contrast, gamma, hue and saturation, gray, tone curve, CLAHE,
-solarize, sun flare, Gaussian, motion and defocus blur, Gaussian and ISO noise, downscaling and
-JPEG compression (the ``domain gap'' set of~\cite{ancey2026fastposevit} without its geometric
-distortion, which would change the pose labels). The bounding box is perturbed with probability
-0.5 by up to 10\,\% of its size on each side. We do not use the in-plane rotation augmentation of
-the original method: rotating the image about its centre is a pure camera roll only if the
-principal point is at the image centre and $f_x = f_y$, which does not hold for the BOP cameras
-(on LM, it would cause label errors of about 20\,mm at 180\textdegree).
-\pending{Augmentation study (\cref{sec:exp:augmentations}) may change this paragraph.}
+We use the ``domain gap'' photometric set of~\cite{ancey2026fastposevit} (color, tone, blur,
+noise, sun flare and compression operations, each applied independently with probability 0.5),
+without its geometric distortion, which would change the pose labels, and perturb the bounding
+box with probability 0.5 by up to 10\,\% of its size on each side; \cref{tab:abl_recipe} justifies
+both. We do not use the in-plane rotation augmentation of the original method: rotating the image
+about its centre is a pure camera roll only if the principal point is at the image centre and
+$f_x = f_y$, which does not hold for the BOP cameras (Supp.~Sec.~S1).
 
 \subsection{Multi-class detector}
 \label{sec:method:detector}
 For a fully real-time pipeline, we train one LW-DETR~\cite{chen2024lwdetr} for all objects of a
 dataset on the same PBR images, with the original LW-DETR recipe (group DETR with 13 query
 groups, IoU-aware classification loss, EMA, AdamW, COCO-pretrained weights except the class head)
-and the same pixel augmentations plus horizontal flips, at $640 \times 640$ pixels. We train for
-50 epochs over the 48,000 PBR images of LM (batch size 32, learning rate $10^{-4}$, $1.5 \cdot
-10^{-4}$ for the encoder, weight decay $10^{-4}$, 500 warm-up iterations, EMA decay 0.9997,
-gradient clipping at 0.1) and keep the checkpoint with the best COCO mAP on the held-out PBR
-scenes. Training takes about 12\,h (``tiny'' variant) and 22\,h (``small'') on one A100.
+and the same pixel augmentations plus horizontal flips, at $640 \times 640$ pixels, for 50 epochs
+(training details in Supp.~Sec.~S1).

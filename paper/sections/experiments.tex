@@ -27,12 +27,13 @@ ground-truth boxes are given as an upper bound of the detector.
 \paragraph{Implementation details.}
 We use ViT-B/16 at $384 \times 384$ pixels with SWAG weights~\cite{singh2022swag}, the Muon
 optimizer~\cite{jordan2024muon} without weight decay, a learning rate decaying from
-$10^{-4}$ to $10^{-6}$ with cosine warm restarts ($T_0 = 10$ epochs, $T_\mathrm{mult} = 2$), 150
-epochs and a batch size of 32. An epoch contains 21,104 instances per object (``4$\times$''
+$8 \cdot 10^{-4}$ to $8 \cdot 10^{-6}$ with cosine warm restarts ($T_0 = 10$ epochs,
+$T_\mathrm{mult} = 2$), 150 epochs and a batch size of 32. An epoch contains 21,104 instances per object (``4$\times$''
 budget: 168,832 per epoch on LM-O, 443,184 on YCB-V); ablations use half of it (``2$\times$'').
 The final LM-O model trains in about 34\,h on one NVIDIA A100. We report the weights of the last
 epoch, which give the same AR as the best validation checkpoint (0.6685 vs.\ 0.6686 on LM-O,
-0.7021 for both on YCB-V). Every ablation is trained with two random seeds.
+0.7021 for both on YCB-V). Every ablation is trained with two random seeds. The complete list of
+hyperparameters is in Supp.~Sec.~S1.
 
 \paragraph{Training losses.}
 The total loss is the sum of the relative translation loss on $\U$ (\cref{sec:method:translation})
@@ -145,8 +146,9 @@ the release of code and weights.}
 \end{table}
 
 \paragraph{T-LESS.}
-\pending{T-LESS results (\texttt{tless-m10-tok4x\{,2\}}, running): AR with default detections and
-with GT boxes, comparison table as for LM-O and YCB-V.}
+\pending{T-LESS results (\texttt{tless-m10-tok4x\{,2\}-002}, epochs 128 / 104 of 150): AR with
+default detections and with GT boxes; to save space, the T-LESS comparison will be merged into
+\cref{tab:ycbv} as a second block.}
 
 \subsection{Ablation Studies}
 \label{sec:exp:ablations}
@@ -218,100 +220,67 @@ model (0.668), with eight times as many parameters and no batching across object
   \label{tab:abl_objects}
 \end{table}
 
-\paragraph{Training compute.}
-\Cref{tab:abl_budget} varies the number of samples per epoch at a fixed number of epochs. More
-compute helps on both datasets: on LM-O, AR rises from 0.639 to 0.661 between the 1$\times$ and
-4$\times$ budgets (per-object heads); on YCB-V, with 21 objects, 4$\times$ beats 2$\times$ by
-0.013 AR, and both 4$\times$ seeds are above both 2$\times$ seeds. We use 4$\times$ for the final
-models and 2$\times$ for the ablations.
+\paragraph{Training recipe.}
+\Cref{tab:abl_recipe} summarizes the remaining choices; the full tables, with the three AR
+components, are in Supp.~Sec.~S3. \emph{Training budget}: more samples per epoch help on both
+datasets, more so with more objects (YCB-V, 21 objects: +0.013 AR from 2$\times$ to 4$\times$, both
+4$\times$ seeds above both 2$\times$ seeds); we use 4$\times$ for the final models and 2$\times$ for
+the ablations. \emph{Bounding-box perturbation}: training without it costs 0.030 AR, and 10--20\,\%
+per side is a plateau, and 30\,\% is already worse, consistent with the original study on
+SPEED~\cite{ancey2026fastposevit}.
+\pending{5\,\% (both seeds), 15\,\% and 30\,\% (seed a): jobs running.} \emph{Pixel augmentation}:
+photometric augmentation is needed to cross the gap from PBR to real images (no augmentation:
+$-0.028$ AR, the glue loses the most, 0.67 $\rightarrow$ 0.53). Color changes are the only group that
+helps on its own (+0.018 over none); blur or sensor noise alone do not change the AR, and color,
+blur and noise together equal color alone (0.642). The ``domain gap'' set, whose additional
+operations are grayscale, tone curve, CLAHE, solarization, sun flare, downscaling and compression
+(Supp.~Sec.~S1), is clearly best (0.655), but only at the default probability: applying every operation with $p = 0.8$
+instead of 0.5 costs 0.019 AR. Other choices had no measurable effect on the test AR (the
+symmetry-aware loss, which is needed for symmetries with offsets, the training crop and a
+decoupled translation loss; Supp.~Sec.~S3).
 
 \begin{table}[t]
   \centering
+  \setlength{\tabcolsep}{4pt}
   \small
-  \begin{tabular}{llccc}
+  \begin{tabular}{llcc}
     \toprule
-    Dataset & Conditioning & 1$\times$ & 2$\times$ & 4$\times$ \\
+    Component & Setting & AR (seed a / b)$\uparrow$ & Mean \\
     \midrule
-    LM-O & heads & 0.641 / 0.637 & 0.650 / 0.650 & 0.661 \\
-    LM-O & token & & 0.659 / 0.651 & 0.669 / 0.664 \\
-    YCB-V & token & & 0.681 / 0.689 & 0.694 / 0.702 \\
+    \multirow{2}{*}{Budget, LM-O} & 2$\times$ & 0.659 / 0.651 & 0.655 \\
+     & \textbf{4$\times$} & \textbf{0.669 / 0.664} & \textbf{0.666} \\
+    \multirow{2}{*}{Budget, YCB-V} & 2$\times$ & 0.681 / 0.689 & 0.685 \\
+     & \textbf{4$\times$} & \textbf{0.694 / 0.702} & \textbf{0.698} \\
+    \midrule
+    \multirow{6}{*}{Box perturbation} & 0\,\% & 0.625 / 0.625 & 0.625 \\
+     & 5\,\% & \pending{} & \\
+     & \textbf{10\,\%} & \textbf{0.655 / 0.655} & \textbf{0.655} \\
+     & 15\,\% & \pending{} / 0.651 & \\
+     & 20\,\% & 0.650 / 0.651 & 0.650 \\
+     & 30\,\% & \pending{} / 0.643 & \\
+    \midrule
+    \multirow{7}{*}{Pixel augmentation} & none & 0.626 / 0.629 & 0.627 \\
+     & color & 0.649 / 0.641 & 0.645 \\
+     & blur & 0.628 / 0.630 & 0.629 \\
+     & noise & 0.627 / 0.627 & 0.627 \\
+     & color + blur + noise & 0.641 / 0.643 & 0.642 \\
+     & \textbf{domain gap, $p = 0.5$} & \textbf{0.655 / 0.655} & \textbf{0.655} \\
+     & domain gap, $p = 0.8$ & 0.641 / 0.631 & 0.636 \\
     \bottomrule
   \end{tabular}
-  \caption{\textbf{Training budget}, test AR with default detections (seed a / b). 1$\times$ =
-  5,276 samples per object and epoch, 150 epochs. The final YCB-V model (0.702) was selected on
-  the PBR validation split.}
-  \label{tab:abl_budget}
-\end{table}
-
-\paragraph{Components without a measurable effect.}
-Several choices did not change the test AR beyond the seed spread: the choice between the
-``domain gap'' augmentation and a standard photometric set (0.639 vs.\ 0.637; using no
-augmentation at all does hurt, \cref{tab:abl_aug}), the symmetry-aware loss (0.655
-both; it is needed for symmetries with offsets on YCB-V, \cref{sec:method:symmetry}), the training
-crop (visible box 0.655, amodal box 0.648, random mix 0.652), and a decoupled translation loss. We
-report them for completeness. \todo{Decide which of these go to the supplementary material.}
-
-\paragraph{Bounding-box perturbation.}
-\Cref{tab:abl_bbox} shows that perturbing the training boxes is important: without it, the AR drops
-by 0.030. Perturbations of 10\,\% and 20\,\% per side give the same AR.
-\pending{5\,\%, 15\,\% and 30\,\% (jobs queued).}
-
-\begin{table}[t]
-  \centering
-  \small
-  \begin{tabular}{lcc}
-    \toprule
-    Perturbation per side & AR (seed a / b)$\uparrow$ & Mean \\
-    \midrule
-    0\,\% & 0.625 / 0.625 & 0.625 \\
-    5\,\% & \pending{} & \\
-    \textbf{10\,\%} & \textbf{0.655 / 0.655} & \textbf{0.655} \\
-    15\,\% & \pending{} & \\
-    20\,\% & 0.650 / 0.651 & 0.650 \\
-    30\,\% & \pending{} & \\
-    \bottomrule
-  \end{tabular}
-  \caption{\textbf{Bounding-box perturbation during training}, LM-O test AR with default
-  detections, ablation baseline.}
-  \label{tab:abl_bbox}
-\end{table}
-
-\paragraph{Pixel augmentations.}
-\label{sec:exp:augmentations}
-Photometric augmentation is needed to cross the gap from PBR training images to real test
-images: without it, the AR drops by 0.028 (\cref{tab:abl_aug}), with the largest losses on the
-glue (0.67 $\rightarrow$ 0.53) and the can (0.80 $\rightarrow$ 0.75). Which operations matter
-is less clear: the ``domain gap'' set and a standard photometric set give the same AR (0.639 vs.\
-0.637 with per-object heads, 1$\times$). \pending{Color, blur and noise alone, their
-combination, and ``domain gap'' with $p = 0.8$ (jobs running).}
-
-\begin{table}[t]
-  \centering
-  \small
-  \begin{tabular}{lcc}
-    \toprule
-    Pixel augmentation & AR (seed a / b)$\uparrow$ & Mean \\
-    \midrule
-    none & 0.626 / 0.629 & 0.628 \\
-    color only & \pending{} & \\
-    blur only & \pending{} & \\
-    noise only & \pending{} & \\
-    color + blur + noise & \pending{} & \\
-    \textbf{domain gap ($p = 0.5$)} & \textbf{0.655 / 0.655} & \textbf{0.655} \\
-    domain gap ($p = 0.8$) & \pending{} & \\
-    \bottomrule
-  \end{tabular}
-  \caption{\textbf{Pixel augmentations}, LM-O test AR with default detections, ablation
-  baseline. Each operation is applied independently with probability $p$.}
-  \label{tab:abl_aug}
+  \caption{\textbf{Training recipe}, LM-O (and YCB-V) test AR with default detections; each block
+  changes one setting of the ablation baseline (2$\times$, bold = kept). The budget rows use the
+  class token; 1$\times$ = 5,276 samples per object and epoch. Pixel-augmentation operations are
+  applied independently with probability $p$.}
+  \label{tab:abl_recipe}
 \end{table}
 
 \paragraph{Detection quality.}
 With ground-truth boxes, the AR rises from 0.668 to 0.689 on LM-O and from 0.702 to 0.707 on
 YCB-V: the detector accounts for a small part of the remaining error. On LM-O, the eggbox, our
-weakest object (0.36 AR), also has the worst detections: 27\,\% of its default boxes overlap the
-ground truth by less than 0.5 IoU (6.3\,\% over all objects). Per-object results are in
-\cref{sec:appendix:perobject}.
+weakest object (0.36 AR), also has the worst detections (27\,\% of its boxes overlap the ground
+truth by less than 0.5 IoU). Detection metrics and per-object results are in Supp.~Sec.~S4 and
+S7.
 
 \subsection{Model Compression and Deployment}
 \label{sec:exp:deployment}
@@ -320,35 +289,18 @@ ground truth by less than 0.5 IoU (6.3\,\% over all objects). Per-object results
 We export the network to ONNX with a dynamic batch dimension (one crop per detected object, plus
 the object index of each crop) and build a TensorRT engine with one optimization profile for 1 to
 16 crops. The ONNX outputs match PyTorch to $3 \cdot 10^{-6}$, and the FP16 engine changes the AR
-by at most 0.0004 (LM-O 0.6685 for both, YCB-V 0.7017 vs.\ 0.7021). \Cref{tab:size} gives the size
-of the network: sharing it across objects costs fewer than 0.05\,M parameters.
-
-\begin{table}[t]
-  \centering
-  \small
-  \begin{tabular}{lccc}
-    \toprule
-    Input & Objects & Params [M] & GFLOPs / crop \\
-    \midrule
-    224 px & 8 / 21 & 85.81 / 85.82 & 17.6 \\
-    384 px & 8 / 21 & 86.10 / 86.11 & 55.5 \\
-    \bottomrule
-  \end{tabular}
-  \caption{\textbf{Network size}, with per-object class tokens. GFLOPs counted as multiply-adds,
-  as in~\cite{ancey2026fastposevit}. TensorRT FP16 engine: 167\,MB.}
-  \label{tab:size}
-\end{table}
+by at most 0.0004 (LM-O 0.6685 for both, YCB-V 0.7017 vs.\ 0.7021). Sharing the network costs
+fewer than 0.05\,M parameters over the single-object model (86.1\,M, 55.5\,GFLOPs per crop at
+384\,px; Supp.~Sec.~S5).
 
 \paragraph{Latency.}
 \Cref{tab:latency} reports the latency per image as a function of the number of objects $N$, on one
 NVIDIA A100 (CUDA 13, TensorRT 10.14, PyTorch 2.9). The \emph{pipeline} time starts from the decoded
 image and the boxes and ends with the $N$ absolute poses: crop and normalize every instance, run
-the network once on all crops, and recover $\R$ and $\T$. Two engineering changes made the pipeline
-2--3 times faster than a direct port of the single-object code: normalizing the crops on the GPU
-instead of with Albumentations on the CPU (2.1\,ms per crop), and recovering the poses on the CPU
-in one vectorized step instead of many small GPU operations. With TensorRT FP16, the pose stage
-processes 8 objects in 14.2\,ms (70 FPS), and the latency grows linearly with $N$
-(\cref{fig:latency}).
+the network once on all crops, and recover $\R$ and $\T$. Normalizing the crops on the GPU and
+recovering all poses on the CPU in one vectorized step made this pipeline about 3 times faster than
+a direct port of the single-object code (Supp.~Sec.~S5). With TensorRT FP16, the pose stage
+processes 8 objects in 14.1\,ms (71 FPS), and its latency grows linearly with $N$.
 
 \begin{table}[t]
   \centering
@@ -358,10 +310,10 @@ processes 8 objects in 14.2\,ms (70 FPS), and the latency grows linearly with $N
     \toprule
     ms per image & $N{=}1$ & $N{=}4$ & $N{=}8$ & $N{=}16$ \\
     \midrule
-    Network, PyTorch FP16 & 7.2 & 7.6 & 8.7 & 15.9 \\
+    Network, PyTorch FP16 & 7.0 & 7.5 & 8.6 & 15.7 \\
     Network, TensorRT FP16 & \textbf{1.8} & \textbf{3.5} & \textbf{5.7} & \textbf{11.0} \\
-    Pipeline, PyTorch FP16 & 10.8 & 13.5 & 17.0 & 29.5 \\
-    Pipeline, TensorRT FP16 & \textbf{5.3} & \textbf{9.3} & \textbf{14.2} & \textbf{24.0} \\
+    Pipeline, PyTorch FP16 & 10.6 & 13.4 & 17.0 & 29.1 \\
+    Pipeline, TensorRT FP16 & \textbf{5.3} & \textbf{9.4} & \textbf{14.1} & \textbf{24.1} \\
     Pipeline, TensorRT FP16, 224 px & 4.3 & 5.8 & 7.1 & 10.6 \\
     \midrule
     + default detector (81.6\,ms) [FPS] & 11.5 & 11.0 & 10.4 & 9.5 \\
@@ -377,28 +329,16 @@ processes 8 objects in 14.2\,ms (70 FPS), and the latency grows linearly with $N
   \label{tab:latency}
 \end{table}
 
-\begin{figure}[t]
-  \centering
-  \includegraphics[width=\linewidth]{figures/latency.pdf}
-  \caption{\textbf{Latency per image vs.\ number of objects} (pose pipeline from the decoded
-  image to $N$ poses; LM-O model, one A100). With TensorRT FP16 and our detector, the full
-  method stays above 30 FPS up to 16 objects.}
-  \label{fig:latency}
-\end{figure}
-
 \paragraph{Detector.}
 With the default detector (about 80\,ms per image as reported by its authors), the detector
 dominates the run time and the whole method runs at about 10 FPS. Our multi-class LW-DETR
 (\cref{sec:method:detector}) reaches a COCO mAP of 0.656 on the LM-O test targets, on par with
 the default detections (0.657), and gives 0.654 AR with our pose model (0.645--0.650 with the
-smaller ``tiny'' variant). The loss of 0.014 AR comes from the 2D alignment (AR$_\mathrm{MSPD}$
-0.848 vs.\ 0.873; VSD and MSSD drop by 0.005 and 0.013) and mostly from the smallest object: 11\,\%
-of our ape boxes overlap the ground truth by less than 0.5 IoU (1.7\,\% for the default
-detector), and the ape loses 0.05 AR (0.696 $\rightarrow$ 0.645), while the duck and the eggbox
-gain slightly. Exporting it to TensorRT required one change: TensorRT 10.14's
-\texttt{GridSample} returns wrong values for the deformable attention of LW-DETR (mAP 0.633 even
-in FP32), so we implement the bilinear sampling with gather operations, which gives the same
-output as PyTorch. The FP16 engine runs in 4.2\,ms per image on average (median 3.3\,ms,
+smaller ``tiny'' variant). The 0.014 AR it loses is in the 2D alignment
+(AR$_\mathrm{MSPD}$ 0.848 vs.\ 0.873), mostly on the smallest object, the ape (Supp.~Sec.~S4).
+For its TensorRT export, we replace the \texttt{GridSample} operation of the deformable attention,
+which TensorRT 10.14 computes incorrectly, by an equivalent gather-based bilinear sampling
+(Supp.~Sec.~S5). The FP16 engine runs in 4.2\,ms per image on average (median 3.3\,ms,
 including resizing, normalization and top-$k$ selection) with the same mAP (0.657), and the full
 pipeline reaches 55 FPS for 8 objects at 384 px (0.654 AR), or 88 FPS at 224 px, where the
 backbone costs 0.023 AR (0.643 vs.\ 0.666, two seeds each).
@@ -437,5 +377,6 @@ appearance is ambiguous, also gets a wrong rotation. Second, a systematic depth 
 YCB-V images: 89\,\% of the YCB-V instances are estimated too far (median +20\,mm), against 48\,\%
 on LM-O (median $-1$\,mm). The real objects appear smaller in the images than their PBR renders
 at the same depth, so a network trained on PBR images only overestimates their depth; the
-weakest YCB-V objects (wood block 0.39 AR, scissors 0.41) are the most affected. Training with
+weakest YCB-V objects (wood block 0.39 AR, scissors 0.41) are the most affected (distribution in
+Supp.~Sec.~S6). Training with
 the real YCB-V images should remove this bias, as it does for the methods trained on them.

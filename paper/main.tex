@@ -7,47 +7,19 @@
 % ieee_fullname.bst) uploaded next to this file, the draft compiles in the WACV review format;
 % without them it falls back to a plain two-column article so that it compiles anywhere.
 %
-% Status (2026-11-12):
-%   done     LM-O, YCB-V, ablations (incl. paper section 3: rotation target, pre-training, depth
-%            target, bbox jitter 0 / 20 %), deployment and latency, own detector, figures
-%            (paper/figures, made by vis/paper_*.py), verified leaderboard and bibliography.
-%   running  T-LESS (tless-m10-tok4x{,2}-002); augmentation study (color, blur, noise, simple,
-%            strong; "none" done: 0.626 / 0.629); bbox jitter 5 / 15 / 30 %.
+% Two documents share preamble.tex and references.bib: main.tex (the paper) and
+% supplementary.tex (the supplementary material, a separate PDF; the paper refers to its sections
+% as "Supp. Sec. S1-S8").
+%
+% Status (2026-11-14):
+%   done     LM-O, YCB-V, all ablations except bbox jitter 5 / 15 / 30 % (seed a), augmentation
+%            study, deployment and latency, own detector, figures (paper/figures, made by
+%            vis/paper_*.py), verified leaderboard and bibliography, supplementary split.
+%   running  T-LESS (tless-m10-tok4x{,2}-002, epochs 128 / 104 of 150); bbox jitter
+%            lmo-m10-bbox{5,52,15,30}-003 (relaunched after a node failure).
 %   open     positioning vs PViT-6D / PoseDETR (to agree with the supervisor), venue and page
 %            limit, authors, Jetson latency. Search for \pending and \todo.
-\documentclass[10pt,twocolumn,letterpaper]{article}
-
-\IfFileExists{wacv.sty}{%
-  \usepackage[review]{wacv}
-  \def\paperID{*****}
-  \def\confName{WACV}
-  \def\confYear{2027}
-}{%
-  \usepackage[margin=0.75in,columnsep=0.25in]{geometry}
-  \usepackage{times}
-}
-
-\usepackage{amsmath,amssymb,bm}
-\usepackage{graphicx}
-\usepackage{booktabs}
-\usepackage{multirow}
-\usepackage{xcolor}
-\usepackage[hidelinks]{hyperref}
-\usepackage[capitalize]{cleveref}
-
-% Draft helpers: \pending for results still running, \todo for things to write or check.
-\newcommand{\pending}[1]{\textcolor{orange}{[\textbf{Pending:} #1]}}
-\newcommand{\todo}[1]{\textcolor{red}{[\textbf{TODO:} #1]}}
-\newcommand{\figplaceholder}[2]{\fbox{\parbox[c][#1][c]{0.95\linewidth}{\centering\small #2}}}
-
-% Notation (\eg is defined by the WACV style; fallback otherwise)
-\providecommand{\eg}{e.g.\@\xspace}
-\usepackage{xspace}
-\newcommand{\R}{\mathbf{R}}
-\newcommand{\T}{\mathbf{T}}
-\newcommand{\K}{\mathbf{K}}
-\newcommand{\U}{\mathbf{U}}
-\newcommand{\ours}{FastPose-ViT-MO}
+\input{preamble}
 
 \title{\ours: Real-Time Multi-Object 6D Pose Estimation by Direct Regression}
 
@@ -72,8 +44,5 @@
   \IfFileExists{ieee_fullname.bst}{\bibliographystyle{ieee_fullname}}{\bibliographystyle{ieeetr}}}
 \bibliography{references}
 }
-
-\clearpage
-\input{sections/appendix}
 
 \end{document}

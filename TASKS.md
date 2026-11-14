@@ -1033,9 +1033,12 @@ time). Our errors are mostly in depth (VSD / MSSD) and on heavily occluded objec
   - [ ] A3 `ctx`: image instead of black bands, no margin (isolates the padding).
   - [ ] A4 `occl`: synthetic occlusion, 1-4 random rectangles (10-30 % of the side) erased, p = 0.5.
   - [ ] A5 `tlw`: translation loss weighted × 2 (depth emphasis).
-- [ ] **B4** (evaluation only, `dev`): average the poses of the two seed models (`tok4x` + `tok4x2`)
-  at test time, symmetry-aware (align seed b to the closest symmetric pose of seed a, mean of t,
-  rotation mean projected on SO(3)); LM-O and YCB-V. Doubles the pose time.
+- [x] **B4** (evaluation only, `dev`, `scripts/pose_ensemble.py`): average the poses of the two seed
+  models (`tok4x` + `tok4x2`) at test time, symmetry-aware (align seed b to the closest symmetric
+  pose of seed a, mean of t, rotation mean projected on SO(3)). *Done 2026-11-14
+  (`$NAS_HOME/results/m11/ensemble/`):* LM-O **0.6689** (VSD 0.491, MSSD 0.641, MSPD 0.874) vs seeds
+  0.669 / 0.664; YCB-V **0.7048** (0.596 / 0.680 / 0.838) vs 0.694 / 0.702. +0.003 / +0.007 over the
+  seed mean for twice the pose time: **not kept**.
 - [ ] **Phase B** (after phase A, or alongside if the queue is short):
   - [ ] B1 ViT-L/16 at 512 px (SWAG E2E weights in torchvision), 2×; ~3-4× slower to train and run.
   - [ ] B2 8× budget on LM-O (2× → 4× gave +0.011), ~68 h per run.
@@ -1116,6 +1119,7 @@ time). Our errors are mostly in depth (VSD / MSSD) and on heavily occluded objec
 | 2026-11-12 | `outputs/FastPose-ViT/runs/lmo-m10-augnone{,2}-002`, `results/paper/section3/per_object_augnone*.md` | **LM-O test**, default detections | Augmentation study: no pixel augmentation (baseline `domain_gap` 0.655 / 0.655) | AR **0.626 / 0.629** (−0.028) | Glue −0.14, can −0.05; other aug variants running |
 | 2026-11-14 | `outputs/FastPose-ViT/runs/lmo-m10-aug{color,blur,noise,simple,strong}{,2}-002` | **LM-O test**, default detections | Augmentation study, baseline symtok2x (`domain_gap` p = 0.5: 0.655 / 0.655) | color 0.649 / 0.641, blur 0.628 / 0.630, noise 0.627 / 0.627, color + blur + noise 0.641 / 0.643, `domain_gap` p = 0.8 0.641 / 0.631 | Keep `domain_gap` p = 0.5 |
 | 2026-11-14 | `outputs/FastPose-ViT/runs/lmo-m10-bbox{152,302}-002` | **LM-O test**, default detections | Box jitter 15 / 30 %, seed b | 0.651 / 0.643 | `bbox{5,52,15,30}-002` failed (node gpu028, 7 pods "ContainerStatusUnknown"), relaunched as `-003` |
+| 2026-11-14 | `results/m11/ensemble/{lmo,ycbv}` | **LM-O / YCB-V test**, default detections | M11 B4: pose average of the two seed models (`scripts/pose_ensemble.py`) | LM-O 0.6689, YCB-V 0.7048 | Seeds 0.669 / 0.664 and 0.694 / 0.702: not worth 2× pose time |
 (Paths relative to `$NAS_HOME`.)
 
 ---

@@ -134,6 +134,10 @@ Pretrained HF weights `weights/vit_b_16_384.pth` (ViT-B/16 at 384 px), evaluated
 
 ---
 
+- **Verification audit 2026-11-14, W10 (maintainability):** `TASKS.md` has two lines over 3,000 characters (§10 item 7, one §1 row) and `src/train.py` is 1,495 lines.
+  - [ ] Split the overlong `TASKS.md` lines into sub-bullets / a short history pointer without losing content.
+  - [ ] Move the argument parser of `src/train.py` into `src/train_args.py` (pure move; tests + smoke run must be identical).
+
 ## 4. Agent setup
 
 - **Decided 2026-10-20: `AGENTS.md` is the only agent-instructions file; no `CLAUDE.md` is needed.**
@@ -141,6 +145,11 @@ Pretrained HF weights `weights/vit_b_16_384.pth` (ViT-B/16 at 384 px), evaluated
 - **Session routine:** read §1 and §10 → work → update §1, §9, §10 → update AGENTS.md project notes if a convention changed.
 
 ---
+
+- **Verification audit 2026-11-14, W9 (security, low risk):** the GitHub token is plain text in `~/.git-credentials` (owner-only file) and a classic `repo` token covers every repository; checkpoints load with full pickle (`torch.load(weights_only=False)`), including the third-party LW-DETR COCO weights.
+  - [ ] Load untrusted / downloaded files with `weights_only=True` (COCO weights: check they load, record the sha256), use a small checkpoint loader that tries `weights_only=True` first.
+  - [ ] Token: user action, replace the classic token by a fine-grained one limited to `PabloSarro/FastPose-ViT-MO` (Contents read / write) and a short expiry; steps given in the chat, tracked here.
+  - [ ] Check that no secret is tracked in the repository (grep).
 
 ## 5. Data inventory and known issues
 
@@ -982,6 +991,10 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
   - **Results 2026-11-09 (jobs done, deleted):** `detsmall` LM-O test mAP 0.656, 16.8 ms per image, pose AR **0.654** (tiny 0.645 / 0.650, default 0.668). 224 px `tok4x` / `tok4x2` (`lmo-m10-r224tok4x{,2}-001`, LM-O test with default detections, last.pt): AR **0.643 / 0.643** vs 384 px 0.669 / 0.664 (−0.023; pipeline 7.6 vs 14.2 ms at 8 objects). Section-3 `absrot` / `absrot2`: AR **0.546 / 0.548** vs baseline symtok2x 0.655 / 0.655 (apparent rotation +0.11). Detector TensorRT engine (2026-11-09, `optimization/bop_det_trt.py`, `$NAS_HOME/results/m9/det-small-trt/`): TensorRT 10.14 GridSample is wrong for the deformable attention (engine mAP 0.633 even in fp32), fixed with a gather sampler (`GATHER_SAMPLER`, test added): fp16 engine mAP 0.657 = PyTorch, **3.3 ms** per image; full TensorRT pipeline (our detector + pose engine) **LM-O AR 0.654**; end to end 17.5 ms for 8 objects (57 FPS), summed from separate timings. `docs/BOP.md` updated. **Next:** re-run the joint latency (`optimization/bop_latency.py --detections $NAS_HOME/results/m9/det-small-trt/lwdetr_trt_fp16_lmo-test.json`, interrupted), monitor the 8 pending section-3 ablations + 2 T-LESS jobs (all preempted/pending on 2026-11-09 15:30), release the augmentation jobs when the queue moves. **2026-11-10 00:50:** all 10 jobs Pending since 2026-11-09 08:00–16:50 ("no nodes with enough CPU cores" for 16 CPUs); user: wait until the morning, then decide (option: relaunch `scratch`/`scratch2` with CPUS=8 under new names, copying `last.pt` into the new run folder to resume). **2026-11-10 12:05:** `bbox0/02/20/202`, `scratch/scratch2` done (exit 0, deleted; results not analysed yet, user); `legacy`, `legacy2`, `tless tok4x` running, `tless tok4x2` pending. **18 augmentation/jitter jobs queued** (`lmo-m10-{augnone,augcolor,augblur,augnoise,augsimple,augstrong,bbox5,bbox15,bbox30}{,2}-002`, user). **Section-3 ablations done 2026-11-11 (LM-O test AR, default detections, last.pt, seeds 0 / 1; baseline symtok2x 0.655 / 0.655):** absrot 0.546 / 0.548, scratch 0.516 / 0.517, legacy 0.610 / 0.625, bbox0 0.625 / 0.625, bbox20 0.650 / 0.651. Every kept choice confirmed. Per-object tables `$NAS_HOME/results/paper/section3/`; `docs/BOP.md` §2. **Paper work 2026-11-11:** LaTeX draft `paper/` (Overleaf-ready); joint latency re-measured (55 FPS for 8 objects with our detector, `results/m9/det-small-trt/latency_{384,224}/`); figures `paper/figures/` (`vis/paper_{latency,qualitative,teaser}.py`); leaderboard and bibliography verified. **Important finding:** the LM-O / YCB-V comparison tables were incomplete. On LM-O, PBR-only RGB methods above us include PViT-6D (0.740, ViT direct regression, one model), PoseDETR (0.695, single stage, 12 ms) and RACE-6D (0.683); on YCB-V (PBR only) we are 3rd and first among single-model methods. PViT-6D (arXiv 2311.17504) already published the `site` depth (SIZP) and a shared class-conditioned model: the paper's contributions and positioning must be agreed with the supervisor (TODOs in the draft). YCB-V depth bias quantified: 89 % of instances too far (median +20 mm) vs 48 % on LM-O. **2026-11-12 07:30:** `augnone`/`augnone2` done (AR 0.626 / 0.629 vs 0.655: pixel augmentation matters, −0.028; jobs deleted). Running: `augblur{,2}` 109 / 101, `augcolor{,2}` 133 / 110, `augnoise{,2}` 86 / 75, `augsimple` 66, `bbox5` 21, T-LESS `tok4x` 49 / `tok4x2` 34 (of 150); pending (resume from last.pt): `augsimple2` 51, `augstrong{,2}` 32 / 22, `bbox15{,2}` 11 / 8, `bbox30{,2}` 3 / 0, `bbox52` 18. **2026-11-12 (paper):** own-detector AR components (small, TensorRT: VSD 0.486, MSSD 0.628, MSPD 0.848, 20 ms per image; loss vs default mostly the ape's boxes) in `docs/BOP.md` and the paper; draft gained the "where we lose" paragraph and the PViT-6D comparison in related work; classic references spot-checked.
 - **Exit:** latency table with the real-time claim quantified.
 
+- **Verification audit 2026-11-14 (user request; weaknesses W1–W10, jobs prefixed `m12`):** W5 and W6 here, W1/W3/W4/W8 in M10, W2/W7 in M11, W9 in §4, W10 in §3.
+  - [ ] **W5, latency is narrower than it sounds** (one A100, one repeated test image, image decoding excluded, detector and pose timed separately and added; the default detector's 81.6 ms is its authors' figure): measure a true end-to-end loop, from the encoded image file to N poses (decode, detector engine, crops, pose engine, recovery, optionally the RGB-D correction), over the whole LM-O test set, per image and vs the number of detections. New `optimization/bop_e2e_latency.py`; paper / `docs/BOP.md` rows use it.
+  - [ ] **W6, the newer scripts have no tests** (`scripts/depth_correction.py`, `scripts/pose_ensemble.py`, `object_detector/bop_detector.py` helpers, `scripts/bop_per_object_ar.py`): add unit tests (known geometry for the depth shift, symmetric alignment for the ensemble, EMA / lr schedule / mAP for the detector).
+
 ### M10 — Write-up (W13–14), T-LESS as a stretch
 - [x] *Added 2026-11-07 (user):* **one model per object** (e.g. GDRNPP's "MModel" entries: a separate network per object, the one for the detected object is used at inference) vs our shared model. Possibly a small gain.
   - Existing evidence: on LM-O test the shared `tok4x` already reaches driller ADD 0.805 vs the single-object B1 0.77 (B1 with `domain_gap`: 0.815), so for the driller per-object ≈ shared. The reference GDRNPP-PBR-RGB-MModel (§2.2: LM-O 71.3, YCB-V 71.3; verify) uses per-object models.
@@ -1015,6 +1028,12 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 **GPU budget (A100, one job at a time):** about 50–65 GPU-h for the core path, 85–100 with stretch goals. Long runs are chained with resume across 12 h jobs. Multi-GPU (DDP) is planned in M6; before that every training run uses 1 GPU.
 
 ---
+
+- **Verification audit 2026-11-14, items in M10 (W1, W3, W4, W8):**
+  - [ ] **W1, the ablation baseline was trained on older code** (`symtok2x`, commit c0fd04c, 2026-10-26; later ablations ran 12 training-relevant commits newer: optimizer speed-ups, sun flare, symmetry offsets). Small effects (jitter 20 %, color −0.010) and the M11 gains (0.005–0.02) are not safe against that. Re-train the baseline on current code, 2 seeds: `scripts/m10_ablations.sh base`, jobs `lmo-m12-base{,2}-001`; the ablation tables use the new baseline for rows trained on current code.
+  - [ ] **W3, headline numbers are the better of two seeds** (LM-O 0.669, mean 0.666; YCB-V 0.702, mean 0.698; the seed was chosen on validation): report mean (and spread) next to the chosen seed everywhere, and state the selection rule (validation score, not test) in the paper and `docs/BOP.md`.
+  - [ ] **W4, single-seed claims** (8 single-object models 0.672; small detector 0.654; 4× heads 0.661; jitter 15 / 30 % seed a still running): second seed for the single-object models (`scripts/m10_single.sh OBJ 1`, jobs `lmo-m12-obj<ID>s1-001`) and for the small detector (`scripts/m9_det.sh small 1`, job `lmo-m12-detsmall2-001`); the 4× heads row (old M4 code, not used in the main paper) is replaced by the 2-seed token budget rows and kept in the supplementary labelled as one seed.
+  - [ ] **W8, final weights exist only in run folders** on the scratch NAS (93 % full, backup status unknown): export the final checkpoints (LM-O `tok4x` / `tok4x2`, YCB-V `tok4x` / `tok4x2`, T-LESS when done, detector, 224 px) as compact weights-only files with a config JSON and sha256 (`scripts/export_release_weights.py`) into `$NAS_HOME/weights/final/` (also the base of the release); an off-NAS copy / Hugging Face upload needs the user's decision and token.
 
 ### M11 — Improve first (started 2026-11-14, user: positioning option (c))
 
@@ -1064,6 +1083,10 @@ time). Our errors are mostly in depth (VSD / MSSD) and on heavily occluded objec
     image over the test set).
 - [ ] Final: combine the phase A / B winners into new 4× runs (LM-O ~34 h, YCB-V ~58 h), then
   update the paper (main + supplementary) and decide the positioning with the supervisor.
+
+- **Verification audit 2026-11-14, items in M11 (W2, W7):**
+  - [ ] **W2, M11 choices would be made on LM-O test** (the ablation script only evaluates on test): choose on validation. Add a validation step (`eval_val/`: LM real val + PBR val, GT boxes, own score = (AR_MSSD + AR_MSPD) / 2 and ADD-S) to `scripts/m10_ablations.sh` and a script for finished runs (`scripts/m12_valeval.sh`), run it on the existing ablation models first to check that validation ranks them like test does; decide phase A / B only on validation, report test once.
+  - [ ] **W7, RGB-D settings (bands 20 / 10 / 5 %, 50 points, 4-px cells) were set a priori, not validated**: sensitivity analysis on LM real val (`scripts/depth_correction_tune.py`: bands, iterations, minimum points, cell size, visibility threshold); keep the defaults or adopt better ones chosen on validation, then re-run the (cheap) RGB-D test evaluations if the settings change.
 
 ## 8. Open decisions and questions
 

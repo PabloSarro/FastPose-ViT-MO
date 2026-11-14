@@ -20,13 +20,18 @@ SPE4=443184  # 21 objects x 21,104 (LM-O 4x per object)
 DET=$(ls "$NAS_HOME"/datasets/bop_detections/default_task1/bop23_default_detections_for_task1/gdrnppdet-pbr/gdrnppdet-pbr_ycbv-test_*.json)
 CSV=fastposevitmo_ycbv-test.csv
 
-declare -A SEED=([tok4x]=0 [tok4x2]=1 [tok2x]=0 [tok2x2]=1)
-declare -A SPE=([tok4x]=$SPE4 [tok4x2]=$SPE4 [tok2x]=$((SPE4 / 2)) [tok2x2]=$((SPE4 / 2)))
+# heads2x / heads2x2 (M10, 2026-11-14): per-object heads instead of the class token, at 2x, to
+# repeat the LM-O conditioning ablation on 21 objects (compare with tok2x / tok2x2).
+declare -A SEED=([tok4x]=0 [tok4x2]=1 [tok2x]=0 [tok2x2]=1 [heads2x]=0 [heads2x2]=1)
+declare -A SPE=([tok4x]=$SPE4 [tok4x2]=$SPE4 [tok2x]=$((SPE4 / 2)) [tok2x2]=$((SPE4 / 2))
+                [heads2x]=$((SPE4 / 2)) [heads2x2]=$((SPE4 / 2)))
+declare -A COND=([heads2x]=heads [heads2x2]=heads)
 (( $# )) || { echo "usage: $0 VARIANT... (${!SEED[*]})"; exit 5; }
 
 for v in "$@"; do
     [[ -n ${SEED[$v]:-} ]] || { echo "unknown variant $v"; exit 5; }
     out=$RUN_DIR/$v
+    cond=${COND[$v]:-token}
     mkdir -p "$out"
     if [[ ! -e $out/TRAINED ]]; then
         echo "== $v: train ($(date '+%F %T'))"
@@ -37,12 +42,12 @@ for v in "$@"; do
             --scheduler cosineannealingwarmrestarts --num_workers 14 --merge_outputs --no_mlp \
             --bbox_crop_percent 10 --depth_mode site --translation_loss relative_translation \
             --log_dir "$out/" --model_save_path "$out/model.pth" --resume auto \
-            --object_conditioning token --symmetric_rotation_loss --bop_pixel_aug domain_gap \
+            --object_conditioning "$cond" --symmetric_rotation_loss --bop_pixel_aug domain_gap \
             --bop_epoch_samples "${SPE[$v]}" --bop_sampler_seed "${SEED[$v]}"
         touch "$out/TRAINED"
     fi
     eval_args=(--dataset ycbv --model_weights "$out/last.pt" --vit_model "$VIT" --depth_mode site
-               --object_conditioning token)
+               --object_conditioning "$cond")
     if [[ ! -e $out/eval_valpbr/DONE ]]; then
         echo "== $v: eval val_pbr ($(date '+%F %T'))"
         .venv/bin/python src/bop_evaluate.py "${eval_args[@]}" --splits val_pbr --out_dir "$out/eval_valpbr"

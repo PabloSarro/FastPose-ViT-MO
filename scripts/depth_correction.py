@@ -142,6 +142,9 @@ def main() -> None:
     p.add_argument("--min_pixels", type=int, default=50,
                    help="render: agreeing pixels needed; splat: agreeing model points needed")
     p.add_argument("--method", default="splat", choices=["splat", "render"])
+    p.add_argument("--data_name", default=None,
+                   help="BOP folder of the images / depth if it differs from --dataset (the LM "
+                   "real validation images live in `lm`, audit W7)")
     p.add_argument("--cell", type=int, default=4, help="splat: z-buffer cell size [px]")
     p.add_argument("--vis_eps", type=float, default=0.05,
                    help="splat: a point is visible within this fraction of the diameter of its "
@@ -164,7 +167,8 @@ def main() -> None:
                                cell=args.cell, vis_eps=args.vis_eps)
     times = []
     for (sc, im), ests in sorted(by_image.items()):
-        sdir = os.path.join(root, args.dataset, TEST_DIR[args.dataset], f"{sc:06d}")
+        sdir = os.path.join(root, args.data_name or args.dataset, TEST_DIR[args.dataset],
+                            f"{sc:06d}")
         if sc not in cams:
             cams[sc] = inout.load_json(os.path.join(sdir, "scene_camera.json"), keys_to_int=True)
         cam = cams[sc][im]

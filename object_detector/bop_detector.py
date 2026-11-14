@@ -42,6 +42,7 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 
 from object_detector.LWDETR.lwdetr_models import LWDETRWrapper
+from src.safe_load import load_safe
 from src.bop_dataset import (
     SPLITS,
     BOPDataset,
@@ -65,7 +66,7 @@ class BOPLWDETR(LWDETRWrapper):
 
     def load_coco(self, path: str) -> dict:
         """COCO checkpoint of the LW-DETR release: every tensor whose shape matches."""
-        state = torch.load(path, map_location="cpu", weights_only=False)
+        state = load_safe(path)  # third-party file: weights_only + data-only allowlist (audit W9)
         state = state.get("model", state)
         own = self.lwdetr_model.state_dict()
         kept = {k: v for k, v in state.items() if k in own and own[k].shape == v.shape}
@@ -292,7 +293,7 @@ def train(args) -> None:
     start_epoch, best, history = 0, -1.0, []
     last_path = os.path.join(args.out_dir, "last.pt")
     if args.resume == "auto" and os.path.exists(last_path):
-        ckpt = torch.load(last_path, map_location="cpu", weights_only=False)
+        ckpt = load_safe(last_path)
         model.load_state_dict(ckpt["model"])
         optimizer.load_state_dict(ckpt["optimizer"])
         if ema is not None:

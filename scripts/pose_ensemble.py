@@ -42,6 +42,29 @@ def angle(Ra, Rb):
     return np.arccos(np.clip((np.trace(Ra.T @ Rb) - 1) / 2, -1, 1))
 
 
+def combine(avail, symmetries):
+    """One pose from several estimates of the same target.
+
+    avail: list of (score, R (3, 3), t (3,), time); the first one is the reference.
+    symmetries: the object's symmetry transformations [{"R": (3, 3), "t": (3, 1)}, ...] (identity
+    included). Every other estimate is first moved to its symmetric pose closest to the reference
+    (R·S_j, t + R·s_j), then t is averaged and the mean rotation is projected on SO(3).
+    Returns (R, t, score, summed time).
+    """
+    _, R0, t0, _ = avail[0]
+    Rs, ts = [R0], [t0]
+    for _, R, t, _ in avail[1:]:
+        best = min(symmetries, key=lambda s: angle(R0, R @ s["R"]))
+        Rs.append(R @ best["R"])
+        ts.append(t + R @ np.asarray(best["t"]).reshape(3))
+    return (
+        project_so3(np.mean(Rs, axis=0)),
+        np.mean(ts, axis=0),
+        float(np.mean([a[0] for a in avail])),
+        float(sum(a[3] for a in avail)),
+    )
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--dataset", required=True, choices=sorted(SPLITS))
@@ -57,16 +80,7 @@ def main() -> None:
     out = []
     for key in keys:
         avail = [pr[key] for pr in preds if key in pr]
-        score0, R0, t0, _ = avail[0]
-        Rs, ts = [R0], [t0]
-        for _, R, t, _ in avail[1:]:
-            best = min(syms[key[2]], key=lambda s: angle(R0, R @ s["R"]))
-            Rs.append(R @ best["R"])
-            ts.append(t + R @ best["t"].reshape(3))
-        R = project_so3(np.mean(Rs, axis=0))
-        t = np.mean(ts, axis=0)
-        score = float(np.mean([a[0] for a in avail]))
-        time = float(sum(a[3] for a in avail))
+        R, t, score, time = combine(avail, syms[key[2]])
         out.append((key, score, R, t, time))
     # BOP needs the same time for all estimates of an image
     per_image = {}

@@ -7,6 +7,8 @@ import numpy as np
 import torch
 from torch.nn.parallel import DistributedDataParallel
 
+from src.safe_load import load_safe
+
 
 def get_rng_state() -> dict:
     """Capture the Python, NumPy, torch and CUDA random number generator states.
@@ -67,8 +69,9 @@ def load_checkpoint(path: str) -> dict:
     Returns:
         The checkpoint dict.
     """
-    # weights_only=False: the checkpoint also holds RNG states and arguments (our own file)
-    return torch.load(path, map_location="cpu", weights_only=False)
+    # The checkpoint also holds RNG states and arguments: data-only types allowlisted in
+    # src/safe_load.py, so no arbitrary pickle code runs (audit W9)
+    return load_safe(path)
 
 
 def resolve_resume_path(resume: str | None, checkpoint_path: str) -> str | None:

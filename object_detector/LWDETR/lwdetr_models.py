@@ -331,9 +331,11 @@ class LWDETRWrapper(nn.Module):
                 f"   Recommended: Use LWDETR_{self.variant}_60e_coco.pth for best compatibility"
             )
 
-        # Load with weights_only=False to handle argparse.Namespace in checkpoint
-        # This is safe for trusted pretrained weights from official LW-DETR repository
-        checkpoint = torch.load(path, map_location="cpu", weights_only=False)
+        # weights_only=True with argparse.Namespace (and numpy types) allowlisted: the official
+        # LW-DETR checkpoints hold a Namespace; no other pickled code is run (audit W9)
+        from src.safe_load import load_safe
+
+        checkpoint = load_safe(path)
 
         # Handle different checkpoint formats
         if isinstance(checkpoint, dict) and "model" in checkpoint:

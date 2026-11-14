@@ -34,6 +34,7 @@ from bop_toolkit_lib import inout, misc, pose_error
 from torch.amp import autocast
 from torch.utils.data import DataLoader
 
+from src.safe_load import load_safe
 from src.bop_dataset import (
     IMAGENET_MEAN,
     IMAGENET_STD,
@@ -72,7 +73,7 @@ def build_model(args: argparse.Namespace, device: torch.device) -> FastPoseViT:
         object_conditioning=args.object_conditioning,
     )
     # model.pth is a state dict; last.pt (train.py checkpoint) holds it under "model"
-    state = torch.load(args.model_weights, map_location="cpu", weights_only=False)
+    state = load_safe(args.model_weights)  # weights_only + data-only allowlist (audit W9)
     model.load_state_dict(state["model"] if "model" in state else state)
     return model.to(device).eval()
 

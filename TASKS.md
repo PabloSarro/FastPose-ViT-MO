@@ -1163,7 +1163,7 @@ time). Our errors are mostly in depth (VSD / MSSD) and on heavily occluded objec
    | Abstract / introduction / conclusion with T-LESS, M11 and RGB-D | To do |
    | First compile on Overleaf (`main.tex`, `supplementary.tex`) | To do (user) |
    | Venue, page limit, authors | To do (user / supervisor) |
-   | Cite PoseDETR, RACE-6D, MRPE, HiPose, GPose, RCVPose, FFB6D (papers not in the bib yet) | To do |
+   | Cite PoseDETR, RACE-6D, MRPE, HiPose, GPose, RCVPose, FFB6D | Done 2026-11-14 (RACE-6D CVPR 2026 Findings, HiPose CVPR 2024, FFB6D CVPR 2021, RCVPose ECCV 2022; PoseDETR, GPose2023, MRPE cited as BOP submissions, no paper) |
    | **External / later** | |
    | Jetson Orin latency | Blocked (no device; ask the supervisor) |
    | YCB-V `train_real` (M11 B3, D8) | To do, needs the supervisor's view |

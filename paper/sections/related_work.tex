@@ -27,8 +27,9 @@ of each detection with a multi-scale ViT (MViTv2) shared by all objects: separat
 translation tokens, initialized with a learned embedding of the detected class, feed two MLP
 heads; it introduces a size-invariant depth target that normalizes the depth by the object
 diameter, which we also use (\cref{sec:method:translation}), and reaches 0.73--0.74 AR on LM-O
-with PBR training. PoseDETR and RACE-6D (BOP leaderboard submissions) predict instances and poses
-in a single stage at about 12\,ms per image. FastPose-ViT~\cite{ancey2026fastposevit} regresses normalized
+with PBR training. PoseDETR~\cite{bop_posedetr} (an anonymous BOP leaderboard submission) and
+RACE-6D~\cite{ha2026race6d} predict instances and poses in a single stage at about 12\,ms per
+image. FastPose-ViT~\cite{ancey2026fastposevit} regresses normalized
 translation targets and the apparent rotation from object crops with a ViT and a single linear
 head, and runs in real time on a Jetson Orin Nano, but for one object and one camera only. We
 extend it to many objects and cameras with a plain ViT and a single linear layer, and evaluate it
@@ -41,7 +42,6 @@ handle symmetries whose transformation also shifts the object (\cref{sec:method:
 report results with the public default detections of the BOP 2023 challenge rather than FCOS
 detections, and we study the deployment of the shared model: batched TensorRT inference, latency
 as a function of the number of objects, and a fully real-time pipeline with our own detector.
-\todo{Cite the PoseDETR and RACE-6D papers when available.}
 
 \paragraph{Fast object detectors.}
 Two-stage pose pipelines depend on a 2D detector. The BOP default detections for the 2023

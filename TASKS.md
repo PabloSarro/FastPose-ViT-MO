@@ -1043,17 +1043,25 @@ time). Our errors are mostly in depth (VSD / MSSD) and on heavily occluded objec
   - [ ] B1 ViT-L/16 at 512 px (SWAG E2E weights in torchvision), 2×; ~3-4× slower to train and run.
   - [ ] B2 8× budget on LM-O (2× → 4× gave +0.011), ~68 h per run.
   - [ ] B3 YCB-V with its real training images (`train_real`, downloaded to `$NAS_HOME/datasets/ycbv_train_real/`, D8): should remove the +2.4 % depth bias; moves the result to the PBR + real leaderboard category (supervisor's view needed).
-- [ ] **Phase C (question 2026-11-14: report RGB-D results too?)**: an RGB-D *variant* as an extra row,
-  RGB stays the main result. C1 (evaluation only): correct the regressed depth with the test depth
-  image (render the predicted pose, compare with the measured depth over the visible pixels, scale
-  t along its viewing ray by the median ratio), as RGB-D methods do with ICP. Compared with the
-  RGB-D leaderboard (LM-O up to 0.86). *Done 2026-11-14 (user go-ahead; `scripts/depth_correction.py`,
-  `$NAS_HOME/results/m11/rgbd/`): render the predicted pose (depth), median of (measured − rendered)
-  over the pixels that agree within 20 / 10 / 5 % of t_z (3 iterations), shift t along its ray; R
-  unchanged.* **LM-O RGB-D AR 0.750** (VSD 0.594, MSSD 0.785, MSPD 0.871; RGB 0.668), 1,428 / 1,445
-  corrected, median |shift| 18 mm, 0.18 s per image. **YCB-V RGB-D AR 0.854** (0.802 / 0.912 / 0.849;
-  RGB 0.702), median shift −20 mm (= the depth bias), 0.16 s. Correction ~60–85 ms per image with
-  one vispy render per estimate and iteration (not optimized).
+- [~] **Phase C: RGB-D variant** (user 2026-11-14: report RGB-D results too, in the main tables as a
+  separate block; RGB stays the main result). Depth correction of the RGB estimates, training-free
+  (`scripts/depth_correction.py`, runs via `scripts/m11_rgbd.sh`, results `$NAS_HOME/results/m11/rgbd_splat/`):
+  - [x] C1 renderer version (`--method render`, 2026-11-14): LM-O 0.750, YCB-V 0.854; ~85 ms per image.
+  - [x] C2 fast GPU version (`--method splat`, default, 2026-11-14): model points projected, 4×4-px
+    z-buffer for visibility, batched over all estimates of an image; **3–4 ms per image**, same AR
+    (LM-O 0.749 vs 0.750).
+  - [x] C3 all available RGB results (2026-11-14): LM-O `tok4x` / `tok4x2` **0.749 / 0.752**, LM-O own
+    LW-DETR + TensorRT **0.738 at 24 ms per image** (full RGB-D pipeline), YCB-V `tok4x` / `tok4x2`
+    **0.849 / 0.851** (median shift −21 mm = the depth bias).
+  - [x] C4 RGB-D leaderboard entries checked on their submission pages (training data, models, depth
+    use): see `docs/BOP.md` §1.3. **RACE-6D's RGB-D entry and GDRNPP's "Fast" RGB-D entry use the same
+    depth shift along the viewing ray: credit them (not a contribution).**
+  - [x] C5 paper: RGB-D block in the LM-O and YCB-V tables, paragraph in §4.2, supplementary S9.
+  - [ ] C6 T-LESS RGB-D: after the T-LESS RGB evaluation (`tless-m10-tok4x{,2}-002`).
+  - [ ] C7 YCB-V RGB-D with our own detector: after `ycbv-m10-detsmall-001`.
+  - [ ] C8 RGB-D for the final M11 models (after phase A / B).
+  - [ ] C9 optional: RGB-D latency vs number of objects in `optimization/bop_latency.py` (today: mean per
+    image over the test set).
 - [ ] Final: combine the phase A / B winners into new 4× runs (LM-O ~34 h, YCB-V ~58 h), then
   update the paper (main + supplementary) and decide the positioning with the supervisor.
 
@@ -1127,13 +1135,44 @@ time). Our errors are mostly in depth (VSD / MSSD) and on heavily occluded objec
 | 2026-11-14 | `outputs/FastPose-ViT/runs/lmo-m10-bbox{152,302}-002` | **LM-O test**, default detections | Box jitter 15 / 30 %, seed b | 0.651 / 0.643 | `bbox{5,52,15,30}-002` failed (node gpu028, 7 pods "ContainerStatusUnknown"), relaunched as `-003` |
 | 2026-11-14 | `results/m11/ensemble/{lmo,ycbv}` | **LM-O / YCB-V test**, default detections | M11 B4: pose average of the two seed models (`scripts/pose_ensemble.py`) | LM-O 0.6689, YCB-V 0.7048 | Seeds 0.669 / 0.664 and 0.694 / 0.702: not worth 2× pose time |
 | 2026-11-14 | `results/m11/rgbd/{lmo,ycbv}` | **LM-O / YCB-V test**, default detections + test depth | M11 C1: RGB-D variant, depth correction of the RGB model's poses (`scripts/depth_correction.py`) | LM-O **0.750** (VSD 0.594, MSSD 0.785, MSPD 0.871), YCB-V **0.854** (0.802 / 0.912 / 0.849); 0.18 / 0.16 s per image | RGB 0.668 / 0.702; PBR-only RGB-D entries: LM-O 0.69–0.80, YCB-V 0.76–0.91 |
+| 2026-11-14 | `results/m11/rgbd_splat/{lmo_tok4x,lmo_tok4x2,lmo_ownsmall_trt,ycbv_tok4x,ycbv_tok4x2}` | **LM-O / YCB-V test** + test depth | M11 C2–C3: fast GPU depth correction (`--method splat`), all RGB results | LM-O 0.749 / 0.752, own detector + TensorRT 0.738 (24 ms per image); YCB-V 0.849 / 0.851; correction 3–4 ms per image | Same AR as the renderer version (0.750) at ~85 ms |
 (Paths relative to `$NAS_HOME`.)
 
 ---
 
 ## 10. Next session: start here
 
-0. **Current (2026-11-14):** M10 paper (`paper/main.tex` + separate `paper/supplementary.tex`). Jobs: box jitter `lmo-m10-bbox{5,52,15,30}-003` (relaunched after a node failure) and T-LESS (`tless-m10-tok4x{,2}-002`, epochs 128 / 104 of 150). **Launched 2026-11-14 ~10:15 (user):** `ycbv-m10-detsmall-001` (our LW-DETR small on YCB-V, `DATASET=ycbv bash scripts/m9_det.sh small 0`, ~22 h, then YCB-V test AR with `tok4x2` vs default 0.702) and `ycbv-m10-heads2x{,2}-001` (per-object heads at 2×, `scripts/m8_ycbv.sh heads2x[2]`, ~29 h each; compare with `tok2x` / `tok2x2` 0.681 / 0.689). When a job ends (`log.txt` exit code): `bash rcp/stop.sh`, then add its AR to `docs/BOP.md` §2, the recipe table in `paper/sections/experiments.tex`, the bbox table in `paper/supplementary.tex` (`\pending` marks) and §9. T-LESS: fill the paper's T-LESS paragraph and table. Open with the user / supervisor: paper positioning vs PViT-6D / PoseDETR (draft TODOs), venue, Jetson access, YCB-V `train_real` (D8).
+0. **Tracker (updated 2026-11-14 11:45):**
+
+   | Task | Status |
+   |---|---|
+   | **Running jobs** | |
+   | Box jitter 5 % (2 seeds), 15 %, 30 % (seed a): `lmo-m10-bbox{5,52,15,30}-003` | Running, epoch 29/150, ~9 h left |
+   | M11 phase A: `lmo-m11-{ctx,ctx125,ctx15,occl,tlw}{,2}-001` | Running, epochs 5–9/150, ~11 h left |
+   | T-LESS: `tless-m10-tok4x-002` / `tless-m10-tok4x2-002` | Running, epochs 131 / 108 of 150, ~10 h / ~23 h left |
+   | YCB-V own detector: `ycbv-m10-detsmall-001` | Running, epoch 2/50, ~22 h left |
+   | YCB-V conditioning heads: `ycbv-m10-heads2x{,2}-001` | Running, epochs 6–7/150, ~28 h left |
+   | **To do when jobs end** | |
+   | Fill bbox 5 / 15 / 30 % in the paper's recipe table, supplementary S3 and `docs/BOP.md` | To do (after bbox jobs) |
+   | T-LESS: RGB eval + RGB-D (C6), paper T-LESS paragraph + table block, per-object table | To do (after T-LESS jobs) |
+   | YCB-V own detector: AR, RGB-D (C7), paper rows | To do (after detsmall) |
+   | YCB-V heads vs token: supplementary table | To do (after heads jobs) |
+   | M11 phase A analysis → phase B choice → final 4× runs | To do (after phase A) |
+   | **Paper** | |
+   | Positioning vs PViT-6D / PoseDETR (improve first, option c) | In progress (M11) |
+   | Abstract / introduction / conclusion with T-LESS, M11 and RGB-D | To do |
+   | First compile on Overleaf (`main.tex`, `supplementary.tex`) | To do (user) |
+   | Venue, page limit, authors | To do (user / supervisor) |
+   | Cite PoseDETR, RACE-6D, MRPE, HiPose, GPose, RCVPose, FFB6D (papers not in the bib yet) | To do |
+   | **External / later** | |
+   | Jetson Orin latency | Blocked (no device; ask the supervisor) |
+   | YCB-V `train_real` (M11 B3, D8) | To do, needs the supervisor's view |
+   | Release plan (weights, code); merge `multi-object` into `main` | Later (user) |
+   | **Done 2026-11-14** | |
+   | Augmentation study (keep `domain_gap` p = 0.5) | Done |
+   | Supplementary split (`paper/supplementary.tex`), learning-rate fix in the draft | Done |
+   | M11 B4 seed ensemble (not kept) | Done |
+   | M11 C1–C5 RGB-D variant (LM-O 0.749 / 0.752, YCB-V 0.849 / 0.851, 24 ms pipeline) | Done |
 1. Start Claude inside `dev`, from the repo root (§4).
 2. Work on branch `multi-object` (created 2026-10-20). The §5 report to Pierre is deferred until M8.
 3. ~~Set up `.venv` + `bop_toolkit`~~ (done 2026-10-20, see §7 M0). Install with `.venv/bin/pip`, not uv.

@@ -81,21 +81,29 @@ error of the directly regressed translation.
 ### 1.3 RGB-D variant (M11 C1, 2026-11-14)
 
 The RGB model's poses, with the distance corrected from the test depth image
-(`scripts/depth_correction.py`: render the predicted pose, median depth difference over the pixels
-that agree within 20 / 10 / 5 % of t_z, shift t along its viewing ray; rotation unchanged). Same
-default detections. Times per image on one A100, including the RGB pipeline (PyTorch) and the
-default detector's 81.6 ms.
+(`scripts/depth_correction.py`, default `--method splat`: project the model points with the
+predicted pose, keep the visible ones with a 4×4-pixel z-buffer, median of measured − predicted
+depth over the points that agree within 20 / 10 / 5 % of t_z, shift t along its viewing ray; 3
+iterations; rotation unchanged). GPU, all estimates of an image batched: **3–4 ms per image**
+(the BOP-renderer reference, `--method render`, gives the same AR at ~85 ms). All runs:
+`$NAS_HOME/results/m11/rgbd_splat/` (`scripts/m11_rgbd.sh`).
 
-| Dataset | RGB AR | **RGB-D AR** | AR_VSD | AR_MSSD | AR_MSPD | Time (s) |
+| RGB input | RGB AR | **RGB-D AR** | AR_VSD | AR_MSSD | AR_MSPD | Time (s) |
 |---|---|---|---|---|---|---|
-| LM-O | 0.668 | **0.750** | 0.594 | 0.785 | 0.871 | 0.183 |
-| YCB-V | 0.702 | **0.854** | 0.802 | 0.912 | 0.849 | 0.157 |
+| LM-O `tok4x`, default det. | 0.668 | **0.749** | 0.592 | 0.786 | 0.870 | 0.139 |
+| LM-O `tok4x2`, default det. | 0.664 | **0.752** | 0.596 | 0.786 | 0.874 | 0.104 |
+| LM-O, own LW-DETR small + TensorRT | 0.654 | **0.738** | 0.590 | 0.777 | 0.847 | **0.024** |
+| YCB-V `tok4x`, default det. | 0.694 | **0.849** | 0.795 | 0.904 | 0.847 | 0.124 |
+| YCB-V `tok4x2`, default det. | 0.702 | **0.851** | 0.797 | 0.908 | 0.849 | 0.121 |
+| T-LESS | *pending (T-LESS RGB jobs)* | | | | | |
 
-RGB-D entries of the leaderboard named as PBR-only (training data not yet checked on their
-submission pages): LM-O HiPose 0.799, RADet+PFA 0.797, GPose2023 0.794, GDRNPP 0.775 (4.5 s),
-SurfEmb 0.760 (11.9 s), ZebraPose + ICP 0.752 (0.5 s), RCVPose 0.729, FFB6D 0.687; YCB-V HiPose
-0.907, GDRNPP 0.906 (6.5 s), GPose2023 0.901, RCVPose 0.843, RADet+PFA 0.826, SurfEmb 0.799, FFB6D
-0.758. The depth correction removes the YCB-V depth bias (median shift −20 mm).
+PBR-trained RGB-D leaderboard entries (training data checked on the LM-O submission pages
+2026-11-14): LM-O HiPose 0.799 (per object, training data not stated), RADet+PFA 0.797 (one model,
+1.7 s), GPose2023 0.794 (per object, 2.6 s), GDRNPP 0.775 (4.5 s), SurfEmb 0.760 (11.9 s),
+RACE-6D 0.733 (one model, 0.013 s, **the same depth-shift idea**), RCVPose 0.729, FFB6D 0.687
+(0.19 s); ZebraPose + ICP 0.752 left out (conflicting training data). YCB-V: HiPose 0.907, GDRNPP
+0.906, GPose2023 0.901, RCVPose 0.843, RADet+PFA 0.826, SurfEmb 0.799, FFB6D 0.758. The depth shift
+along the viewing ray is not new (RACE-6D RGB-D entry, GDRNPP "Fast" RGB-D entry): credit it.
 
 ## 2. Ablations
 

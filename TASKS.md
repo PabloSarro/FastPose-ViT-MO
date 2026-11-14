@@ -1047,7 +1047,13 @@ time). Our errors are mostly in depth (VSD / MSSD) and on heavily occluded objec
   RGB stays the main result. C1 (evaluation only): correct the regressed depth with the test depth
   image (render the predicted pose, compare with the measured depth over the visible pixels, scale
   t along its viewing ray by the median ratio), as RGB-D methods do with ICP. Compared with the
-  RGB-D leaderboard (LM-O up to 0.86). Not started: decision pending (user).
+  RGB-D leaderboard (LM-O up to 0.86). *Done 2026-11-14 (user go-ahead; `scripts/depth_correction.py`,
+  `$NAS_HOME/results/m11/rgbd/`): render the predicted pose (depth), median of (measured − rendered)
+  over the pixels that agree within 20 / 10 / 5 % of t_z (3 iterations), shift t along its ray; R
+  unchanged.* **LM-O RGB-D AR 0.750** (VSD 0.594, MSSD 0.785, MSPD 0.871; RGB 0.668), 1,428 / 1,445
+  corrected, median |shift| 18 mm, 0.18 s per image. **YCB-V RGB-D AR 0.854** (0.802 / 0.912 / 0.849;
+  RGB 0.702), median shift −20 mm (= the depth bias), 0.16 s. Correction ~60–85 ms per image with
+  one vispy render per estimate and iteration (not optimized).
 - [ ] Final: combine the phase A / B winners into new 4× runs (LM-O ~34 h, YCB-V ~58 h), then
   update the paper (main + supplementary) and decide the positioning with the supervisor.
 
@@ -1120,6 +1126,7 @@ time). Our errors are mostly in depth (VSD / MSSD) and on heavily occluded objec
 | 2026-11-14 | `outputs/FastPose-ViT/runs/lmo-m10-aug{color,blur,noise,simple,strong}{,2}-002` | **LM-O test**, default detections | Augmentation study, baseline symtok2x (`domain_gap` p = 0.5: 0.655 / 0.655) | color 0.649 / 0.641, blur 0.628 / 0.630, noise 0.627 / 0.627, color + blur + noise 0.641 / 0.643, `domain_gap` p = 0.8 0.641 / 0.631 | Keep `domain_gap` p = 0.5 |
 | 2026-11-14 | `outputs/FastPose-ViT/runs/lmo-m10-bbox{152,302}-002` | **LM-O test**, default detections | Box jitter 15 / 30 %, seed b | 0.651 / 0.643 | `bbox{5,52,15,30}-002` failed (node gpu028, 7 pods "ContainerStatusUnknown"), relaunched as `-003` |
 | 2026-11-14 | `results/m11/ensemble/{lmo,ycbv}` | **LM-O / YCB-V test**, default detections | M11 B4: pose average of the two seed models (`scripts/pose_ensemble.py`) | LM-O 0.6689, YCB-V 0.7048 | Seeds 0.669 / 0.664 and 0.694 / 0.702: not worth 2× pose time |
+| 2026-11-14 | `results/m11/rgbd/{lmo,ycbv}` | **LM-O / YCB-V test**, default detections + test depth | M11 C1: RGB-D variant, depth correction of the RGB model's poses (`scripts/depth_correction.py`) | LM-O **0.750** (VSD 0.594, MSSD 0.785, MSPD 0.871), YCB-V **0.854** (0.802 / 0.912 / 0.849); 0.18 / 0.16 s per image | RGB 0.668 / 0.702; PBR-only RGB-D entries: LM-O 0.69–0.80, YCB-V 0.76–0.91 |
 (Paths relative to `$NAS_HOME`.)
 
 ---

@@ -78,6 +78,25 @@ a shared model for all objects with a class embedding, and allocentric 6D rotati
 (AR_MSPD) is at their level; the gap is in the 3D metrics (VSD, MSSD), dominated by the depth
 error of the directly regressed translation.
 
+### 1.3 RGB-D variant (M11 C1, 2026-11-14)
+
+The RGB model's poses, with the distance corrected from the test depth image
+(`scripts/depth_correction.py`: render the predicted pose, median depth difference over the pixels
+that agree within 20 / 10 / 5 % of t_z, shift t along its viewing ray; rotation unchanged). Same
+default detections. Times per image on one A100, including the RGB pipeline (PyTorch) and the
+default detector's 81.6 ms.
+
+| Dataset | RGB AR | **RGB-D AR** | AR_VSD | AR_MSSD | AR_MSPD | Time (s) |
+|---|---|---|---|---|---|---|
+| LM-O | 0.668 | **0.750** | 0.594 | 0.785 | 0.871 | 0.183 |
+| YCB-V | 0.702 | **0.854** | 0.802 | 0.912 | 0.849 | 0.157 |
+
+RGB-D entries of the leaderboard named as PBR-only (training data not yet checked on their
+submission pages): LM-O HiPose 0.799, RADet+PFA 0.797, GPose2023 0.794, GDRNPP 0.775 (4.5 s),
+SurfEmb 0.760 (11.9 s), ZebraPose + ICP 0.752 (0.5 s), RCVPose 0.729, FFB6D 0.687; YCB-V HiPose
+0.907, GDRNPP 0.906 (6.5 s), GPose2023 0.901, RCVPose 0.843, RADet+PFA 0.826, SurfEmb 0.799, FFB6D
+0.758. The depth correction removes the YCB-V depth bias (median shift −20 mm).
+
 ## 2. Ablations
 
 All ablations on **one metric: the official BOP19 AR on LM-O test with the BOP default

@@ -98,6 +98,7 @@ the release of code and weights.}
     \ours{}, TensorRT FP16 & & & one & 0.669 & 0.491 & 0.642 & 0.873 & \\
     \ours{}, own LW-DETR, PyTorch & & & one & 0.654 & 0.486 & 0.627 & 0.848 & 0.035 \\
     \ours{}, own LW-DETR, TensorRT FP16 & & & one & 0.654 & 0.486 & 0.628 & 0.848 & 0.020 \\
+    \ours{}, RGB-D variant (depth correction) & & & one & 0.750 & 0.594 & 0.785 & 0.871 & 0.183 \\
     \bottomrule
   \end{tabular}
   \caption{\textbf{LM-O test, RGB methods trained on the provided PBR images only}, BOP19 metrics
@@ -136,6 +137,7 @@ the release of code and weights.}
     \midrule
     Ours, GT boxes (oracle) & & one & 0.707 & & & \\
     Ours, TensorRT FP16 & & one & 0.702 & 0.591 & 0.681 & 0.834 \\
+    Ours, RGB-D variant & & one & 0.854 & 0.802 & 0.912 & 0.849 \\
     \bottomrule
   \end{tabular}
   \caption{\textbf{YCB-V test, RGB methods trained on PBR images only} (no real training images),
@@ -144,6 +146,19 @@ the release of code and weights.}
   \todo{Check SC6D and SurfEmb details; add times.}}
   \label{tab:ycbv}
 \end{table}
+
+\paragraph{RGB-D variant.}
+Our main weakness is the depth of the directly regressed translation. When a depth image is
+available at test time, as for the RGB-D methods of the benchmark, a simple correction removes most
+of it: we render the object at the predicted pose, take the median difference between the measured
+and the rendered depth over the pixels where both agree, and move the object along its viewing ray
+by this amount, keeping the rotation (three iterations, Supp.~Sec.~S9). Without retraining, the AR
+rises from 0.668 to 0.750 on LM-O and from 0.702 to 0.854 on YCB-V, where the correction also removes
+the depth bias of the real images (median shift $-20$\,mm); VSD and MSSD gain 0.10--0.23, MSPD
+changes by at most 0.015. This places the RGB-D variant among the PBR-trained RGB-D methods of the leaderboard
+(LM-O 0.69--0.80, YCB-V 0.76--0.91), at 0.16--0.18\,s per image including the default detector.
+\todo{Decide whether the RGB-D variant goes into the main tables or only into this paragraph and the
+supplementary; verify the RGB-D entries' training data.}
 
 \paragraph{T-LESS.}
 \pending{T-LESS results (\texttt{tless-m10-tok4x\{,2\}-002}, epochs 128 / 104 of 150): AR with

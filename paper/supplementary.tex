@@ -22,8 +22,8 @@ This document complements the main paper with implementation details (\cref{sec:
 the handling of symmetric objects (\cref{sec:supp:sym}), the complete ablation tables
 (\cref{sec:supp:ablations}), the detection quality (\cref{sec:supp:det}), deployment details
 (\cref{sec:supp:deploy}), an analysis of the depth bias on YCB-V (\cref{sec:supp:depth}),
-per-object results (\cref{sec:supp:perobject}), and reproducibility information
-(\cref{sec:supp:repro}). Unless stated otherwise, AR is the official BOP19 average recall on the
+per-object results (\cref{sec:supp:perobject}), reproducibility information
+(\cref{sec:supp:repro}), and an RGB-D variant (\cref{sec:supp:rgbd}). Unless stated otherwise, AR is the official BOP19 average recall on the
 LM-O test set with the default detections of the BOP 2023 challenge, and ``seed a / b'' are two
 training runs that differ only in the random seed of the object-balanced sampler.
 
@@ -415,6 +415,47 @@ released weights.}
 \paragraph{Backward compatibility.}
 The multi-object code keeps the single-object SPEED pipeline of FastPose-ViT unchanged: the
 published SPEED model reproduces its test score (0.0093) exactly.
+
+% ---------------------------------------------------------------------------------------------
+\section{RGB-D variant}
+\label{sec:supp:rgbd}
+When the test depth image is available, we correct the distance of each RGB estimate and keep its
+rotation. The object model is rendered (depth only) at the current pose $(\R, \T)$; on the pixels
+where both the rendered depth $d_r$ and the measured depth $d_m$ are valid and
+$|d_m - d_r| < \beta\, t_z$, which drops occluders in front of the object and background behind
+it, we take $\delta = \mathrm{median}(d_m - d_r)$ and move the object along its viewing ray,
+$\T \leftarrow \T\, (t_z + \delta) / t_z$, which keeps the projection of its centre. We run three
+iterations with $\beta = 0.2, 0.1, 0.05$ and keep the RGB estimate if fewer than 50 pixels agree
+(17 of 1,445 LM-O and 2 of 4,123 YCB-V estimates). The median shift is $+0.8$\,mm on LM-O (median
+absolute shift 18\,mm) and $-20$\,mm on YCB-V: the correction removes the depth bias of
+\cref{sec:supp:depth}. The correction takes about 60--85\,ms per image with one render per
+estimate and iteration (bop\_toolkit renderer, not optimized).
+
+\begin{table}[h]
+  \centering
+  \setlength{\tabcolsep}{3pt}
+  \footnotesize
+  \begin{tabular}{lcccccc}
+    \toprule
+    Method (RGB-D, PBR) & \multicolumn{2}{c}{LM-O} & & \multicolumn{2}{c}{YCB-V} & \\
+     & AR & Time [s] & & AR & Time [s] & \\
+    \midrule
+    HiPose & 0.799 & ? & & 0.907 & ? & \\
+    RADet+PFA & 0.797 & 1.743 & & 0.826 & 1.888 & \\
+    GPose2023 & 0.794 & 2.579 & & 0.901 & 2.530 & \\
+    GDRNPP (per object) & 0.775 & 4.487 & & 0.906 & 6.509 & \\
+    SurfEmb & 0.760 & 11.943 & & 0.799 & 5.485 & \\
+    ZebraPose + ICP (per object) & 0.752 & 0.500 & & & & \\
+    \textbf{\ours{}, RGB-D variant} & \textbf{0.750} & \textbf{0.183} & & \textbf{0.854} & \textbf{0.157} & \\
+    RCVPose & 0.729 & 1.532 & & 0.843 & 0.911 & \\
+    FFB6D & 0.687 & 0.189 & & 0.758 & 0.199 & \\
+    \bottomrule
+  \end{tabular}
+  \caption{\textbf{RGB-D comparison}, BOP leaderboard entries whose names state PBR-only training
+  (checked 2026-11-14); ``?'': no time submitted. \todo{Verify the training data and the number of
+  models on each submission page.}}
+  \label{tab:supp:rgbd}
+\end{table}
 
 {\small
 \IfFileExists{ieeenat_fullname.bst}{\bibliographystyle{ieeenat_fullname}}{%

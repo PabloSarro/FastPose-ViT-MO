@@ -27,6 +27,12 @@
 #   ctx15    same, 1.5 x
 #   occl     synthetic occlusion: 1-4 random rectangles erased per training crop (p = 0.5)
 #   tlw      translation loss weighted x2 (total = 2 * translation + rotation)
+# Audit 2026-11-14 (TASKS.md W1, W2):
+#   base     no change: the ablation baseline re-trained on the current code (the old baseline
+#            symtok2x of 2026-10-26 ran older code); seed b = base2
+# Every variant ends with a validation evaluation (eval_val/: LM real val + PBR val, GT boxes, own
+# score = (AR_MSSD + AR_MSPD) / 2, scripts/val_score.py) next to the LM-O test one, so that
+# choices are made on validation and the test number is read once.
 set -euo pipefail
 : "${RUN_DIR:?run inside a train job (RUN_DIR not set)}"
 export PYTHONPATH=.
@@ -53,6 +59,7 @@ case $base in
     bbox5)   extra=(--bbox_crop_percent 5) ;;
     bbox15)  extra=(--bbox_crop_percent 15) ;;
     bbox30)  extra=(--bbox_crop_percent 30) ;;
+    base)    ;;
     ctx)     extra=(--crop_context); eval_extra=(--crop_context) ;;
     ctx125)  extra=(--crop_context --crop_scale 1.25); eval_extra=(--crop_context --crop_scale 1.25) ;;
     ctx15)   extra=(--crop_context --crop_scale 1.5); eval_extra=(--crop_context --crop_scale 1.5) ;;
@@ -74,6 +81,14 @@ if [[ ! -e $out/TRAINED ]]; then
         --object_conditioning token --symmetric_rotation_loss --bop_pixel_aug domain_gap \
         --bop_epoch_samples "$SPE" --bop_sampler_seed "$seed" "${extra[@]}"
     touch "$out/TRAINED"
+fi
+if [[ ! -e $out/eval_val/DONE ]]; then
+    echo "== $v: eval validation, GT boxes ($(date '+%F %T'))"
+    .venv/bin/python src/bop_evaluate.py --dataset lmo --model_weights "$out/last.pt" \
+        --vit_model "$VIT" --splits val_real val_pbr --depth_mode "$DEPTH" \
+        --object_conditioning token "${eval_extra[@]}" --out_dir "$out/eval_val"
+    .venv/bin/python scripts/val_score.py "$out/eval_val" > "$out/eval_val/val_score.txt"
+    touch "$out/eval_val/DONE"
 fi
 if [[ ! -e $out/eval_det/DONE ]]; then
     echo "== $v: eval LM-O test, detections ($(date '+%F %T'))"

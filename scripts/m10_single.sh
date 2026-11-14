@@ -8,6 +8,9 @@
 #
 # Usage (from the project root, inside a job), one object per job:
 #   CPUS=16 bash rcp/train.sh lmo-m10-obj8-001 bash scripts/m10_single.sh 8
+# Second seed (audit 2026-11-14, W4): a second argument, the sampler seed (default 0); seed 1
+# trains into obj<ID>_s1:
+#   CPUS=16 bash rcp/train.sh lmo-m12-obj8s1-001 bash scripts/m10_single.sh 8 1
 # Recipe = tok4x (scripts/m4_multi.sh): token conditioning, domain_gap, no symmetric loss (as tok4x
 # was trained), bbox_visib crops, 150 epochs, 21,104 samples per epoch (tok4x: 168,832 for 8
 # objects = 21,104 per object), ~3 h at 384 px.
@@ -19,10 +22,11 @@ VIT=${VIT:-vit_b_16_384}
 SPE=${SPE:-21104}
 DET=$(ls "$NAS_HOME"/datasets/bop_detections/default_task1/bop23_default_detections_for_task1/gdrnppdet-pbr/gdrnppdet-pbr_lmo-test_*.json)
 
-(( $# == 1 )) || { echo "usage: $0 OBJ_ID (one of 1 5 6 8 9 10 11 12)"; exit 5; }
-obj=$1
+(( $# >= 1 && $# <= 2 )) || { echo "usage: $0 OBJ_ID [SEED] (OBJ_ID one of 1 5 6 8 9 10 11 12)"; exit 5; }
+obj=$1 seed=${2:-0}
 [[ " 1 5 6 8 9 10 11 12 " == *" $obj "* ]] || { echo "not an LM-O object: $obj"; exit 5; }
 out=$RUN_DIR/obj$obj
+[[ $seed != 0 ]] && out=$RUN_DIR/obj${obj}_s$seed
 mkdir -p "$out"
 if [[ ! -e $out/TRAINED ]]; then
     echo "== obj $obj: train ($(date '+%F %T'))"
@@ -34,7 +38,7 @@ if [[ ! -e $out/TRAINED ]]; then
         --bbox_crop_percent 10 --depth_mode site --translation_loss relative_translation \
         --log_dir "$out/" --model_save_path "$out/model.pth" --resume auto \
         --object_conditioning token --no-symmetric_rotation_loss --bop_pixel_aug domain_gap \
-        --bop_epoch_samples "$SPE" --bop_sampler_seed 0
+        --bop_epoch_samples "$SPE" --bop_sampler_seed "$seed"
     touch "$out/TRAINED"
 fi
 eval_args=(--dataset lmo --obj_ids "$obj" --model_weights "$out/last.pt" --vit_model "$VIT"

@@ -122,6 +122,7 @@ def create_bop_datasets(args: argparse.Namespace, img_size: int, logger) -> tupl
         depth_mode=args.depth_mode,
         no_rotation_compensation=args.no_rotation_compensation,
         crop_context=args.crop_context,
+        crop_scale=args.crop_scale,
     )
     if args.bop_overfit:
         rng = np.random.default_rng(args.bop_overfit_seed)
@@ -138,6 +139,7 @@ def create_bop_datasets(args: argparse.Namespace, img_size: int, logger) -> tupl
         bbox_jitter_percent=0.0 if no_jitter else args.bbox_crop_percent,
         pixel_aug="none" if args.no_pixel_augmentation else args.bop_pixel_aug,
         bbox_source=args.bop_bbox_source,
+        occlusion_aug=args.bop_occlusion_aug,
         **common,
     )
     val_rows = rows_for_objects(val_index, obj_ids)
@@ -844,6 +846,7 @@ def train(
             adam_param_groups=adam_param_groups if args.optimizer == "muon" else None,
             use_per_iteration_scheduling=use_per_iteration_scheduling,
             global_iteration_start=global_iteration,
+            translation_loss_weight=args.translation_loss_weight,
         )
 
         train_start = time.time()
@@ -1361,6 +1364,24 @@ if __name__ == "__main__":
         "--crop_context",
         action="store_true",
         help="BOP: fill the square crop around the bbox with image instead of black",
+    )
+    parser.add_argument(
+        "--crop_scale",
+        type=float,
+        default=1.0,
+        help="BOP (M11): side of the square crop in units of max(w, h) of the box (1 = tight); "
+        "use with --crop_context so that the margin shows the image",
+    )
+    parser.add_argument(
+        "--bop_occlusion_aug",
+        action="store_true",
+        help="BOP (M11): erase 1-4 random rectangles of each training crop (p = 0.5)",
+    )
+    parser.add_argument(
+        "--translation_loss_weight",
+        type=float,
+        default=1.0,
+        help="M11: total loss = weight * translation loss + rotation loss",
     )
     parser.add_argument(
         "--bop_overfit",

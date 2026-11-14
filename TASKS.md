@@ -1016,6 +1016,38 @@ BOP root: `$DATA_DIR/BOP_Datasets` (owned by Pierre, read-only for us). The scan
 
 ---
 
+### M11 — Improve first (started 2026-11-14, user: positioning option (c))
+
+Goal: close the LM-O gap to PViT-6D (0.740) / PoseDETR (0.695) before deciding the paper's
+positioning, within the project constraints (RGB only, direct regression, no refinement, real
+time). Our errors are mostly in depth (VSD / MSSD) and on heavily occluded objects; 2D alignment
+(MSPD) is already at the level of the best methods. Each candidate = the ablation baseline
+`symtok2x` (0.655 / 0.655) with one change, 2 seeds, LM-O test AR with default detections
+(`scripts/m10_ablations.sh`); winners are combined into new final 4× runs.
+
+- [~] **Phase A** (2×, 2 seeds each; code + tests + smoke runs done 2026-11-14: `--crop_scale`,
+  `--bop_occlusion_aug`, `--translation_loss_weight`, `--crop_context` also in `bop_evaluate.py`;
+  164 tests pass). Jobs `lmo-m11-{ctx,ctx125,ctx15,occl,tlw}{,2}-001`:
+  - [ ] A1 `ctx125`: context margin, square of 1.25 × max(w, h) filled with the image (PViT-6D crops at 1.2×).
+  - [ ] A2 `ctx15`: same at 1.5×.
+  - [ ] A3 `ctx`: image instead of black bands, no margin (isolates the padding).
+  - [ ] A4 `occl`: synthetic occlusion, 1-4 random rectangles (10-30 % of the side) erased, p = 0.5.
+  - [ ] A5 `tlw`: translation loss weighted × 2 (depth emphasis).
+- [ ] **B4** (evaluation only, `dev`): average the poses of the two seed models (`tok4x` + `tok4x2`)
+  at test time, symmetry-aware (align seed b to the closest symmetric pose of seed a, mean of t,
+  rotation mean projected on SO(3)); LM-O and YCB-V. Doubles the pose time.
+- [ ] **Phase B** (after phase A, or alongside if the queue is short):
+  - [ ] B1 ViT-L/16 at 512 px (SWAG E2E weights in torchvision), 2×; ~3-4× slower to train and run.
+  - [ ] B2 8× budget on LM-O (2× → 4× gave +0.011), ~68 h per run.
+  - [ ] B3 YCB-V with its real training images (`train_real`, downloaded to `$NAS_HOME/datasets/ycbv_train_real/`, D8): should remove the +2.4 % depth bias; moves the result to the PBR + real leaderboard category (supervisor's view needed).
+- [ ] **Phase C (question 2026-11-14: report RGB-D results too?)**: an RGB-D *variant* as an extra row,
+  RGB stays the main result. C1 (evaluation only): correct the regressed depth with the test depth
+  image (render the predicted pose, compare with the measured depth over the visible pixels, scale
+  t along its viewing ray by the median ratio), as RGB-D methods do with ICP. Compared with the
+  RGB-D leaderboard (LM-O up to 0.86). Not started: decision pending (user).
+- [ ] Final: combine the phase A / B winners into new 4× runs (LM-O ~34 h, YCB-V ~58 h), then
+  update the paper (main + supplementary) and decide the positioning with the supervisor.
+
 ## 8. Open decisions and questions
 
 | ID | Question | Decide at |

@@ -554,7 +554,9 @@ class FastRandomSunFlare(A.RandomSunFlare):
         return sun_flare_overlay_fast(img, flare_center, self.src_radius, self.src_color, circles)
 
 
-def pixel_transform(pixel_aug: str, fast_sun_flare: bool = True) -> A.Compose:
+def pixel_transform(
+    pixel_aug: str, fast_sun_flare: bool = True, occlusion: bool = False
+) -> A.Compose:
     """Photometric augmentations + ImageNet normalization, for crops already at model size.
 
     "standard" and "domain_gap" are the SPEEDDataset pipelines without Resize (the crop warp
@@ -615,6 +617,18 @@ def pixel_transform(pixel_aug: str, fast_sun_flare: bool = True) -> A.Compose:
             "noise": noise,
             "simple": color + blur + noise,
         }[pixel_aug]
+    if occlusion:
+        # M11 (2026-11-14): synthetic occlusion, 1-4 rectangles of 10-30 % of the crop side filled
+        # with uniform noise; labels are unchanged
+        augs = list(augs) + [
+            A.CoarseDropout(
+                num_holes_range=(1, 4),
+                hole_height_range=(0.1, 0.3),
+                hole_width_range=(0.1, 0.3),
+                fill="random_uniform",
+                p=0.5,
+            )
+        ]
     return A.Compose(
         augs
         + [A.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD, max_pixel_value=1.0), ToTensorV2()]
@@ -645,7 +659,7 @@ def bop_bbox_to_xyxy(bbox) -> list[float]:
     return [x, y, x + w + 1.0, y + h + 1.0]
 
 
-def crop_warp_matrix(bbox, out_size: int) -> np.ndarray:
+def crop_warp_matrix(bbox, out_size: int, scale: float = 1.0) -> np.ndarray:
     """2x3 affine map (cv2 pixel indices) from the image to a square crop of side out_size.
 
     The square has side max(w, h) and the same centre as bbox, so the object keeps its aspect
@@ -658,14 +672,17 @@ def crop_warp_matrix(bbox, out_size: int) -> np.ndarray:
         out_size: Side of the output crop in pixels.
     """
     x1, y1, x2, y2 = (float(v) for v in bbox)
-    scale = out_size / max(x2 - x1, y2 - y1)
+    # M11 (2026-11-14): scale > 1 widens the square around the same centre (context margin)
+    scale = out_size / (scale * max(x2 - x1, y2 - y1))
     # pixel index i -> u = i + 0.5 -> crop coordinate -> crop index (- 0.5)
     tx = 0.5 * out_size - 0.5 + scale * (0.5 - 0.5 * (x1 + x2))
     ty = 0.5 * out_size - 0.5 + scale * (0.5 - 0.5 * (y1 + y2))
     return np.array([[scale, 0.0, tx], [0.0, scale, ty]], dtype=np.float64)
 
 
-def crop_image(image: np.ndarray, bbox, out_size: int, context: bool = False) -> np.ndarray:
+def crop_image(
+    image: np.ndarray, bbox, out_size: int, context: bool = False, scale: float = 1.0
+) -> np.ndarray:
     """Square crop of bbox at out_size, as one warpAffine; zeros outside the image.
 
     Args:
@@ -675,7 +692,7 @@ def crop_image(image: np.ndarray, bbox, out_size: int, context: bool = False) ->
         context: If False (default, as SPEEDDataset), the bands of the square outside bbox are
             black; if True they show the surrounding image.
     """
-    M = crop_warp_matrix(bbox, out_size)
+    M = crop_warp_matrix(bbox, out_size, scale)
     crop = cv2.warpAffine(
         image,
         M,
@@ -725,6 +742,8 @@ class BOPDataset(Dataset):
         bbox_jitter_prob: float = 0.5,
         pixel_aug: str = "standard",
         crop_context: bool = False,
+        crop_scale: float = 1.0,
+        occlusion_aug: bool = False,
         no_rotation_compensation: bool = False,
         index: dict | None = None,
         bop_root: str | None = None,
@@ -745,6 +764,9 @@ class BOPDataset(Dataset):
             pixel_aug: "none", "standard" or "domain_gap" (used only when augmenting).
                 "domain_gap" (SPEED+ lighting) makes many LM crops unrecognizable: ablate in M3.
             crop_context: Fill the square around the bbox with image instead of black.
+            crop_scale: Side of the square crop in units of max(w, h) of the box (M11; 1 = tight).
+                The labels still refer to the box, so this only changes what the network sees.
+            occlusion_aug: Also erase 1-4 random rectangles of the crop (M11), when augmenting.
             no_rotation_compensation: Regress the egocentric rotation instead.
             index: A prebuilt index (dict of arrays), e.g. for tests.
             bop_root, cache_dir: Passed to load_index.
@@ -769,8 +791,11 @@ class BOPDataset(Dataset):
         self.bbox_jitter = bbox_jitter_percent / 100.0
         self.bbox_jitter_prob = bbox_jitter_prob
         self.crop_context = crop_context
+        self.crop_scale = crop_scale
         self.no_rotation_compensation = no_rotation_compensation
-        self.transform = pixel_transform(pixel_aug if self.augment else "none")
+        self.transform = pixel_transform(
+            pixel_aug if self.augment else "none", occlusion=occlusion_aug and self.augment
+        )
 
     # The engine reads val_dataset.camera; BOP samples carry their own K, so it is only a fallback
     camera = Camera
@@ -824,7 +849,9 @@ class BOPDataset(Dataset):
     def __getitem__(self, row: int) -> dict:
         index = self.index
         bbox = self.crop_bbox(row)
-        crop = crop_image(self.load_image(row), bbox, self.img_size, self.crop_context)
+        crop = crop_image(
+            self.load_image(row), bbox, self.img_size, self.crop_context, self.crop_scale
+        )
         image = self.transform(image=crop.astype(np.float32) / 255.0)["image"]
         U, rotation = self.labels(row, bbox)
         obj_idx = int(index["obj_idx"][row])

@@ -21,6 +21,12 @@
 #   augsimple color + blur + noise
 #   augstrong domain_gap with every op at p = 0.8 instead of 0.5
 #   bbox5 bbox15 bbox30   bounding-box jitter up to 5 / 15 / 30 % per side (with bbox0, bbox20)
+# M11 "improve first" (2026-11-14, user; TASKS.md M11 phase A):
+#   ctx      image around the box instead of black bands (square crop, no margin)
+#   ctx125   context margin: square of 1.25 x max(w, h), filled with the image
+#   ctx15    same, 1.5 x
+#   occl     synthetic occlusion: 1-4 random rectangles erased per training crop (p = 0.5)
+#   tlw      translation loss weighted x2 (total = 2 * translation + rotation)
 set -euo pipefail
 : "${RUN_DIR:?run inside a train job (RUN_DIR not set)}"
 export PYTHONPATH=.
@@ -47,6 +53,11 @@ case $base in
     bbox5)   extra=(--bbox_crop_percent 5) ;;
     bbox15)  extra=(--bbox_crop_percent 15) ;;
     bbox30)  extra=(--bbox_crop_percent 30) ;;
+    ctx)     extra=(--crop_context); eval_extra=(--crop_context) ;;
+    ctx125)  extra=(--crop_context --crop_scale 1.25); eval_extra=(--crop_context --crop_scale 1.25) ;;
+    ctx15)   extra=(--crop_context --crop_scale 1.5); eval_extra=(--crop_context --crop_scale 1.5) ;;
+    occl)    extra=(--bop_occlusion_aug) ;;
+    tlw)     extra=(--translation_loss_weight 2) ;;
     *) echo "unknown variant $v"; exit 5 ;;
 esac
 out=$RUN_DIR/$v

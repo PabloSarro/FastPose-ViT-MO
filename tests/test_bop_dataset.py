@@ -473,3 +473,33 @@ def test_bbox_source_mix_picks_both_boxes_when_augmenting():
     val = BOPDataset(index=sub, augment=False, bbox_source="mix")
     assert all(val.crop_bbox(0) == visib for _ in range(5))
     assert BOPDataset(index=sub, augment=True, bbox_jitter_percent=0.0, bbox_source="obj").crop_bbox(0) == obj
+
+
+def test_crop_scale_margin():
+    """M11: crop_scale = 1 is the tight crop of before; a wider square keeps the box centred and
+    shrinks it by the scale factor."""
+    from src.bop_dataset import crop_image, crop_warp_matrix
+
+    bbox = [100.0, 50.0, 180.0, 110.0]  # w 80, h 60
+    assert np.array_equal(crop_warp_matrix(bbox, 64), crop_warp_matrix(bbox, 64, 1.0))
+    M1, M2 = crop_warp_matrix(bbox, 64), crop_warp_matrix(bbox, 64, 1.5)
+    assert np.isclose(M2[0, 0], M1[0, 0] / 1.5)
+    centre = np.array([140.0 - 0.5, 80.0 - 0.5, 1.0])  # box centre, pixel-index coordinates
+    assert np.allclose(M1 @ centre, M2 @ centre)
+    rng = np.random.default_rng(0)
+    image = rng.integers(0, 255, (240, 320, 3), dtype=np.uint8)
+    assert np.array_equal(crop_image(image, bbox, 64), crop_image(image, bbox, 64, False, 1.0))
+    wide = crop_image(image, bbox, 64, True, 1.5)
+    assert wide.shape == (64, 64, 3) and wide[0].any()  # the margin shows the image
+
+
+def test_occlusion_augmentation_runs():
+    """M11: the occlusion option adds CoarseDropout and keeps the output shape and dtype."""
+    from src.bop_dataset import pixel_transform
+
+    t = pixel_transform("domain_gap", occlusion=True)
+    assert any(type(a).__name__ == "CoarseDropout" for a in t.transforms)
+    crop = np.random.default_rng(0).random((64, 64, 3)).astype(np.float32)
+    out = t(image=crop)["image"]
+    assert tuple(out.shape) == (3, 64, 64)
+    assert not any(type(a).__name__ == "CoarseDropout" for a in pixel_transform("none").transforms)

@@ -144,7 +144,12 @@ def estimate_image(model, dataset, transformer, rows, image, device):
     bboxes = [dataset.crop_bbox(r) for r in rows]
     # Crops (uint8) on the CPU, normalisation on the GPU: the same ImageNet normalisation as
     # BOPDataset's transform, but its CPU version cost ~2 ms per crop (M9 latency)
-    crops = np.stack([crop_image(image, b, dataset.img_size, dataset.crop_context) for b in bboxes])
+    crops = np.stack(
+        [
+            crop_image(image, b, dataset.img_size, dataset.crop_context, dataset.crop_scale)
+            for b in bboxes
+        ]
+    )
     images = normalize_crops(crops, device)
     obj_idx = torch.as_tensor(index["obj_idx"][rows], device=device)
     with autocast("cuda", enabled=device.type == "cuda"):
@@ -450,6 +455,12 @@ def main() -> None:
         help="as train.py: the model regresses the absolute (egocentric) rotation, not the apparent one",
     )
     parser.add_argument(
+        "--crop_context", action="store_true", help="as train.py: image around the box, not black"
+    )
+    parser.add_argument(
+        "--crop_scale", type=float, default=1.0, help="as train.py: crop side / max(w, h) (M11)"
+    )
+    parser.add_argument(
         "--backend", default="torch", choices=["torch", "trt"], help="trt: TensorRT engine (M9)"
     )
     parser.add_argument("--trt_engine", default=None, help="engine file for --backend trt")
@@ -522,6 +533,8 @@ def main() -> None:
             depth_mode=args.depth_mode,
             no_rotation_compensation=args.no_rotation_compensation,
             img_size=VIT_MODELS[args.vit_model][3][0],
+            crop_context=getattr(args, "crop_context", False),
+            crop_scale=getattr(args, "crop_scale", 1.0),
         )
         pred_det = predict(model, dataset, args, device)
         # Targets without a detection: a pose 10 km away, so every error counts as a failure

@@ -41,6 +41,7 @@ class TrainingConfig:
     adam_param_groups: Optional[list[int]] = None
     use_per_iteration_scheduling: bool = True
     global_iteration_start: int = 0
+    translation_loss_weight: float = 1.0  # M11: total = weight * translation + rotation (training)
 
 
 @dataclass
@@ -516,7 +517,7 @@ def train_epoch(
                 loss_rotation = rotation_criterion(pred_rotations, rotations)
 
             loss_translation = translation_criterion(pred_translations, translations, bboxes)
-            total_loss = loss_translation + loss_rotation
+            total_loss = config.translation_loss_weight * loss_translation + loss_rotation
 
         # Backward pass
         if use_amp:

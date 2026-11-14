@@ -204,13 +204,13 @@ seed, then the mean of the AR and of its three components over the two seeds.
     \toprule
     Study & Setting & AR (a / b) \\
     \midrule
-    Training budget & 1$\times$ / 2$\times$ / 4$\times$ (heads) & 0.641 / 0.637, 0.650 / 0.650, 0.661 \\
+    Training budget & 1$\times$ / 2$\times$ / 4$\times$ (heads) & 0.641 / 0.637, 0.650 / 0.650, 0.661 (4$\times$: one seed, older code) \\
     & 2$\times$ / \textbf{4$\times$} (token, YCB-V) & 0.681 / 0.689, \textbf{0.694 / 0.702} \\
     Augmentation set (heads, 1$\times$) & standard / \textbf{domain gap} & 0.629 / 0.645, \textbf{0.641 / 0.637} \\
     Symmetric rotation loss & off / \textbf{on} & 0.659 / 0.651, \textbf{0.655 / 0.655} \\
     Training crop & \textbf{visible} / amodal / mix & \textbf{0.655 / 0.655}, 0.646 / 0.650, 0.650 / 0.654 \\
     Conditioning & heads / \textbf{token} / both & 0.650 / 0.650, \textbf{0.659 / 0.651}, 0.660 / 0.661 \\
-    Models & \textbf{one shared (4$\times$)} / 8 single-object & \textbf{0.669 / 0.664}, 0.672 \\
+    Models & \textbf{one shared (4$\times$)} / 8 single-object & \textbf{0.669 / 0.664}, 0.672 / \pending{} \\
     Checkpoint & best validation / \textbf{last epoch} & 0.6686 / \textbf{0.6685} (YCB-V 0.7021 both) \\
     Precision & PyTorch / \textbf{TensorRT FP16} & 0.6685 / \textbf{0.6685} (YCB-V 0.7021 / 0.7017) \\
     \bottomrule
@@ -243,7 +243,7 @@ gap'' augmentation 0.841.
     \midrule
     Default (GDRNPP) & 0.657 & 0.929 & 0.721 & 6.3\,\% & 81.6\,ms$^\dagger$ & 0.668 \\
     LW-DETR tiny (a / b) & 0.628 / 0.631 & 0.925 / 0.930 & 0.703 / 0.706 & & 15.5\,ms & 0.645 / 0.650 \\
-    LW-DETR small & 0.656 & 0.936 & 0.727 & & 18.0\,ms & 0.654 \\
+    LW-DETR small (a / b) & 0.656 / \pending{} & 0.936 / \pending{} & 0.727 / \pending{} & & 18.0\,ms & 0.654 / \pending{} \\
     LW-DETR small, TRT FP16 & 0.657 & & 0.728 & 7.6\,\% & 4.2\,ms & 0.654 \\
     \bottomrule
   \end{tabular}

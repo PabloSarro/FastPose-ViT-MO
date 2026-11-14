@@ -42,7 +42,11 @@ eggbox gain slightly. Per object: `$NAS_HOME/results/paper/per_object_ar_lmo_tok
 Our time is the BOP `time` of the evaluation run (A100, PyTorch, including the default detector's
 81.6 ms, re-timed 2026-11-08 with the current per-image path; the M7 run gave 0.134 s with the
 older path, same AR); see §3 for the deployment latency. Seeds: `tok4x` / `tok4x2` give
-0.669 / 0.664 (mean 0.666).
+0.669 / 0.664 (mean 0.666). **Selection rule (audit W3, 2026-11-14):** the reported seed is the one
+with the higher *validation* score ((AR_MSSD + AR_MSPD)/2, own recalls, GT boxes; scripts/val_score.py):
+LM-O real LM val `tok4x` 0.8969 vs `tok4x2` 0.8909; YCB-V val_pbr `tok4x2` 0.8619 vs `tok4x` 0.8583.
+Always quote the mean next to it (LM-O 0.666, YCB-V 0.698); the best-seed number is optimistic by
+about 0.003.
 
 ### 1.2 YCB-V (test, BOP19 targets, 900 images, 4,123 instances)
 

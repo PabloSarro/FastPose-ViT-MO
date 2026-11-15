@@ -90,6 +90,13 @@ if [[ ! -e $out/eval_val/DONE ]]; then
     .venv/bin/python scripts/val_score.py "$out/eval_val" > "$out/eval_val/val_score.txt"
     touch "$out/eval_val/DONE"
 fi
+if [[ ! -e $out/eval_valn/DONE ]]; then  # noisy boxes: see scripts/m12_valeval.sh
+    .venv/bin/python src/bop_evaluate.py --dataset lmo --model_weights "$out/last.pt" \
+        --vit_model "$VIT" --splits val_real --depth_mode "$DEPTH" --object_conditioning token \
+        "${eval_extra[@]}" --box_noise 0.1 --out_dir "$out/eval_valn"
+    .venv/bin/python scripts/val_score.py "$out/eval_valn" > "$out/eval_valn/val_score.txt"
+    touch "$out/eval_valn/DONE"
+fi
 if [[ ! -e $out/eval_det/DONE ]]; then
     echo "== $v: eval LM-O test, detections ($(date '+%F %T'))"
     .venv/bin/python src/bop_evaluate.py --dataset lmo --model_weights "$out/last.pt" \

@@ -3,7 +3,8 @@
 # finished LM-O pose models, so that configurations are chosen on validation, not on LM-O test.
 # Takes variant folders (RUN/<variant>, holding last.pt); the evaluation flags follow the variant
 # name as in scripts/m10_ablations.sh (a trailing 2 = second seed). Output: <variant>/eval_val/
-# (summary.json, table_<split>.md, val_score.txt; DONE file, so it can be restarted).
+# (summary.json, table_<split>.md, val_score.txt; DONE file, so it can be restarted) and
+# <variant>/eval_valn/ (the same on LM real val with the boxes perturbed by up to 10 % per side).
 #
 # Usage (repo root, dev or a job with a GPU):
 #   bash scripts/m12_valeval.sh $NAS_HOME/outputs/FastPose-ViT/runs/lmo-m10-absrot-001/absrot ...
@@ -22,13 +23,27 @@ for dir in "$@"; do
         ctx15)   eval_extra=(--crop_context --crop_scale 1.5) ;;
     esac
     out=$dir/eval_val
-    [[ -e $out/DONE ]] && { echo "== $v: done"; continue; }
     [[ -e $dir/last.pt ]] || { echo "== $v: no last.pt, skipped"; continue; }
-    echo "== $v: validation ($(date '+%T'))"
-    .venv/bin/python src/bop_evaluate.py --dataset lmo --model_weights "$dir/last.pt" \
-        --vit_model "$VIT" --splits val_real val_pbr --depth_mode "$DEPTH" \
-        --object_conditioning token "${eval_extra[@]}" --out_dir "$out" > "$dir/eval_val.log" 2>&1
-    .venv/bin/python scripts/val_score.py "$out" > "$out/val_score.txt"
-    touch "$out/DONE"
-    cat "$out/val_score.txt"
+    if [[ ! -e $out/DONE ]]; then
+        echo "== $v: validation ($(date '+%T'))"
+        .venv/bin/python src/bop_evaluate.py --dataset lmo --model_weights "$dir/last.pt" \
+            --vit_model "$VIT" --splits val_real val_pbr --depth_mode "$DEPTH" \
+            --object_conditioning token "${eval_extra[@]}" --out_dir "$out" > "$dir/eval_val.log" 2>&1
+        .venv/bin/python scripts/val_score.py "$out" > "$out/val_score.txt"
+        touch "$out/DONE"
+        cat "$out/val_score.txt"
+    fi
+    # Noisy boxes (audit W2): GT boxes cannot tell models trained with / without box jitter apart
+    # (no-jitter models look best on perfect boxes and worst on detections), so validation also
+    # runs with the boxes perturbed by up to 10 % per side (fixed seed), LM real val only.
+    outn=$dir/eval_valn
+    if [[ ! -e $outn/DONE ]]; then
+        .venv/bin/python src/bop_evaluate.py --dataset lmo --model_weights "$dir/last.pt" \
+            --vit_model "$VIT" --splits val_real --depth_mode "$DEPTH" \
+            --object_conditioning token "${eval_extra[@]}" --box_noise 0.1 --out_dir "$outn" \
+            > "$dir/eval_valn.log" 2>&1
+        .venv/bin/python scripts/val_score.py "$outn" > "$outn/val_score.txt"
+        touch "$outn/DONE"
+        cat "$outn/val_score.txt"
+    fi
 done

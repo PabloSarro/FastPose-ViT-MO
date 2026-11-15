@@ -113,6 +113,23 @@ def predict(model, dataset, args, device) -> dict:
     return {k: np.concatenate(v) for k, v in out.items()}
 
 
+def noisy_boxes(bbox_xywh: np.ndarray, img_wh: np.ndarray, fraction: float, seed: int) -> np.ndarray:
+    """BOP boxes [x, y, w, h] with every side moved by up to `fraction` of the box size
+    (uniform, as the training jitter, deterministic per seed), clamped to the image."""
+    rng = np.random.default_rng(seed)
+    b = np.asarray(bbox_xywh, dtype=np.float64)
+    n = len(b)
+    u = rng.uniform(-1, 1, (n, 4))
+    x1, y1 = b[:, 0] + u[:, 0] * fraction * b[:, 2], b[:, 1] + u[:, 2] * fraction * b[:, 3]
+    x2 = b[:, 0] + b[:, 2] - u[:, 1] * fraction * b[:, 2]
+    y2 = b[:, 1] + b[:, 3] - u[:, 3] * fraction * b[:, 3]
+    W, H = np.asarray(img_wh, dtype=np.float64)[:, 0], np.asarray(img_wh, dtype=np.float64)[:, 1]
+    x1, x2 = np.clip(x1, 0, W), np.clip(x2, 0, W)
+    y1, y2 = np.clip(y1, 0, H), np.clip(y2, 0, H)
+    out = np.stack([x1, y1, np.maximum(x2 - x1, 1.0), np.maximum(y2 - y1, 1.0)], axis=1)
+    return out.astype(np.asarray(bbox_xywh).dtype)
+
+
 def pose_transformer(dataset, args) -> CoordinateTransformer:
     """R, t recovery from the network outputs, as in predict()."""
     return CoordinateTransformer(
@@ -462,6 +479,13 @@ def main() -> None:
         "--crop_scale", type=float, default=1.0, help="as train.py: crop side / max(w, h) (M11)"
     )
     parser.add_argument(
+        "--box_noise", type=float, default=0.0,
+        help="Audit W2: perturb the GT crop boxes like a detector would (each side by up to this "
+        "fraction of the box size, uniform, fixed seed) so that validation sees box errors; "
+        "GT boxes only",
+    )
+    parser.add_argument("--box_noise_seed", type=int, default=0)
+    parser.add_argument(
         "--backend", default="torch", choices=["torch", "trt"], help="trt: TensorRT engine (M9)"
     )
     parser.add_argument("--trt_engine", default=None, help="engine file for --backend trt")
@@ -526,6 +550,13 @@ def main() -> None:
             logging.info(
                 f"{split}: detections for {detected.sum()} of {n_rows} targets "
                 f"({args.detections})"
+            )
+        if args.box_noise > 0:
+            if args.detections or bbox_source != "visib":
+                parser.error("--box_noise needs GT boxes (bbox_source visib, no --detections)")
+            pred_index = dict(pred_index)
+            pred_index["bbox_visib"] = noisy_boxes(
+                pred_index["bbox_visib"], pred_index["img_wh"], args.box_noise, args.box_noise_seed
             )
         dataset = BOPDataset(
             index=pred_index,

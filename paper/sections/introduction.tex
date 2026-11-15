@@ -52,8 +52,8 @@ synthetic training data only. To this end, we make the following contributions:
         object, and stays valid on the apparent-rotation targets.
   \item A \textbf{deployment study} on BOP: batched TensorRT FP16 inference with no loss in AR,
         latency as a function of the number of objects, and a multi-class LW-DETR
-        detector~\cite{chen2024lwdetr} that brings the full pipeline to 55 frames per second for
-        8 objects on an A100.
+        detector~\cite{chen2024lwdetr} that brings the full pipeline, from the image file to all
+        poses, to 40 frames per second on an A100 (measured end to end over the LM-O test set).
 \end{itemize}
 Trained on PBR images only, \ours{} reaches an AR of 0.668 on LM-O~\cite{brachmann2014lmo} and
 0.702 on YCB-V~\cite{xiang2018posecnn} with the standard BOP detections. On YCB-V, this is the

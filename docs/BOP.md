@@ -328,8 +328,13 @@ GridSample is wrong for it (fp32 mAP 0.633 instead of 0.658); with gathers, engi
 The pose stage is real time (70 FPS for 8 objects; 130 FPS with the 224 px backbone, −0.023 AR,
 §2). With the default detector (GDRNPPDet, time reported by its authors), the whole method runs
 at ~10 FPS: the detector is the bottleneck. With our own LW-DETR small detector (TensorRT fp16,
-4.2 ms mean), the whole method runs at **55 FPS for 8 objects** for AR 0.654 (vs 0.668 with the default
-detector). Jetson Orin numbers: not measured (no device).
+4.2 ms mean), the whole method runs at **55 FPS for 8 objects when the frame is already decoded**
+(summed medians) for AR 0.654 (vs 0.668 with the default detector). **Measured end to end (audit W5,
+2026-11-15, `optimization/bop_e2e_latency.py`, `$NAS_HOME/results/m9/e2e_clean/`, idle A100, all 200
+LM-O test images, 7.2 objects on average, from the encoded PNG):** RGB 384 px **25.2 ms (40 FPS)**
+(decode 7.8 + detector 3.4 + crops / network / recovery 14.8; 17.4 ms = 57 FPS without decoding), RGB 224 px
+18.5 ms (54 FPS), RGB-D 384 px 30.0 ms (33 FPS), RGB-D 224 px 23.4 ms (43 FPS). The AR of this loop equals
+the offline one (RGB 0.654, RGB-D 0.738). Jetson Orin numbers: not measured (no device).
 
 ## 4. Known limitations
 - **Depth bias on real YCB-V images** (D8): every object is estimated ~2.4 % too far (median); the

@@ -194,3 +194,21 @@ def test_load_safe_reads_checkpoints_and_refuses_code(tmp_path):
     with pytest.raises(Exception):
         load_safe(bad)
     assert not marker.exists()  # the pickled code did not run
+
+
+# ------------------------------------------------------------------ noisy validation boxes
+def test_noisy_boxes_deterministic_bounded_and_scaled():
+    from src.bop_evaluate import noisy_boxes
+
+    boxes = np.array([[100.0, 80.0, 60.0, 40.0], [0.0, 0.0, 30.0, 30.0], [600.0, 440.0, 40.0, 40.0]])
+    wh = np.array([[640, 480]] * 3)
+    a = noisy_boxes(boxes, wh, 0.1, seed=0)
+    assert np.array_equal(a, noisy_boxes(boxes, wh, 0.1, seed=0))  # same seed, same boxes
+    assert not np.array_equal(a, noisy_boxes(boxes, wh, 0.1, seed=1))
+    assert np.array_equal(noisy_boxes(boxes, wh, 0.0, seed=0)[:, :2], boxes[:, :2])  # no noise
+    assert (a[:, 0] >= 0).all() and (a[:, 1] >= 0).all()
+    assert (a[:, 0] + a[:, 2] <= 640 + 1e-9).all() and (a[:, 1] + a[:, 3] <= 480 + 1e-9).all()
+    big = np.tile(boxes[:1], (4000, 1))
+    n = noisy_boxes(big, np.tile(wh[:1], (4000, 1)), 0.1, seed=0)
+    assert np.abs(n[:, 0] - 100.0).max() <= 0.1 * 60 + 1e-9  # a side moves by at most 10 % of w
+    assert 0.5 * 0.1 * 60 * 0.8 < np.abs(n[:, 0] - 100.0).mean() < 0.5 * 0.1 * 60 * 1.2

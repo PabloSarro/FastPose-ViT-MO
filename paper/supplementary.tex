@@ -132,6 +132,16 @@ All rows: one change from the ablation baseline (class token, 2$\times$, symmetr
 ``domain gap'', 10\,\% box perturbation, size-invariant depth, SWAG, apparent rotation); AR per
 seed, then the mean of the AR and of its three components over the two seeds.
 
+\paragraph{Choosing on validation.}
+The ablation configurations were compared on the test set; for the later choices we use a
+validation score, $(\mathrm{AR}_\mathrm{MSSD} + \mathrm{AR}_\mathrm{MSPD})/2$ with our own recalls,
+on the 1,600 real LM images of the 8 objects. With perfect boxes, this score ranks our 31 trained
+models poorly against the official test AR (Spearman 0.61), since it cannot see the effect of the
+box jitter (models trained without it look best on perfect boxes and are worst on detections);
+with the boxes perturbed like a detector would (each side by up to 10\,\% of the box size, fixed
+seed) it ranks them almost like the test set (Spearman 0.93, 324 of 341 pairs with a test
+difference above 0.01 in the right order).
+
 \begin{table}[h]
   \centering
   \setlength{\tabcolsep}{3.5pt}
@@ -452,7 +462,8 @@ shift 18\,mm) and $-21$\,mm on YCB-V, the depth bias of \cref{sec:supp:depth}.
     \bottomrule
   \end{tabular}
   \caption{\textbf{RGB-D variant} of every RGB result (default detections unless stated). With our
-  detector and TensorRT, the whole RGB-D pipeline takes 24\,ms per image.}
+  detector and TensorRT, the whole RGB-D pipeline takes 30\,ms per image from the image and depth
+  files (23\,ms at 224\,px), measured end to end (main paper, end-to-end latency table).}
   \label{tab:supp:rgbd}
 \end{table}
 

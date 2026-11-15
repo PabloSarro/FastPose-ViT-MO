@@ -190,7 +190,8 @@ of an image in a few batched GPU operations, in 3--4\,ms per image. The AR rises
 0.749 on LM-O and from 0.702 to 0.851 on YCB-V (second seed: 0.752 and 0.849), where the correction
 also removes the depth bias of the real images (median shift $-21$\,mm); VSD and MSSD gain
 0.10--0.23, MSPD changes by at most 0.015. With our own detector and TensorRT, the complete RGB-D
-pipeline takes 24\,ms per image for 0.738 AR on LM-O. The RGB-D variant is behind the best
+pipeline takes 30\,ms per image from the image and depth files for 0.738 AR on LM-O (23\,ms with
+the 224\,px backbone). The RGB-D variant is behind the best
 PBR-trained RGB-D methods (LM-O 0.80, YCB-V 0.91), which use one network per object or
 render-and-compare and take 1.7--12\,s per image, and ahead of the fast single-model RGB-D methods
 (RACE-6D 0.733, FFB6D 0.687 / 0.758).
@@ -367,16 +368,46 @@ processes 8 objects in 14.1\,ms (71 FPS), and its latency grows linearly with $N
     Pipeline, TensorRT FP16, 224 px & 4.3 & 5.8 & 7.1 & 10.6 \\
     \midrule
     + default detector (81.6\,ms) [FPS] & 11.5 & 11.0 & 10.4 & 9.5 \\
-    + our LW-DETR (4.2\,ms) [FPS] & 105 & 74 & 55 & 35 \\
-    + our LW-DETR, 224 px [FPS] & 118 & 100 & 88 & 68 \\
+    + our LW-DETR (4.2\,ms), summed [FPS] & 105 & 74 & 55 & 35 \\
+    + our LW-DETR, 224 px, summed [FPS] & 118 & 100 & 88 & 68 \\
     \bottomrule
   \end{tabular}
   \caption{\textbf{Latency per image vs.\ number of objects $N$} on one NVIDIA A100 (median of
   200 runs, LM-O model, 384 px unless stated). Network: the $N$ crops already on the GPU. Pipeline:
   decoded image to $N$ poses. Default detector time as reported by its authors; our detector:
   mean time per image of its TensorRT FP16 engine over the LM-O test images (median 3.3\,ms),
-  measured on the same GPU and added to the pipeline time, since both run one after the other.}
+  measured on the same GPU and added to the pipeline time (``summed'': a decoded frame is
+  assumed; the measured end-to-end loop, including image decoding, is in
+  \cref{tab:e2e}).}
   \label{tab:latency}
+\end{table}
+
+\begin{table}[t]
+  \centering
+  \setlength{\tabcolsep}{3pt}
+  \small
+  \begin{tabular}{lcccc}
+    \toprule
+    ms per image, A100 & \multicolumn{2}{c}{RGB} & \multicolumn{2}{c}{RGB-D} \\
+    & 384 px & 224 px & 384 px & 224 px \\
+    \midrule
+    Decode PNG (RGB) & 7.8 & 7.7 & 7.7 & 7.8 \\
+    Detector (TensorRT FP16) & 3.4 & 3.2 & 3.2 & 3.3 \\
+    Crops, network, pose recovery & 14.8 & 7.6 & 14.4 & 8.0 \\
+    Decode depth + depth correction & & & 4.8 & 5.2 \\
+    \midrule
+    \textbf{Total, from the files} & \textbf{25.2} & \textbf{18.5} & \textbf{30.0} & \textbf{23.4} \\
+    FPS & 40 & 54 & 33 & 43 \\
+    FPS from decoded frames & 57 & 93 & 49 & 72 \\
+    \bottomrule
+  \end{tabular}
+  \caption{\textbf{Measured end-to-end latency} over the 200 LM-O test images (7.2 objects per
+  image on average, up to 8), from the encoded image (and depth) file in memory to the poses,
+  with our small LW-DETR and the pose engine in TensorRT FP16 on one NVIDIA A100 (idle node,
+  one CUDA synchronization per image; stage times from a second pass with a synchronization
+  after each stage). Median total; the BOP evaluation of these poses gives the AR of
+  \cref{tab:lmo}.}
+  \label{tab:e2e}
 \end{table}
 
 \paragraph{Detector.}
@@ -391,7 +422,11 @@ which TensorRT 10.14 computes incorrectly, by an equivalent gather-based bilinea
 (Supp.~Sec.~S5). The FP16 engine runs in 4.2\,ms per image on average (median 3.3\,ms,
 including resizing, normalization and top-$k$ selection) with the same mAP (0.657), and the full
 pipeline reaches 55 FPS for 8 objects at 384 px (0.654 AR), or 88 FPS at 224 px, where the
-backbone costs 0.023 AR (0.643 vs.\ 0.666, two seeds each).
+backbone costs 0.023 AR (0.643 vs.\ 0.666, two seeds each), when the frame is already decoded.
+Measured end to end (\cref{tab:e2e}), in a loop over the 200 test images from the encoded PNG
+file, with detector, crops, pose network and pose recovery, the pipeline takes 25.2\,ms per image
+at 7.2 objects on average (40 FPS); decoding the PNG alone costs 7.8\,ms, so 17.4\,ms (57 FPS)
+remain for the method itself, and the loop gives the AR of \cref{tab:lmo} (0.654).
 \todo{Jetson Orin numbers, if a device becomes available; otherwise state it as a limitation.}
 
 \subsection{Qualitative Results}

@@ -1190,22 +1190,22 @@ time). Our errors are mostly in depth (VSD / MSSD) and on heavily occluded objec
 
 ## 10. Next session: start here
 
-0. **Tracker (updated 2026-11-15 12:00):**
+0. **Tracker (updated 2026-11-15 12:55 CET = 11:55 UTC; times below are Swiss time, the cluster logs are UTC):**
 
    | Task | Status |
    |---|---|
    | **Running jobs** | |
-   | Baseline re-trained on current code: `lmo-m12-base{,2}-001` | Running, epochs ~111 / ~107 of 150, done ~14:00 |
-   | Detector second seed: `lmo-m12-detsmall2-001` | Running, epoch ~13/50, ~Mon 03:30 |
-   | T-LESS: `tless-m10-tok4x-002` / `tless-m10-tok4x2-002` | `tok4x` trained; `tok4x2` epoch 149/150, then evaluation (1–2 h) |
-   | YCB-V own detector: `ycbv-m10-detsmall-001` | Running, epoch 28/50, ~Mon 01:30 |
-   | YCB-V conditioning heads: `ycbv-m10-heads2x{,2}-001` | Running, epochs ~95 / ~91 of 150, ~21:40 / ~22:20 |
+   | Baseline re-trained on current code: `lmo-m12-base{,2}-001` | Running, epochs 122 / 118 of 150, done ~15:00 / ~15:20 CET (+ ~15 min evaluation) |
+   | Detector second seed: `lmo-m12-detsmall2-001` | Running, epoch 15/50, ~Mon 04:50 CET |
+   | T-LESS: `tless-m10-tok4x-002` / `tless-m10-tok4x2-002` | `tok4x` trained; `tok4x2` trained, evaluation running since 12:53 CET (~1–2 h) |
+   | YCB-V own detector: `ycbv-m10-detsmall-001` | Running, epoch 29/50, ~Mon 03:00 CET |
+   | YCB-V conditioning heads: `ycbv-m10-heads2x{,2}-001` | Running, epochs 100 / 96 of 150, ~21:50 / ~22:30 CET (+ evaluation) |
    | **To do when jobs end** | |
    | Fill bbox 5 / 15 / 30 % in the paper's recipe table, supplementary S3 and `docs/BOP.md` (numbers in §9, 2026-11-15) | To do (jobs done) |
    | T-LESS: RGB eval + RGB-D (C6), paper T-LESS paragraph + table block, per-object table | To do (after T-LESS jobs) |
    | YCB-V own detector: AR, RGB-D (C7), paper rows | To do (after detsmall) |
    | YCB-V heads vs token: supplementary table | To do (after heads jobs) |
-   | M11 phase A done (context variants −0.03, occl / tlw within noise): decide A4 / A5 against `lmo-m12-base` on `eval_valn`, then phase B choice → final 4× runs | To do (after `base`, ~14:00) |
+   | M11 phase A done (context variants −0.03, occl / tlw within noise): decide A4 / A5 against `lmo-m12-base` on `eval_valn`, then phase B choice → final 4× runs | To do (after `base`, ~15:00–15:20 CET) |
    | **Paper** | |
    | Positioning vs PViT-6D / PoseDETR (improve first, option c) | In progress (M11) |
    | Abstract / introduction / conclusion with T-LESS, M11 and RGB-D | To do |

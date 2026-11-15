@@ -251,6 +251,7 @@ difference above 0.01 in the right order).
     Symmetric rotation loss & off / \textbf{on} & 0.659 / 0.651, \textbf{0.655 / 0.655} \\
     Training crop & \textbf{visible} / amodal / mix & \textbf{0.655 / 0.655}, 0.646 / 0.650, 0.650 / 0.654 \\
     Conditioning & heads / \textbf{token} / both & 0.650 / 0.650, \textbf{0.659 / 0.651}, 0.660 / 0.661 \\
+    & heads / \textbf{token} (2$\times$, YCB-V) & 0.674 / 0.678, \textbf{0.681 / 0.689} \\
     Models & \textbf{one shared (4$\times$)} / 8 single-object & \textbf{0.669 / 0.664}, 0.672 / 0.666 \\
     Checkpoint & best validation / \textbf{last epoch} & 0.6686 / \textbf{0.6685} (YCB-V 0.7021 both) \\
     Precision & PyTorch / \textbf{TensorRT FP16} & 0.6685 / \textbf{0.6685} (YCB-V 0.7021 / 0.7017) \\

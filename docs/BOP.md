@@ -8,7 +8,7 @@ official BOP19 metric (AR = mean of AR_VSD, AR_MSSD, AR_MSPD, `bop_toolkit`).
 
 Status (2026-11-15): LM-O, YCB-V and T-LESS done, deployment (ONNX, TensorRT fp16, latency) done, our own
 multi-class detector (M9 stretch), the 224 px resolution ablation, the paper ablations of
-`docs/PAPER_TODO.md` §3 and M11 phase A done. Still running: the YCB-V heads and own-detector jobs
+`docs/PAPER_TODO.md` §3 and M11 phase A done. Still running: the YCB-V own-detector job
 and the second seed of the LM-O small detector; their rows are marked *pending*.
 
 ## 1. Results
@@ -202,6 +202,8 @@ Each block changes one thing; the bold row is the choice kept.
 | Object conditioning (`domain_gap`, 2×) | per-object heads | 0.650 / 0.650 | 0.650 |
 | | **per-object class token** | 0.659 / 0.651 | 0.655 |
 | | both | 0.660 / 0.661 | 0.660 |
+| YCB-V conditioning (2×, detections) | per-object heads | 0.674 / 0.678 | 0.676 |
+| | **per-object class token** | 0.681 / 0.689 | 0.685 |
 | Symmetry-aware rotation loss (token, 2×) | off | 0.659 / 0.651 | 0.655 |
 | | **on** | 0.655 / 0.655 | 0.655 |
 | Training crop source (token, 2×, symmetric loss) | **`bbox_visib`** | 0.655 / 0.655 | 0.655 |
@@ -250,7 +252,7 @@ Reading (2026-11-08, replaces the earlier conclusions drawn from val ADD and dri
   0.030, 20 % ≈ 10 %, −0.005; WACV Table 8 found the same direction), the 384 px backbone (+0.023 AR vs 224 px, at
   about twice the pose time, §3), `site` depth (+0.06 AR on the driller vs `legacy`), training compute
   (1× → 2× → 4×: 0.639 → 0.650 → 0.661), class-token conditioning vs per-object heads (+0.005;
-  heads + token "both" +0.010; both at about the seed spread).
+  heads + token "both" +0.010; both at about the seed spread; on YCB-V with 21 objects the token is +0.009 AR over heads, GT boxes 0.694 vs 0.680, validation 0.833 vs 0.811).
 - **No measurable effect on test AR** (kept for other reasons): `domain_gap` augmentation (+0.002
   multi-object, −0.003 driller; it was chosen in M3 on driller ADD, +0.05, and on LM real val), the
   symmetric loss (needed for the YCB-V clamps, M8), the crop source (`bbox_visib` marginally best),

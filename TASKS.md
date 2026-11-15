@@ -1191,6 +1191,7 @@ time). Our errors are mostly in depth (VSD / MSSD) and on heavily occluded objec
 | 2026-11-15 | `results/lmo-m12-single-s1/{eval_det,eval_test}` | **LM-O test**, default detections / GT boxes | Audit W4: second seed of the 8 single-object models (`lmo-m12-obj{1,5,6,8,9,10,11,12}s1-001`), CSVs merged | AR **0.666** (VSD 0.488, MSSD 0.633, MSPD 0.877), GT boxes 0.682 | Seed 0: 0.672 / 0.688; mean 0.669 vs shared 0.666: same |
 | 2026-11-15 | `outputs/FastPose-ViT/runs/tless-m10-tok4x-002`, `tless-m10-tok4x2-002` | **T-LESS test_primesense**, default detections / GT boxes | M10 T-LESS: one shared model, 30 objects, `tok4x` recipe (4×, 633,120 samples per epoch), 2 seeds | Detections: AR **0.7616 / 0.7624** (VSD 0.650 / 0.651, MSSD 0.701 / 0.701, MSPD 0.933 / 0.935); GT boxes 0.8127 / 0.8120 | Detector costs 0.05 AR; per-object tables in the run folders and `docs/BOP.md` §1.4; leaderboard comparison not done |
 | 2026-11-15 | `results/m11/rgbd_splat/tless_tok4x{,2}` | **T-LESS test** + test depth | M11 C6: RGB-D variant (`--method splat`) of the two T-LESS RGB results | **0.858 / 0.859** (VSD 0.789 / 0.790, MSSD 0.853 / 0.854, MSPD 0.931 / 0.933), 0.101 s per image | RGB 0.762 / 0.762; median shift −11 / −12 mm, 3.2 ms per image |
+| 2026-11-16 | `outputs/FastPose-ViT/runs/ycbv-m10-heads2x{,2}-001` | **YCB-V test**, default detections (GT boxes in brackets); PBR val | Per-object heads instead of the class token, 2×, 2 seeds (compare `tok2x{,2}`) | AR 0.674 / 0.678 (GT boxes 0.679 / 0.681) against token 0.681 / 0.689 (0.687 / 0.701); best PBR-val score 0.811 / 0.812 against 0.834 / 0.832 | Token better on YCB-V too: +0.009 AR (mean 0.685 vs 0.676), +0.02 on validation; same direction as LM-O (+0.005). Paper: supplementary conditioning row + one sentence |
 (Paths relative to `$NAS_HOME`.)
 
 ---
@@ -1205,11 +1206,10 @@ time). Our errors are mostly in depth (VSD / MSSD) and on heavily occluded objec
    | Detector second seed: `lmo-m12-detsmall2-001` | Running, epoch 15/50, ~Mon 04:50 CET |
    | T-LESS: `tless-m10-tok4x-002` / `tless-m10-tok4x2-002` | Done 2026-11-15 (AR 0.762 / 0.762, RGB-D 0.858 / 0.859) |
    | YCB-V own detector: `ycbv-m10-detsmall-001` | Running, epoch 29/50, ~Mon 03:00 CET |
-   | YCB-V conditioning heads: `ycbv-m10-heads2x{,2}-001` | Finished (jobs stopped 2026-11-16 00:25 CET), results not processed yet |
+   | YCB-V conditioning heads: `ycbv-m10-heads2x{,2}-001` | Done 2026-11-16: AR 0.674 / 0.678 (token `tok2x{,2}` 0.681 / 0.689) |
    | **To do when jobs end** | |
    | T-LESS: leaderboard comparison (PBR-only RGB / RGB-D entries, training data to check) and second block in the paper | To do |
    | YCB-V own detector: AR, RGB-D (C7), paper rows | To do (after detsmall) |
-   | YCB-V heads vs token: supplementary table | To do (after heads jobs) |
    | M11 A6: `tlw` + `occl` together, `lmo-m11-tlwocc{,2}-001` (2×, started Mon 00:20 CET) | Running, ~Mon 08:30 CET (training ~8 h + evaluation) |
    | M11 phase B choice (B1 ViT-L/512, B2 8× budget, B3 YCB-V `train_real`) | To do (user, after A6) |
    | **Paper** | |

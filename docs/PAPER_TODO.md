@@ -54,8 +54,8 @@ jobs; external = someone outside this project).
 - [x] *Done 2026-11-11 on LM-O, 8 objects: `legacy` 0.610 / 0.625 vs `site` 0.655; YCB-V not run.* **`site` vs `legacy` depth on several objects / cameras** (so far: driller only, one
       camera): multi-object LM-O and/or YCB-V (two cameras), to support "camera- and
       object-size-independent". Cost: train.
-- [ ] Optionally, **object conditioning on YCB-V** (heads vs class token with 21 objects).
-      Cost: train.
+- [x] Optionally, **object conditioning on YCB-V** (heads vs class token with 21 objects).
+      Done 2026-11-16: token 0.681 / 0.689, heads 0.674 / 0.678 (2×, detections).
 
 ## 4. Needs outside input or resources
 - [ ] **Jetson Orin Nano latency** for BOP (the WACV paper's central claim was on-device; we only

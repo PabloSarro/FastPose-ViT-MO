@@ -273,7 +273,9 @@ large-scale pre-training is essential when only synthetic images are available.
 \paragraph{One network for all objects.}
 \Cref{tab:abl_objects} compares the ways to share the network. The class token is slightly better
 than per-object heads (+0.005) and combining both brings another 0.005, both at about the seed
-spread; we keep the class token alone, which needs no per-object output layer. Eight
+spread; we keep the class token alone, which needs no per-object output layer. On YCB-V (21
+objects, 2$\times$) the class token is again better than per-object heads (0.681 / 0.689 against
+0.674 / 0.678 AR, mean 0.685 against 0.676; \cref{sec:supp:ablations}). Eight
 single-object models, trained with the same total compute, reach 0.672 and 0.666 AR for the two
 seeds (mean 0.669), the same as the shared model (0.669 and 0.664, mean 0.666), with eight times as
 many parameters and no batching across objects.

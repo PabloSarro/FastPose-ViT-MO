@@ -1075,6 +1075,7 @@ time). Our errors are mostly in depth (VSD / MSSD) and on heavily occluded objec
   - [x] A3 `ctx`: image instead of black bands, no margin (isolates the padding). **0.622, 0.812: worse; the black padding is not what limits the model (cause of the loss not investigated).**
   - [x] A4 `occl`: synthetic occlusion, 1-4 random rectangles (10-30 % of the side) erased, p = 0.5. **0.654, 0.876: within the seed spread of the baseline (0.652, 0.873): not adopted.**
   - [x] A5 `tlw`: translation loss weighted × 2 (depth emphasis). **0.659 (+0.007), validation 0.874 (+0.001): not confirmed on validation, not adopted.**
+  - [~] A6 `tlwocc`: `tlw` + `occl` together (user, 2026-11-15; variant added to `scripts/m10_ablations.sh`). Jobs `lmo-m11-tlwocc{,2}-001` started 2026-11-16 00:20 CET, 2×, 2 seeds; adopt only if test AND `eval_valn` beat the baseline (0.652 / 0.873) by more than the seed spread (0.004).
 - [x] **B4** (evaluation only, `dev`, `scripts/pose_ensemble.py`): average the poses of the two seed
   models (`tok4x` + `tok4x2`) at test time, symmetry-aware (align seed b to the closest symmetric
   pose of seed a, mean of t, rotation mean projected on SO(3)). *Done 2026-11-14
@@ -1204,12 +1205,13 @@ time). Our errors are mostly in depth (VSD / MSSD) and on heavily occluded objec
    | Detector second seed: `lmo-m12-detsmall2-001` | Running, epoch 15/50, ~Mon 04:50 CET |
    | T-LESS: `tless-m10-tok4x-002` / `tless-m10-tok4x2-002` | Done 2026-11-15 (AR 0.762 / 0.762, RGB-D 0.858 / 0.859) |
    | YCB-V own detector: `ycbv-m10-detsmall-001` | Running, epoch 29/50, ~Mon 03:00 CET |
-   | YCB-V conditioning heads: `ycbv-m10-heads2x{,2}-001` | Running, epochs 100 / 96 of 150, ~21:50 / ~22:30 CET (+ evaluation) |
+   | YCB-V conditioning heads: `ycbv-m10-heads2x{,2}-001` | Finished (jobs stopped 2026-11-16 00:25 CET), results not processed yet |
    | **To do when jobs end** | |
    | T-LESS: leaderboard comparison (PBR-only RGB / RGB-D entries, training data to check) and second block in the paper | To do |
    | YCB-V own detector: AR, RGB-D (C7), paper rows | To do (after detsmall) |
    | YCB-V heads vs token: supplementary table | To do (after heads jobs) |
-   | M11 phase A done, nothing adopted (validation rule): choose phase B (B1 ViT-L/512, B2 8× budget, B3 YCB-V `train_real`) and whether to test `tlw` + `occl` together | To do (user) |
+   | M11 A6: `tlw` + `occl` together, `lmo-m11-tlwocc{,2}-001` (2×, started Mon 00:20 CET) | Running, ~Mon 08:30 CET (training ~8 h + evaluation) |
+   | M11 phase B choice (B1 ViT-L/512, B2 8× budget, B3 YCB-V `train_real`) | To do (user, after A6) |
    | **Paper** | |
    | Positioning vs PViT-6D / PoseDETR (improve first, option c) | In progress (M11) |
    | Abstract / introduction / conclusion with T-LESS | Done 2026-11-15 (M11 / final numbers to update after phase B) |

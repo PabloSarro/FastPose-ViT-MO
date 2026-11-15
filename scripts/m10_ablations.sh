@@ -27,6 +27,7 @@
 #   ctx15    same, 1.5 x
 #   occl     synthetic occlusion: 1-4 random rectangles erased per training crop (p = 0.5)
 #   tlw      translation loss weighted x2 (total = 2 * translation + rotation)
+#   tlwocc   tlw + occl together (user, 2026-11-15: both were within the seed spread alone)
 # Audit 2026-11-14 (TASKS.md W1, W2):
 #   base     no change: the ablation baseline re-trained on the current code (the old baseline
 #            symtok2x of 2026-10-26 ran older code); seed b = base2
@@ -65,6 +66,7 @@ case $base in
     ctx15)   extra=(--crop_context --crop_scale 1.5); eval_extra=(--crop_context --crop_scale 1.5) ;;
     occl)    extra=(--bop_occlusion_aug) ;;
     tlw)     extra=(--translation_loss_weight 2) ;;
+    tlwocc)  extra=(--translation_loss_weight 2 --bop_occlusion_aug) ;;
     *) echo "unknown variant $v"; exit 5 ;;
 esac
 out=$RUN_DIR/$v

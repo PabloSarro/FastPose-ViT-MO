@@ -7,14 +7,13 @@ single linear layer shared by all objects, conditioned on the object identity by
 class token. A size-invariant depth target makes the formulation independent of the camera and of
 the object size, and a symmetry-aware rotation loss with translation offsets handles symmetric
 objects; the apparent rotation of the original method remains the most important ingredient
-(+0.11 AR). Trained on PBR images only, \ours{} reaches 0.668 AR on LM-O and 0.702 AR on YCB-V,
-the best YCB-V result among PBR-only RGB methods with one model for all objects, and it loses no
+(+0.11 AR). Trained on PBR images only, \ours{} reaches 0.668 AR on LM-O, 0.702 AR on YCB-V and 0.762 AR
+on T-LESS, the best YCB-V result among PBR-only RGB methods with one model for all objects, and it loses no
 accuracy in TensorRT FP16. With our own multi-class detector, the full pipeline runs at 40 FPS
 from the image file to the poses of all objects on an A100 (57 FPS from a decoded frame).
 
 Our main limitations are the depth accuracy of the directly regressed translation, which explains
 most of the gap in the 3D metrics, heavily occluded objects, and a depth bias on real YCB-V
 images that synthetic training data alone does not remove. Training with the real images of
-YCB-V, measuring the latency on embedded hardware, and \pending{T-LESS} are the next steps.
-\todo{Rewrite once T-LESS and the augmentation study are in, and once the positioning against
-PViT-6D and PoseDETR is agreed.}
+YCB-V and measuring the latency on embedded hardware are the next steps.
+\todo{Rewrite once the positioning against PViT-6D and PoseDETR is agreed.}

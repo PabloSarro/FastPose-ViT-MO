@@ -11,12 +11,14 @@
 % supplementary.tex (the supplementary material, a separate PDF; the paper refers to its sections
 % as "Supp. Sec. S1-S8").
 %
-% Status (2026-11-14):
-%   done     LM-O, YCB-V, all ablations except bbox jitter 5 / 15 / 30 % (seed a), augmentation
-%            study, deployment and latency, own detector, figures (paper/figures, made by
-%            vis/paper_*.py), verified leaderboard and bibliography, supplementary split.
-%   running  T-LESS (tless-m10-tok4x{,2}-002, epochs 128 / 104 of 150); bbox jitter
-%            lmo-m10-bbox{5,52,15,30}-003 (relaunched after a node failure).
+% Status (2026-11-15):
+%   done     LM-O, YCB-V, T-LESS (RGB and RGB-D), all ablations including bbox jitter, augmentation
+%            study and M11 phase A, second seed of the single-object models, deployment and
+%            latency, own detector, figures (paper/figures, made by vis/paper_*.py), verified
+%            leaderboard and bibliography, supplementary split.
+%   running  second seed of the small detector (lmo-m12-detsmall2-001), YCB-V heads and own
+%            detector (ycbv-m10-heads2x{,2}-001, ycbv-m10-detsmall-001).
+%   open     T-LESS leaderboard comparison (PBR-only RGB entries not checked yet).
 %   open     positioning vs PViT-6D / PoseDETR (to agree with the supervisor), venue and page
 %            limit, authors, Jetson latency. Search for \pending and \todo.
 \input{preamble}

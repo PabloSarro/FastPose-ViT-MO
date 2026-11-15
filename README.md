@@ -363,6 +363,7 @@ BOP default detections:
 |---|---|---|---|---|---|
 | LM-O | **0.668** | 0.491 | 0.641 | 0.873 | 0.729 (ZebraPose), 0.713 (GDRNPP) |
 | YCB-V | **0.702** | 0.591 | 0.681 | 0.834 | 0.729 (ZebraPose), 0.713 (GDRNPP) |
+| T-LESS | **0.762** | 0.651 | 0.701 | 0.935 | not checked yet |
 
 With TensorRT fp16 on an A100, the pose stage takes 14 ms for 8 objects (70 FPS) and loses no
 measurable AR. Full tables, ablations, latency and how to reproduce every number:

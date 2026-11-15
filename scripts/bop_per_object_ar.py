@@ -52,7 +52,8 @@ def main() -> None:
         if len(subs) != 1:
             raise SystemExit(f"expected one result folder in {eval_dir}, found {subs}")
         eval_dir = subs[0]
-    names = YCBV_NAMES if "_ycbv-" in os.path.basename(eval_dir) else LMO_NAMES
+    base = os.path.basename(eval_dir)
+    names = YCBV_NAMES if "_ycbv-" in base else LMO_NAMES if "_lmo-" in base else {}  # T-LESS: ids only
     rec = per_type_recalls(eval_dir)
     objs = sorted(k for k in rec["mssd"] if k != "all")
     rows = []

@@ -9,7 +9,7 @@ comes from `docs/BOP.md` / `TASKS.md` §9. Still-missing items are listed in `do
   that the paper cites as "Supp. Sec. Sx". Both share `preamble.tex` (packages, macros,
   notation) and `references.bib`. On Overleaf, compile each one by choosing it as the main
   document (Menu -> Main document), or keep two projects. In the PDF, orange **Pending** marks results
-  that are still training (T-LESS, augmentation study, bbox jitter 5 / 15 / 30 %), red **TODO**
+  that are still running (second seed of the small detector, YCB-V heads and own detector), red **TODO**
   marks text or facts to write or check.
 - `sections/*.tex`: abstract, introduction, related work, method, experiments, conclusion.
 - `references.bib`: entries marked `% CHECK` were written from memory and must be verified.

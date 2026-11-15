@@ -3,7 +3,7 @@
 % Compile this file on its own (Overleaf: Menu -> Main document -> supplementary.tex, or a second
 % project). Sections are numbered S1, S2, ...; the main paper refers to them as "Supp. Sec. Sx".
 % Figures come from paper/figures (scripts vis/paper_*.py); numbers from docs/BOP.md and
-% TASKS.md §9. Status (2026-11-14): bbox jitter 5 / 15 / 30 % (seed a) and T-LESS still running.
+% TASKS.md §9. Status (2026-11-15): bbox jitter, T-LESS, the second seed of the single-object models and M11 phase A are in; the second seed of the small detector is still running.
 \input{preamble}
 
 \renewcommand{\thesection}{S\arabic{section}}
@@ -170,17 +170,48 @@ difference above 0.01 in the right order).
     Box perturbation & AR (a / b) & AR & VSD & MSSD & MSPD \\
     \midrule
     0\,\% & 0.625 / 0.625 & 0.625 & 0.439 & 0.577 & 0.858 \\
-    5\,\% & \pending{} & & & & \\
+    5\,\% & 0.647 / 0.654 & 0.650 & 0.470 & 0.616 & 0.866 \\
     \textbf{10\,\%} & \textbf{0.655 / 0.655} & \textbf{0.655} & 0.475 & 0.621 & 0.869 \\
-    15\,\% & \pending{} / 0.651 & & & & \\
+    15\,\% & 0.655 / 0.651 & 0.653 & 0.473 & 0.617 & 0.870 \\
     20\,\% & 0.650 / 0.651 & 0.650 & 0.467 & 0.613 & 0.871 \\
-    30\,\% & \pending{} / 0.643 & & & & \\
+    30\,\% & 0.646 / 0.643 & 0.644 & 0.460 & 0.604 & 0.869 \\
     \bottomrule
   \end{tabular}
   \caption{\textbf{Bounding-box perturbation} during training (each side by up to the given
-  fraction of the box size, $p = 0.5$). Seed b of 15\,\% and 30\,\%: VSD / MSSD / MSPD 0.470 /
-  0.615 / 0.869 and 0.458 / 0.602 / 0.868.}
+  fraction of the box size, $p = 0.5$). The AR components are means over the two seeds. On the
+  validation protocol with perturbed boxes (above), 10\,\% and 15\,\% score 0.873--0.874 and
+  0.871 (mean of two seeds), 5\,\% and 30\,\% score 0.858 and 0.850.}
   \label{tab:supp:bbox}
+\end{table}
+
+\begin{table}[h]
+  \centering
+  \setlength{\tabcolsep}{3.5pt}
+  \footnotesize
+  \begin{tabular}{lcccccc}
+    \toprule
+    Change & AR (a / b) & AR & VSD & MSSD & MSPD & Val.\ score \\
+    \midrule
+    ablation baseline (original run) & 0.655 / 0.655 & 0.655 & 0.475 & 0.621 & 0.869 & 0.874 \\
+    ablation baseline (re-trained) & 0.650 / 0.654 & 0.652 & 0.470 & 0.617 & 0.868 & 0.873 \\
+    \midrule
+    image around the box, no margin & 0.623 / 0.621 & 0.622 & 0.430 & 0.573 & 0.862 & 0.812 \\
+    context $1.25\times$ & 0.624 / 0.627 & 0.625 & 0.436 & 0.579 & 0.862 & 0.816 \\
+    context $1.5\times$ & 0.623 / 0.619 & 0.621 & 0.432 & 0.573 & 0.858 & 0.814 \\
+    random occlusion & 0.657 / 0.651 & 0.654 & 0.474 & 0.618 & 0.869 & 0.876 \\
+    translation loss $\times 2$ & 0.659 / 0.658 & 0.659 & 0.478 & 0.628 & 0.870 & 0.874 \\
+    \bottomrule
+  \end{tabular}
+  \caption{\textbf{Changes that did not help} (2$\times$ budget, two seeds, LM-O test AR with
+  default detections). Context: the crop is a square of side $\max(w, h)$ (or 1.25 / 1.5 times
+  this) filled with the image instead of black bands, at training and test time; this costs
+  0.03 AR, mainly in VSD and MSSD. Occlusion: one to four random rectangles (10--30\,\% of the
+  crop side) erased from the training crops with $p = 0.5$. Translation loss weighted by 2 in the
+  total loss. ``Val.\ score'': validation score with perturbed boxes (above), mean of two seeds;
+  the seeds of the baseline differ by 0.004. Occlusion is within the seed spread on both measures;
+  the translation weight gains 0.007 AR on the test set but only 0.001 on validation, so it is
+  not adopted.}
+  \label{tab:supp:m11}
 \end{table}
 
 \begin{table}[h]
@@ -220,7 +251,7 @@ difference above 0.01 in the right order).
     Symmetric rotation loss & off / \textbf{on} & 0.659 / 0.651, \textbf{0.655 / 0.655} \\
     Training crop & \textbf{visible} / amodal / mix & \textbf{0.655 / 0.655}, 0.646 / 0.650, 0.650 / 0.654 \\
     Conditioning & heads / \textbf{token} / both & 0.650 / 0.650, \textbf{0.659 / 0.651}, 0.660 / 0.661 \\
-    Models & \textbf{one shared (4$\times$)} / 8 single-object & \textbf{0.669 / 0.664}, 0.672 / \pending{} \\
+    Models & \textbf{one shared (4$\times$)} / 8 single-object & \textbf{0.669 / 0.664}, 0.672 / 0.666 \\
     Checkpoint & best validation / \textbf{last epoch} & 0.6686 / \textbf{0.6685} (YCB-V 0.7021 both) \\
     Precision & PyTorch / \textbf{TensorRT FP16} & 0.6685 / \textbf{0.6685} (YCB-V 0.7021 / 0.7017) \\
     \bottomrule
@@ -458,7 +489,8 @@ shift 18\,mm) and $-21$\,mm on YCB-V, the depth bias of \cref{sec:supp:depth}.
     LM-O & own LW-DETR, TensorRT & 0.654 & 0.738 & 0.590 & 0.777 & 0.847 \\
     YCB-V & seed a & 0.694 & 0.849 & 0.795 & 0.904 & 0.847 \\
     YCB-V & seed b & 0.702 & 0.851 & 0.797 & 0.908 & 0.849 \\
-    T-LESS & seeds a / b & \pending{} & \pending{} & & & \\
+    T-LESS & seed a & 0.762 & 0.858 & 0.789 & 0.853 & 0.931 \\
+    T-LESS & seed b & 0.762 & 0.859 & 0.790 & 0.854 & 0.933 \\
     \bottomrule
   \end{tabular}
   \caption{\textbf{RGB-D variant} of every RGB result (default detections unless stated). With our

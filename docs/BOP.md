@@ -6,9 +6,10 @@ spacecraft (SPEED) to many objects on the [BOP benchmark](https://bop.felk.cvut.
 network for all objects of a dataset, trained on synthetic (PBR) images only, evaluated with the
 official BOP19 metric (AR = mean of AR_VSD, AR_MSSD, AR_MSPD, `bop_toolkit`).
 
-Status (2026-11-09): LM-O and YCB-V done, deployment (ONNX, TensorRT fp16, latency) done, our own
-multi-class detector (M9 stretch) and the 224 px resolution ablation done. Still running: the
-paper ablations of `docs/PAPER_TODO.md` §3 and T-LESS; their rows are marked *pending*.
+Status (2026-11-15): LM-O, YCB-V and T-LESS done, deployment (ONNX, TensorRT fp16, latency) done, our own
+multi-class detector (M9 stretch), the 224 px resolution ablation, the paper ablations of
+`docs/PAPER_TODO.md` §3 and M11 phase A done. Still running: the YCB-V heads and own-detector jobs
+and the second seed of the LM-O small detector; their rows are marked *pending*.
 
 ## 1. Results
 
@@ -99,7 +100,8 @@ iterations; rotation unchanged). GPU, all estimates of an image batched: **3–4
 | LM-O, own LW-DETR small + TensorRT | 0.654 | **0.738** | 0.590 | 0.777 | 0.847 | **0.024** |
 | YCB-V `tok4x`, default det. | 0.694 | **0.849** | 0.795 | 0.904 | 0.847 | 0.124 |
 | YCB-V `tok4x2`, default det. | 0.702 | **0.851** | 0.797 | 0.908 | 0.849 | 0.121 |
-| T-LESS | *pending (T-LESS RGB jobs)* | | | | | |
+| T-LESS `tok4x`, default det. | 0.762 | **0.858** | 0.789 | 0.853 | 0.931 | 0.101 |
+| T-LESS `tok4x2`, default det. | 0.762 | **0.859** | 0.790 | 0.854 | 0.933 | 0.101 |
 
 PBR-trained RGB-D leaderboard entries (training data checked on the LM-O submission pages
 2026-11-14): LM-O HiPose 0.799 (per object, training data not stated), RADet+PFA 0.797 (one model,
@@ -108,6 +110,67 @@ RACE-6D 0.733 (one model, 0.013 s, **the same depth-shift idea**), RCVPose 0.729
 (0.19 s); ZebraPose + ICP 0.752 left out (conflicting training data). YCB-V: HiPose 0.907, GDRNPP
 0.906, GPose2023 0.901, RCVPose 0.843, RADet+PFA 0.826, SurfEmb 0.799, FFB6D 0.758. The depth shift
 along the viewing ray is not new (RACE-6D RGB-D entry, GDRNPP "Fast" RGB-D entry): credit it.
+
+### 1.4 T-LESS (test_primesense, BOP19 targets, 1,000 images, 6,423 instances of 30 objects)
+
+One shared network for the 30 objects (`scripts/m10_tless.sh`: token, `domain_gap`, symmetric loss
+with offsets, 384 px, 4× budget = 633,120 samples per epoch, 150 epochs, PBR images only, 2 seeds);
+runs `tless-m10-tok4x-002` (seed a) and `tless-m10-tok4x2-002` (seed b), evaluated 2026-11-14 / 15
+with `last.pt`.
+
+| Input | AR (seed a / b) | AR_VSD | AR_MSSD | AR_MSPD | Time per image |
+|---|---|---|---|---|---|
+| RGB, default detections | **0.762 / 0.762** | 0.650 / 0.651 | 0.701 / 0.701 | 0.933 / 0.935 | 97 / 98 ms (with the detector) |
+| RGB, GT boxes (oracle) | 0.813 / 0.812 | 0.706 / 0.705 | 0.754 / 0.753 | 0.978 / 0.978 | 16 ms |
+| RGB-D, default detections (§1.3) | 0.858 / 0.859 | 0.789 / 0.790 | 0.853 / 0.854 | 0.931 / 0.933 | 101 ms |
+
+- The detector costs 0.05 AR on T-LESS (LM-O 0.021, YCB-V 0.005). 9 of the 6,423 targets get no
+  detection (6,414 estimates) and count as failures.
+- In the per-object tables (`table_test.md`), the **translation means are not meaningful with
+  detections**: a target without detection gets a pose 10 km away (`src/bop_evaluate.py`), which
+  inflates the mean of objects 4, 14, 15 and 22 (up to 10^5 mm). Use the medians (11 mm on average).
+- Depth correction (RGB-D): median shift −11 / −12 mm, 3.2 ms per image, 6,398 / 6,394 of 6,414
+  estimates corrected.
+- Leaderboard comparison: **not done yet** (PBR-only RGB entries of the T-LESS leaderboard and their
+  training data have to be read from the submission pages).
+
+Per object, seed b (`tok4x2`) with default detections (`scripts/bop_per_object_ar.py`, the
+recomputed AR equals the official 0.7624; mean over objects 0.801):
+
+| Object | AR | AR_VSD | AR_MSSD | AR_MSPD |
+|---|---|---|---|---|
+| 1 | 0.651 | 0.493 | 0.545 | 0.916 |
+| 2 | 0.527 | 0.318 | 0.374 | 0.889 |
+| 3 | 0.719 | 0.573 | 0.616 | 0.968 |
+| 4 | 0.707 | 0.615 | 0.664 | 0.843 |
+| 5 | 0.884 | 0.824 | 0.838 | 0.990 |
+| 6 | 0.889 | 0.822 | 0.850 | 0.994 |
+| 7 | 0.886 | 0.841 | 0.877 | 0.940 |
+| 8 | 0.850 | 0.777 | 0.845 | 0.927 |
+| 9 | 0.819 | 0.703 | 0.771 | 0.982 |
+| 10 | 0.854 | 0.753 | 0.809 | 0.999 |
+| 11 | 0.754 | 0.584 | 0.695 | 0.982 |
+| 12 | 0.807 | 0.695 | 0.758 | 0.967 |
+| 13 | 0.779 | 0.648 | 0.753 | 0.936 |
+| 14 | 0.786 | 0.676 | 0.727 | 0.954 |
+| 15 | 0.797 | 0.697 | 0.756 | 0.938 |
+| 16 | 0.703 | 0.531 | 0.589 | 0.989 |
+| 17 | 0.869 | 0.792 | 0.822 | 0.992 |
+| 18 | 0.882 | 0.852 | 0.853 | 0.942 |
+| 19 | 0.765 | 0.653 | 0.692 | 0.949 |
+| 20 | 0.789 | 0.679 | 0.750 | 0.937 |
+| 21 | 0.752 | 0.685 | 0.709 | 0.863 |
+| 22 | 0.632 | 0.541 | 0.574 | 0.782 |
+| 23 | 0.807 | 0.711 | 0.747 | 0.962 |
+| 24 | 0.823 | 0.662 | 0.815 | 0.992 |
+| 25 | 0.851 | 0.761 | 0.801 | 0.991 |
+| 26 | 0.859 | 0.764 | 0.837 | 0.975 |
+| 27 | 0.841 | 0.774 | 0.802 | 0.947 |
+| 28 | 0.896 | 0.868 | 0.875 | 0.945 |
+| 29 | 0.949 | 0.926 | 0.927 | 0.994 |
+| 30 | 0.897 | 0.856 | 0.865 | 0.971 |
+| **all instances** | 0.762 | 0.651 | 0.701 | 0.935 |
+| mean over objects | 0.801 | | | |
 
 ## 2. Ablations
 
@@ -145,7 +208,7 @@ Each block changes one thing; the bold row is the choice kept.
 | | `bbox_obj` | 0.646 / 0.650 | 0.648 |
 | | mix | 0.650 / 0.654 | 0.652 |
 | Final model (token, 4×) | **`tok4x` / `tok4x2`** | **0.669 / 0.664** | **0.666** |
-| One model per object (M10, same total compute) | 8 single-object models | 0.672 (1 seed) | |
+| One model per object (M10, same total compute) | 8 single-object models | 0.672 / 0.666 (GT boxes 0.688 / 0.682) | 0.669 (shared: 0.666) |
 | Checkpoint (final model) | `model.pth` (best val) vs **`last.pt`** | 0.6686 vs 0.6685 (YCB-V 0.7021 vs 0.7021) | |
 | Precision at deployment (M9) | PyTorch vs **TensorRT fp16** | 0.6685 vs 0.6685 (YCB-V 0.7021 vs 0.7017) | |
 | Backbone resolution (M10) | **384 px** vs 224 px | 0.669 / 0.664 vs 0.643 / 0.643 | 0.666 vs 0.643 |
@@ -154,10 +217,11 @@ Each block changes one thing; the bold row is the choice kept.
 | Pre-training | **SWAG** vs random init (scratch) | 0.516 / 0.517 | 0.517 (−0.138) |
 | Depth target, 8 objects | **`site`** vs `legacy` (WACV α-based) | 0.610 / 0.625 | 0.617 (−0.038) |
 | Bounding-box jitter (per side) | 0 % | 0.625 / 0.625 | 0.625 (−0.030) |
+| | 5 % | 0.647 / 0.654 | 0.650 (−0.005) |
 | | **10 %** | 0.655 / 0.655 | 0.655 |
+| | 15 % | 0.655 / 0.651 | 0.653 (−0.002) |
 | | 20 % | 0.650 / 0.651 | 0.650 (−0.005) |
-| | 15 % / 30 % (seed b; seed a rerunning) | – / 0.651, – / 0.643 | |
-| | 5 % | *pending (rerunning after a node failure)* | |
+| | 30 % | 0.646 / 0.643 | 0.644 (−0.011) |
 | Pixel augmentation (study, 2026-11-14) | none | 0.626 / 0.629 | 0.627 |
 | | color (brightness / contrast, gamma, hue-saturation) | 0.649 / 0.641 | 0.645 |
 | | blur (Gaussian, motion, defocus) | 0.628 / 0.630 | 0.629 |
@@ -165,11 +229,17 @@ Each block changes one thing; the bold row is the choice kept.
 | | color + blur + noise | 0.641 / 0.643 | 0.642 |
 | | **`domain_gap`, p = 0.5** | **0.655 / 0.655** | **0.655** |
 | | `domain_gap`, p = 0.8 | 0.641 / 0.631 | 0.636 |
+| **M11 phase A (2026-11-15)**: baseline re-trained on the current code (`lmo-m12-base{,2}-001`; the 0.655 baseline ran older code) | | 0.650 / 0.654 | 0.652; validation score 0.873 |
+| Context: image around the box instead of black bands (`--crop_context`) | no margin | 0.623 / 0.621 | 0.622 (−0.030), val 0.812 |
+| | margin 1.25× | 0.624 / 0.627 | 0.625 (−0.027), val 0.816 |
+| | margin 1.5× | 0.623 / 0.619 | 0.621 (−0.031), val 0.814 |
+| Synthetic occlusion (`--bop_occlusion_aug`, 1–4 rectangles, p = 0.5) | | 0.657 / 0.651 | 0.654 (+0.002), val 0.876 (+0.003) |
+| Translation loss weight ×2 (`--translation_loss_weight 2`) | | 0.659 / 0.658 | 0.659 (+0.007), val 0.874 (+0.001) |
 
 Augmentation reading: augmentation matters (none −0.028); only color helps alone; blur or noise
 alone = none; `domain_gap` (adds gray, tone curve, CLAHE, solarize, sun flare, compression /
-downscale) is best, but only at p = 0.5 (p = 0.8: −0.019). Box jitter: 10–20 % plateau, 0 % and
-30 % worse. Kept: `domain_gap` p = 0.5, 10 %.
+downscale) is best, but only at p = 0.5 (p = 0.8: −0.019). Box jitter: 5–20 % plateau (0.650–0.655),
+0 % and 30 % worse. Kept: `domain_gap` p = 0.5, 10 %.
 
 Reading (2026-11-08, replaces the earlier conclusions drawn from val ADD and driller ADD):
 - **Kept, clear effect** (paper ablations, 2 seeds each, seed spread ≤ 0.002 except `legacy`
@@ -185,6 +255,11 @@ Reading (2026-11-08, replaces the earlier conclusions drawn from val ADD and dri
   multi-object, −0.003 driller; it was chosen in M3 on driller ADD, +0.05, and on LM real val), the
   symmetric loss (needed for the YCB-V clamps, M8), the crop source (`bbox_visib` marginally best),
   the decoupled loss, one model per object, `model.pth` vs `last.pt`, fp16.
+- **M11 phase A (2026-11-15), nothing adopted:** context around the box costs 0.03 AR on both
+  test and validation (VSD and MSSD); occlusion and the doubled translation weight are within the
+  seed spread of the re-trained baseline (0.004) on the validation score with perturbed boxes
+  (`eval_valn`, the choice rule), so they are not kept; the translation weight is the only one
+  above the spread on test (+0.007).
 - The earlier metrics overstated the augmentation and conditioning effects; the paper should use
   this table.
 
@@ -340,6 +415,8 @@ the offline one (RGB 0.654, RGB-D 0.738). Jetson Orin numbers: not measured (no 
 - **Depth bias on real YCB-V images** (D8): every object is estimated ~2.4 % too far (median); the
   PBR renders do not match the real camera's apparent object size. Training on `train_real`
   would likely fix it; not done (PBR-only result by choice).
+- T-LESS: the weakest objects are 2, 22 and 1 (AR 0.53, 0.63, 0.65, seed b); the detector costs 0.05 AR
+  (the highest of the three datasets).
 - Heavily occluded objects (LM-O eggbox, duck) are the weakest: direct regression from a crop has
   no explicit visibility reasoning.
 - All numbers use one GPU type (A100); Jetson latency is not measured.

@@ -12,7 +12,7 @@ instances (BOP19 targets), training on the PBR images of LM~\cite{hinterstoisser
 instances, training on 626,520 PBR instances; unlike most YCB-V entries, we do not use the real
 training images. \textbf{T-LESS}~\cite{hodan2017tless}: 30 texture-less industrial objects, 27 of
 them symmetric, several instances of the same object per image; test on the 1,000 Primesense images
-of the BOP19 targets (6,423 instances). \pending{T-LESS training is running.}
+of the BOP19 targets (6,423 instances). As for YCB-V, we train one network for all 30 objects on the PBR images only (no real training images).
 
 \paragraph{Evaluation metrics.}
 We report the official BOP19 average recall, $\mathrm{AR} = (\mathrm{AR}_{\mathrm{VSD}} +
@@ -197,9 +197,35 @@ render-and-compare and take 1.7--12\,s per image, and ahead of the fast single-m
 (RACE-6D 0.733, FFB6D 0.687 / 0.758).
 
 \paragraph{T-LESS.}
-\pending{T-LESS results (\texttt{tless-m10-tok4x\{,2\}-002}, epochs 128 / 104 of 150): AR with
-default detections and with GT boxes; to save space, the T-LESS comparison will be merged into
-\cref{tab:ycbv} as a second block.}
+\Cref{tab:tless} gives the results of the same recipe on the 30 T-LESS objects (one network, 4$\times$
+budget, PBR images only, two seeds). With the default detections the AR is 0.762 for both seeds,
+and 0.813 / 0.812 with ground-truth boxes: the detector costs 0.05 AR here, against 0.021 on LM-O
+and 0.005 on YCB-V. The 2D alignment is excellent (MSPD 0.93--0.98) and the loss is again in depth
+(VSD and MSSD); the median translation error is 11\,mm. Nine of the 6,423 targets receive no
+detection and count as failures. The weakest objects are 2, 22 and 1 (per-object AR 0.53, 0.63 and
+0.65, second seed), the best is 29 (0.95); the full per-object table is in the repository
+(\texttt{docs/BOP.md}). With the depth image, the correction of the RGB-D variant moves the median
+estimate by $-12$\,mm and raises the AR to 0.858 / 0.859 (VSD 0.789 / 0.790, MSSD 0.853 / 0.854,
+MSPD 0.931 / 0.933), in 3\,ms per image.
+\todo{Add the PBR-only RGB and RGB-D entries of the T-LESS leaderboard (training data to check on
+each submission page) as a second block of \cref{tab:ycbv}, or as a separate table.}
+
+\begin{table}[t]
+  \centering
+  \small
+  \begin{tabular}{llcccc}
+    \toprule
+    Input & Boxes & AR (seed a / b)$\uparrow$ & VSD & MSSD & MSPD \\
+    \midrule
+    RGB & default detections & \textbf{0.762 / 0.762} & 0.651 & 0.701 & 0.934 \\
+    RGB & ground truth (oracle) & 0.813 / 0.812 & 0.705 & 0.754 & 0.978 \\
+    RGB-D & default detections & 0.858 / 0.859 & 0.790 & 0.854 & 0.932 \\
+    \bottomrule
+  \end{tabular}
+  \caption{\textbf{T-LESS test} (Primesense, 1,000 images, 6,423 instances of 30 objects), models
+  trained on PBR images only, BOP19 metrics; the component columns are means over the two seeds.}
+  \label{tab:tless}
+\end{table}
 
 \subsection{Ablation Studies}
 \label{sec:exp:ablations}
@@ -248,8 +274,9 @@ large-scale pre-training is essential when only synthetic images are available.
 \Cref{tab:abl_objects} compares the ways to share the network. The class token is slightly better
 than per-object heads (+0.005) and combining both brings another 0.005, both at about the seed
 spread; we keep the class token alone, which needs no per-object output layer. Eight
-single-object models, trained with the same total compute, reach 0.672 AR, the same as the shared
-model (0.668), with eight times as many parameters and no batching across objects.
+single-object models, trained with the same total compute, reach 0.672 and 0.666 AR for the two
+seeds (mean 0.669), the same as the shared model (0.669 and 0.664, mean 0.666), with eight times as
+many parameters and no batching across objects.
 
 \begin{table}[t]
   \centering
@@ -263,7 +290,7 @@ model (0.668), with eight times as many parameters and no batching across object
     heads + class token & 0.660 / 0.661 & 0.660 \\
     \midrule
     Final model (token, 4$\times$) & 0.669 / 0.664 & 0.666 \\
-    8 single-object models (4$\times$ total) & 0.672 / \pending{} & \pending{} \\
+    8 single-object models (4$\times$ total) & 0.672 / 0.666 & 0.669 \\
     \bottomrule
   \end{tabular}
   \caption{\textbf{Sharing one network across the 8 LM-O objects}, LM-O test AR with default
@@ -276,10 +303,10 @@ model (0.668), with eight times as many parameters and no batching across object
 components, are in Supp.~Sec.~S3. \emph{Training budget}: more samples per epoch help on both
 datasets, more so with more objects (YCB-V, 21 objects: +0.013 AR from 2$\times$ to 4$\times$, both
 4$\times$ seeds above both 2$\times$ seeds); we use 4$\times$ for the final models and 2$\times$ for
-the ablations. \emph{Bounding-box perturbation}: training without it costs 0.030 AR, and 10--20\,\%
-per side is a plateau, and 30\,\% is already worse, consistent with the original study on
-SPEED~\cite{ancey2026fastposevit}.
-\pending{5\,\% (both seeds), 15\,\% and 30\,\% (seed a): jobs running.} \emph{Pixel augmentation}:
+the ablations. \emph{Bounding-box perturbation}: training without it costs 0.030 AR, 5--20\,\% per
+side is a plateau (0.650--0.655, about the seed spread, with 10\,\% the highest), and 30\,\% is
+already worse (0.644), consistent with the original study on
+SPEED~\cite{ancey2026fastposevit}. \emph{Pixel augmentation}:
 photometric augmentation is needed to cross the gap from PBR to real images (no augmentation:
 $-0.028$ AR, the glue loses the most, 0.67 $\rightarrow$ 0.53). Color changes are the only group that
 helps on its own (+0.018 over none); blur or sensor noise alone do not change the AR, and color,
@@ -288,7 +315,11 @@ operations are grayscale, tone curve, CLAHE, solarization, sun flare, downscalin
 (Supp.~Sec.~S1), is clearly best (0.655), but only at the default probability: applying every operation with $p = 0.8$
 instead of 0.5 costs 0.019 AR. Other choices had no measurable effect on the test AR (the
 symmetry-aware loss, which is needed for symmetries with offsets, the training crop and a
-decoupled translation loss; Supp.~Sec.~S3).
+decoupled translation loss; Supp.~Sec.~S3). Three changes that we expected to help the depth
+did not: giving the network the image around the box instead of black bands (with or without a
+margin) costs 0.03 AR, random occlusion of the training crops changes nothing, and doubling the
+weight of the translation loss gains 0.007 AR on the test set but only 0.001 on our validation
+score (Supp.~Sec.~S3).
 
 \begin{table}[t]
   \centering
@@ -304,11 +335,11 @@ decoupled translation loss; Supp.~Sec.~S3).
      & \textbf{4$\times$} & \textbf{0.694 / 0.702} & \textbf{0.698} \\
     \midrule
     \multirow{6}{*}{Box perturbation} & 0\,\% & 0.625 / 0.625 & 0.625 \\
-     & 5\,\% & \pending{} & \\
+     & 5\,\% & 0.647 / 0.654 & 0.650 \\
      & \textbf{10\,\%} & \textbf{0.655 / 0.655} & \textbf{0.655} \\
-     & 15\,\% & \pending{} / 0.651 & \\
+     & 15\,\% & 0.655 / 0.651 & 0.653 \\
      & 20\,\% & 0.650 / 0.651 & 0.650 \\
-     & 30\,\% & \pending{} / 0.643 & \\
+     & 30\,\% & 0.646 / 0.643 & 0.644 \\
     \midrule
     \multirow{7}{*}{Pixel augmentation} & none & 0.626 / 0.629 & 0.627 \\
      & color & 0.649 / 0.641 & 0.645 \\

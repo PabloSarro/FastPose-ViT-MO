@@ -40,7 +40,7 @@ W9 Dec 14 · W10 Dec 21 · W11 Dec 28 · W12 Jan 4 · W13 Jan 11 · W14 Jan 18. 
 | M7 Real detections | W9–11 | `[x]` | First BOP-comparable LM-O AR | Started 2026-11-02. Default detections (GDRNPPDet) downloaded; they match bbox_obj slightly better than bbox_visib (IoU 0.824 vs 0.811, partly amodal); `tok4x` loses 0.05 ADD on amodal GT boxes (val_pbr). **First comparable number: LM-O test AR 0.668 with default detections** (VSD 0.491, MSSD 0.641, MSPD 0.873; GT boxes 0.689); exit criterion met. Crop-source ablation done 2026-11-03 (options 1–3 × 2 seeds, 2×): with detections all within 0.01 AR (0.646–0.655), option 1 (bbox_visib) marginally best, so **kept**; final model stays `tok4x` |
 | M8 YCB-V | W11–12 | `[x]` | YCB-V AR + per-object table | Started 2026-11-03. Data report to Pierre handed to Pablo (4 issues, checked against the official HF file lists). Tree + index done: train 626,520 PBR rows, val = PBR scenes 48–49 (no real val), test 4,123 targets; 11 new tests pass. `--dataset YCBV` in train/eval done; 21-object overfit passes. Symmetries with translation offsets done (clamps 19/20 now 1.000 in the overfit check). 4 training jobs done (2026-11-05/06, deleted). **YCB-V test AR 0.702 with default detections** (0.707 with GT boxes), final model `tok4x2` (best on val_pbr). 4× beats 2× on YCB-V (+0.013 AR with detections, +0.03 MSSD on val_pbr), so YCB-V runs keep 4×. Weak objects 16/17: a depth bias of real YCB-V (all objects too far, median +2.4 %; GT fits the depth, objects look smaller in RGB than GT predicts), not fixable without real training data: **accepted as a PBR-only result (user, 2026-11-07)**, `train_real` left as open issue D8. **Closed 2026-11-07** |
 | M9 Jetson / deployment | W12–13 | `[~]` | Latency vs number of objects | Started 2026-11-08 (A100 only, user). Bullet 1 done: ONNX export with dynamic batch (`optimization/bop_export.py`), ONNX Runtime (CPU) vs PyTorch fp32 max diff **3.0e-6** at batch 1/4/8/16 (< 1e-3). Bullet 2 done: TensorRT fp16 engine (profile 1/8/16), **LM-O AR 0.6685 = PyTorch 0.6685, YCB-V 0.7017 vs 0.7021** with detections (< 0.005); SPEED engine builds again. Bullet 3 done: latency table (A100): TensorRT fp16 pipeline **5.3 / 9.3 / 14.2 / 24.0 ms for N = 1 / 4 / 8 / 16** (network alone 1.8 / 3.5 / 5.7 / 11.0); with the BOP default detector (82 ms) ~10 FPS → exit met; stretch (own multi-class LW-DETR detector): 3 training jobs running since 2026-11-08 ~11:00 |
-| M10 Write-up (+ T-LESS stretch) | W13–14 | `[~]` | Report and final tables | Per-object models (8 single-object LM-O runs, 2026-11-08): **AR 0.672 with detections vs shared `tok4x` 0.668** (GT boxes 0.688 vs 0.689), within noise: keep the shared model. Write-up draft `docs/BOP.md` + README BOP section (2026-11-08). 224 px: AR 0.643 / 0.643 (−0.023). Paper §3 ablations done 2026-11-11 (absrot −0.11, scratch −0.14, legacy −0.04, bbox0 −0.03, bbox20 ≈). LaTeX draft `paper/` with figures (2026-11-11); leaderboard check: not best on LM-O, PViT-6D prior art (positioning with the supervisor). Augmentation study done 2026-11-14 (`domain_gap` p = 0.5 kept: best 0.655; none 0.627, color 0.645, blur 0.629, noise 0.627, all three 0.642, p = 0.8 0.636); bbox 15 / 30 % seed b 0.651 / 0.643, other bbox jobs relaunched (`-003`) after a node failure. Paper split into `paper/main.tex` + `paper/supplementary.tex` (2026-11-14). T-LESS at epochs 128 / 104 of 150 |
+| M10 Write-up (+ T-LESS stretch) | W13–14 | `[~]` | Report and final tables | Per-object models (8 single-object LM-O runs, 2026-11-08): **AR 0.672 with detections vs shared `tok4x` 0.668** (GT boxes 0.688 vs 0.689), within noise: keep the shared model. Write-up draft `docs/BOP.md` + README BOP section (2026-11-08). 224 px: AR 0.643 / 0.643 (−0.023). Paper §3 ablations done 2026-11-11 (absrot −0.11, scratch −0.14, legacy −0.04, bbox0 −0.03, bbox20 ≈). LaTeX draft `paper/` with figures (2026-11-11); leaderboard check: not best on LM-O, PViT-6D prior art (positioning with the supervisor). Augmentation study done 2026-11-14 (`domain_gap` p = 0.5 kept: best 0.655; none 0.627, color 0.645, blur 0.629, noise 0.627, all three 0.642, p = 0.8 0.636); box jitter study done 2026-11-15 (test AR, mean of 2 seeds: 5 % 0.650, 10 % 0.655, 15 % 0.653, 30 % 0.644; 10 % kept). Paper split into `paper/main.tex` + `paper/supplementary.tex` (2026-11-14). T-LESS `tok4x2` at epoch 149 of 150 (2026-11-15) |
 
 ---
 
@@ -1065,7 +1065,7 @@ time). Our errors are mostly in depth (VSD / MSSD) and on heavily occluded objec
 `symtok2x` (0.655 / 0.655) with one change, 2 seeds, LM-O test AR with default detections
 (`scripts/m10_ablations.sh`); winners are combined into new final 4× runs.
 
-- [~] **Phase A** (2×, 2 seeds each; code + tests + smoke runs done 2026-11-14: `--crop_scale`,
+- [~] **Phase A: all 10 jobs done 2026-11-15** (test AR with detections / noisy-box validation score `eval_valn`, mean of 2 seeds; baseline `symtok2x` 0.655 / 0.874; fair re-trained baseline `lmo-m12-base{,2}-001` still running): `ctx` 0.622 / 0.812, `ctx125` 0.625 / 0.816, `ctx15` 0.621 / 0.814 (**worse by ~0.03 on both: context does not help, A1–A3 dropped**); `occl` 0.654 / 0.876 (test 0, validation +0.003); `tlw` 0.659 / 0.874 (test +0.004, validation 0.000). **No candidate is a clear gain** (A4, A5 within seed noise, and test and validation disagree on which is better); decide A4 / A5 once `base` has finished. (2×, 2 seeds each; code + tests + smoke runs done 2026-11-14: `--crop_scale`,
   `--bop_occlusion_aug`, `--translation_loss_weight`, `--crop_context` also in `bop_evaluate.py`;
   164 tests pass). Jobs `lmo-m11-{ctx,ctx125,ctx15,occl,tlw}{,2}-001`:
   - [ ] A1 `ctx125`: context margin, square of 1.25 × max(w, h) filled with the image (PViT-6D crops at 1.2×).
@@ -1182,28 +1182,30 @@ time). Our errors are mostly in depth (VSD / MSSD) and on heavily occluded objec
 | 2026-11-14 | `results/m11/ensemble/{lmo,ycbv}` | **LM-O / YCB-V test**, default detections | M11 B4: pose average of the two seed models (`scripts/pose_ensemble.py`) | LM-O 0.6689, YCB-V 0.7048 | Seeds 0.669 / 0.664 and 0.694 / 0.702: not worth 2× pose time |
 | 2026-11-14 | `results/m11/rgbd/{lmo,ycbv}` | **LM-O / YCB-V test**, default detections + test depth | M11 C1: RGB-D variant, depth correction of the RGB model's poses (`scripts/depth_correction.py`) | LM-O **0.750** (VSD 0.594, MSSD 0.785, MSPD 0.871), YCB-V **0.854** (0.802 / 0.912 / 0.849); 0.18 / 0.16 s per image | RGB 0.668 / 0.702; PBR-only RGB-D entries: LM-O 0.69–0.80, YCB-V 0.76–0.91 |
 | 2026-11-14 | `results/m11/rgbd_splat/{lmo_tok4x,lmo_tok4x2,lmo_ownsmall_trt,ycbv_tok4x,ycbv_tok4x2}` | **LM-O / YCB-V test** + test depth | M11 C2–C3: fast GPU depth correction (`--method splat`), all RGB results | LM-O 0.749 / 0.752, own detector + TensorRT 0.738 (24 ms per image); YCB-V 0.849 / 0.851; correction 3–4 ms per image | Same AR as the renderer version (0.750) at ~85 ms |
+| 2026-11-15 | `outputs/FastPose-ViT/runs/lmo-m10-bbox{5,52,15,30}-003`, `bbox{152,302}-002` | **LM-O test**, default detections; LM real val with noisy boxes | Box jitter 5 / 15 / 30 % per side (default 10 %: 0.655 / 0.655, val 0.8725 / 0.8746) | Test AR seed a / b: 5 % 0.647 / 0.654, 15 % 0.656 / 0.651, 30 % 0.646 / 0.643; validation: 5 % 0.858 / 0.858, 15 % 0.869 / 0.872, 30 % 0.851 / 0.849 | 10 % kept (15 % within noise, 5 % and 30 % worse) |
+| 2026-11-15 | `outputs/FastPose-ViT/runs/lmo-m11-{ctx,ctx125,ctx15,occl,tlw}{,2}-001` | **LM-O test**, default detections; LM real val noisy boxes (`eval_valn`, own score) | M11 phase A, 2× baseline `symtok2x` + one change, 2 seeds a / b | Test AR: ctx 0.623 / 0.621, ctx125 0.624 / 0.627, ctx15 0.623 / 0.619, occl 0.657 / 0.651, tlw 0.659 / 0.658. Validation: ctx 0.815 / 0.810, ctx125 0.815 / 0.817, ctx15 0.813 / 0.816, occl 0.875 / 0.878, tlw 0.871 / 0.876 | Context variants −0.03 on both; occl and tlw within noise of baseline (0.655, 0.874). GT-box validation (`eval_val`): LM real val 0.89–0.91, PBR val 0.889 (ctx) to 0.907 (tlw); in `$RUN/<variant>/eval_val{,n}/val_score.txt` |
 (Paths relative to `$NAS_HOME`.)
 
 ---
 
 ## 10. Next session: start here
 
-0. **Tracker (updated 2026-11-14 11:45):**
+0. **Tracker (updated 2026-11-15 12:00):**
 
    | Task | Status |
    |---|---|
    | **Running jobs** | |
-   | Box jitter 5 % (2 seeds), 15 %, 30 % (seed a): `lmo-m10-bbox{5,52,15,30}-003` | Running, epoch 29/150, ~9 h left |
-   | M11 phase A: `lmo-m11-{ctx,ctx125,ctx15,occl,tlw}{,2}-001` | Running, epochs 5–9/150, ~11 h left |
-   | T-LESS: `tless-m10-tok4x-002` / `tless-m10-tok4x2-002` | Running, epochs 131 / 108 of 150, ~10 h / ~23 h left |
-   | YCB-V own detector: `ycbv-m10-detsmall-001` | Running, epoch 2/50, ~22 h left |
-   | YCB-V conditioning heads: `ycbv-m10-heads2x{,2}-001` | Running, epochs 6–7/150, ~28 h left |
+   | Baseline re-trained on current code: `lmo-m12-base{,2}-001` | Running, epochs ~111 / ~107 of 150, done ~14:00 |
+   | Detector second seed: `lmo-m12-detsmall2-001` | Running, epoch ~13/50, ~Mon 03:30 |
+   | T-LESS: `tless-m10-tok4x-002` / `tless-m10-tok4x2-002` | `tok4x` trained; `tok4x2` epoch 149/150, then evaluation (1–2 h) |
+   | YCB-V own detector: `ycbv-m10-detsmall-001` | Running, epoch 28/50, ~Mon 01:30 |
+   | YCB-V conditioning heads: `ycbv-m10-heads2x{,2}-001` | Running, epochs ~95 / ~91 of 150, ~21:40 / ~22:20 |
    | **To do when jobs end** | |
-   | Fill bbox 5 / 15 / 30 % in the paper's recipe table, supplementary S3 and `docs/BOP.md` | To do (after bbox jobs) |
+   | Fill bbox 5 / 15 / 30 % in the paper's recipe table, supplementary S3 and `docs/BOP.md` (numbers in §9, 2026-11-15) | To do (jobs done) |
    | T-LESS: RGB eval + RGB-D (C6), paper T-LESS paragraph + table block, per-object table | To do (after T-LESS jobs) |
    | YCB-V own detector: AR, RGB-D (C7), paper rows | To do (after detsmall) |
    | YCB-V heads vs token: supplementary table | To do (after heads jobs) |
-   | M11 phase A analysis → phase B choice → final 4× runs | To do (after phase A) |
+   | M11 phase A done (context variants −0.03, occl / tlw within noise): decide A4 / A5 against `lmo-m12-base` on `eval_valn`, then phase B choice → final 4× runs | To do (after `base`, ~14:00) |
    | **Paper** | |
    | Positioning vs PViT-6D / PoseDETR (improve first, option c) | In progress (M11) |
    | Abstract / introduction / conclusion with T-LESS, M11 and RGB-D | To do |

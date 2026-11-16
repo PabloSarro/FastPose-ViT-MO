@@ -1075,7 +1075,7 @@ time). Our errors are mostly in depth (VSD / MSSD) and on heavily occluded objec
   - [x] A3 `ctx`: image instead of black bands, no margin (isolates the padding). **0.622, 0.812: worse; the black padding is not what limits the model (cause of the loss not investigated).**
   - [x] A4 `occl`: synthetic occlusion, 1-4 random rectangles (10-30 % of the side) erased, p = 0.5. **0.654, 0.876: within the seed spread of the baseline (0.652, 0.873): not adopted.**
   - [x] A5 `tlw`: translation loss weighted × 2 (depth emphasis). **0.659 (+0.007), validation 0.874 (+0.001): not confirmed on validation, not adopted.**
-  - [~] A6 `tlwocc`: `tlw` + `occl` together (user, 2026-11-15; variant added to `scripts/m10_ablations.sh`). Jobs `lmo-m11-tlwocc{,2}-001` started 2026-11-16 00:20 CET, 2×, 2 seeds; adopt only if test AND `eval_valn` beat the baseline (0.652 / 0.873) by more than the seed spread (0.004).
+  - [x] A6 `tlwocc` (**done 2026-11-16: test AR 0.664 / 0.658 (mean 0.661, +0.009; VSD 0.482, MSSD 0.630, MSPD 0.870), `eval_valn` 0.885 / 0.880 (mean 0.882, +0.009), `eval_val` LM real 0.902 / 0.896, PBR 0.909 / 0.907: passes the rule; the only M11 change adopted-able, open for the user: adopt for the final models or not; not tested at 4× or on YCB-V**): `tlw` + `occl` together (user, 2026-11-15; variant added to `scripts/m10_ablations.sh`). Jobs `lmo-m11-tlwocc{,2}-001` started 2026-11-16 00:20 CET, 2×, 2 seeds; adopt only if test AND `eval_valn` beat the baseline (0.652 / 0.873) by more than the seed spread (0.004).
 - [x] **B4** (evaluation only, `dev`, `scripts/pose_ensemble.py`): average the poses of the two seed
   models (`tok4x` + `tok4x2`) at test time, symmetry-aware (align seed b to the closest symmetric
   pose of seed a, mean of t, rotation mean projected on SO(3)). *Done 2026-11-14
@@ -1193,6 +1193,7 @@ time). Our errors are mostly in depth (VSD / MSSD) and on heavily occluded objec
 | 2026-11-15 | `results/m11/rgbd_splat/tless_tok4x{,2}` | **T-LESS test** + test depth | M11 C6: RGB-D variant (`--method splat`) of the two T-LESS RGB results | **0.858 / 0.859** (VSD 0.789 / 0.790, MSSD 0.853 / 0.854, MSPD 0.931 / 0.933), 0.101 s per image | RGB 0.762 / 0.762; median shift −11 / −12 mm, 3.2 ms per image |
 | 2026-11-16 | `outputs/FastPose-ViT/runs/ycbv-m10-heads2x{,2}-001` | **YCB-V test**, default detections (GT boxes in brackets); PBR val | Per-object heads instead of the class token, 2×, 2 seeds (compare `tok2x{,2}`) | AR 0.674 / 0.678 (GT boxes 0.679 / 0.681) against token 0.681 / 0.689 (0.687 / 0.701); best PBR-val score 0.811 / 0.812 against 0.834 / 0.832 | Token better on YCB-V too: +0.009 AR (mean 0.685 vs 0.676), +0.02 on validation; same direction as LM-O (+0.005). Paper: supplementary conditioning row + one sentence |
 | 2026-11-16 | `outputs/FastPose-ViT/runs/lmo-m12-detsmall2-001`, `ycbv-m10-detsmall-001`; `results/m11/rgbd_splat/ycbv_ownsmall` | **LM-O / YCB-V test**, own LW-DETR small detections (`scripts/m9_det.sh small`) | LM-O seed b of the detector (pose model `tok4x`); YCB-V detector, 50 epochs, pose model `tok4x2`; YCB-V RGB-D (C7) | LM-O AR 0.656 (VSD 0.487, MSSD 0.631, MSPD 0.849), mAP 0.653; YCB-V AR **0.681** (VSD 0.574, MSSD 0.663, MSPD 0.805), mAP 0.702 (default 0.758), RGB-D **0.827** (0.773 / 0.885 / 0.822) | LM-O: same as seed a (0.654). YCB-V: own detector −0.021 AR (−0.024 with depth), a larger loss than LM-O (−0.014); mAP lower than the default one, AR100 the same. Paper: supplementary detection and RGB-D tables, one sentence in §4.4 |
+| 2026-11-16 | `outputs/FastPose-ViT/runs/lmo-m11-tlwocc{,2}-001` | **LM-O test**, default detections; LM real val noisy boxes (`eval_valn`) | M11 A6, 2× baseline + occlusion + translation weight ×2, 2 seeds | Test AR 0.664 / 0.658 (VSD 0.486 / 0.478, MSSD 0.634 / 0.626, MSPD 0.871 / 0.869); `eval_valn` 0.885 / 0.880; `eval_val` LM real 0.902 / 0.896, PBR 0.909 / 0.907 | Baseline 0.652 / 0.873: +0.009 on both, above the seed spread (0.004), both seeds above both baseline seeds. Combination chosen after seeing the single results. Paper: supplementary `tab:supp:m11` |
 (Paths relative to `$NAS_HOME`.)
 
 ---
@@ -1210,8 +1211,8 @@ time). Our errors are mostly in depth (VSD / MSSD) and on heavily occluded objec
    | YCB-V conditioning heads: `ycbv-m10-heads2x{,2}-001` | Done 2026-11-16: AR 0.674 / 0.678 (token `tok2x{,2}` 0.681 / 0.689) |
    | **To do when jobs end** | |
    | T-LESS: leaderboard comparison (PBR-only RGB / RGB-D entries, training data to check) and second block in the paper | To do |
-   | M11 A6: `tlw` + `occl` together, `lmo-m11-tlwocc{,2}-001` (2×, started Mon 00:20 CET) | Running, ~Mon 08:30 CET (training ~8 h + evaluation) |
-   | M11 phase B choice (B1 ViT-L/512, B2 8× budget, B3 YCB-V `train_real`) | To do (user, after A6) |
+   | M11 A6: `tlw` + `occl` together, `lmo-m11-tlwocc{,2}-001` | Done 2026-11-16: AR 0.664 / 0.658 (+0.009), validation +0.009 |
+   | M11 phase B choice (B1 ViT-L/512, B2 8× budget, B3 YCB-V `train_real`) and whether to adopt `tlw` + `occl` (A6, +0.009) in the final models | To do (user) |
    | **Paper** | |
    | Positioning vs PViT-6D / PoseDETR (improve first, option c) | In progress (M11) |
    | Abstract / introduction / conclusion with T-LESS | Done 2026-11-15 (M11 / final numbers to update after phase B) |

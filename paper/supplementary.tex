@@ -200,17 +200,20 @@ difference above 0.01 in the right order).
     context $1.5\times$ & 0.623 / 0.619 & 0.621 & 0.432 & 0.573 & 0.858 & 0.814 \\
     random occlusion & 0.657 / 0.651 & 0.654 & 0.474 & 0.618 & 0.869 & 0.876 \\
     translation loss $\times 2$ & 0.659 / 0.658 & 0.659 & 0.478 & 0.628 & 0.870 & 0.874 \\
+    occlusion + translation loss $\times 2$ & 0.664 / 0.658 & 0.661 & 0.482 & 0.630 & 0.870 & 0.882 \\
     \bottomrule
   \end{tabular}
-  \caption{\textbf{Changes that did not help} (2$\times$ budget, two seeds, LM-O test AR with
+  \caption{\textbf{Further training changes} (2$\times$ budget, two seeds, LM-O test AR with
   default detections). Context: the crop is a square of side $\max(w, h)$ (or 1.25 / 1.5 times
   this) filled with the image instead of black bands, at training and test time; this costs
   0.03 AR, mainly in VSD and MSSD. Occlusion: one to four random rectangles (10--30\,\% of the
   crop side) erased from the training crops with $p = 0.5$. Translation loss weighted by 2 in the
   total loss. ``Val.\ score'': validation score with perturbed boxes (above), mean of two seeds;
-  the seeds of the baseline differ by 0.004. Occlusion is within the seed spread on both measures;
-  the translation weight gains 0.007 AR on the test set but only 0.001 on validation, so it is
-  not adopted.}
+  the seeds of the baseline differ by 0.004. Occlusion alone is within the seed spread on both
+  measures; the translation weight gains 0.007 AR on the test set but only 0.001 on validation.
+  Together they gain 0.009 on both test AR and validation, above the seed spread, with both
+  seeds above both baseline seeds; this combination was tried after seeing the two single
+  results, and it has not been tried at 4$\times$ or on YCB-V.}
   \label{tab:supp:m11}
 \end{table}
 

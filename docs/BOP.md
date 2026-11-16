@@ -8,8 +8,7 @@ official BOP19 metric (AR = mean of AR_VSD, AR_MSSD, AR_MSPD, `bop_toolkit`).
 
 Status (2026-11-16): LM-O, YCB-V and T-LESS done, deployment (ONNX, TensorRT fp16, latency) done, our own
 multi-class detector (M9 stretch), the 224 px resolution ablation, the paper ablations of
-`docs/PAPER_TODO.md` §3 and M11 phase A done. Nothing is running for the paper tables except the M11
-`tlw` + `occl` test.
+`docs/PAPER_TODO.md` §3 and M11 phase A done. Nothing is running.
 
 ## 1. Results
 
@@ -240,6 +239,7 @@ Each block changes one thing; the bold row is the choice kept.
 | | margin 1.5× | 0.623 / 0.619 | 0.621 (−0.031), val 0.814 |
 | Synthetic occlusion (`--bop_occlusion_aug`, 1–4 rectangles, p = 0.5) | | 0.657 / 0.651 | 0.654 (+0.002), val 0.876 (+0.003) |
 | Translation loss weight ×2 (`--translation_loss_weight 2`) | | 0.659 / 0.658 | 0.659 (+0.007), val 0.874 (+0.001) |
+| Occlusion + translation weight ×2 (`tlwocc`, A6, 2026-11-16) | | 0.664 / 0.658 | 0.661 (+0.009), val 0.882 (+0.009) |
 
 Augmentation reading: augmentation matters (none −0.028); only color helps alone; blur or noise
 alone = none; `domain_gap` (adds gray, tone curve, CLAHE, solarize, sun flare, compression /
@@ -264,7 +264,9 @@ Reading (2026-11-08, replaces the earlier conclusions drawn from val ADD and dri
   test and validation (VSD and MSSD); occlusion and the doubled translation weight are within the
   seed spread of the re-trained baseline (0.004) on the validation score with perturbed boxes
   (`eval_valn`, the choice rule), so they are not kept; the translation weight is the only one
-  above the spread on test (+0.007).
+  above the spread on test (+0.007). **A6 (2026-11-16): the two together (`tlwocc`) give 0.664 /
+  0.658 AR (+0.009) and validation 0.885 / 0.880 (+0.009), both above the spread and both seeds
+  above both baseline seeds: the only M11 change that helps; not yet tried at 4× or on YCB-V.**
 - The earlier metrics overstated the augmentation and conditioning effects; the paper should use
   this table.
 

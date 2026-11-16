@@ -447,7 +447,7 @@ processes 8 objects in 14.1\,ms (71 FPS), and its latency grows linearly with $N
 With the default detector (about 80\,ms per image as reported by its authors), the detector
 dominates the run time and the whole method runs at about 10 FPS. Our multi-class LW-DETR
 (\cref{sec:method:detector}) reaches a COCO mAP of 0.656 on the LM-O test targets, on par with
-the default detections (0.657), and gives 0.654 AR with our pose model (0.645--0.650 with the
+the default detections (0.657), and gives 0.654 / 0.656 AR with our pose model (two detector seeds; 0.645--0.650 with the
 smaller ``tiny'' variant). The 0.014 AR it loses is in the 2D alignment
 (AR$_\mathrm{MSPD}$ 0.848 vs.\ 0.873), mostly on the smallest object, the ape (Supp.~Sec.~S4).
 For its TensorRT export, we replace the \texttt{GridSample} operation of the deformable attention,
@@ -460,6 +460,8 @@ Measured end to end (\cref{tab:e2e}), in a loop over the 200 test images from th
 file, with detector, crops, pose network and pose recovery, the pipeline takes 25.2\,ms per image
 at 7.2 objects on average (40 FPS); decoding the PNG alone costs 7.8\,ms, so 17.4\,ms (57 FPS)
 remain for the method itself, and the loop gives the AR of \cref{tab:lmo} (0.654).
+On YCB-V, our detector (mAP 0.702 against 0.758) gives 0.681 AR against 0.702 with the default
+detections, and 0.827 against 0.851 with the depth correction (Supp.~Sec.~S4).
 \todo{Jetson Orin numbers, if a device becomes available; otherwise state it as a limitation.}
 
 \subsection{Qualitative Results}

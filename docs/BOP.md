@@ -6,10 +6,10 @@ spacecraft (SPEED) to many objects on the [BOP benchmark](https://bop.felk.cvut.
 network for all objects of a dataset, trained on synthetic (PBR) images only, evaluated with the
 official BOP19 metric (AR = mean of AR_VSD, AR_MSSD, AR_MSPD, `bop_toolkit`).
 
-Status (2026-11-15): LM-O, YCB-V and T-LESS done, deployment (ONNX, TensorRT fp16, latency) done, our own
+Status (2026-11-16): LM-O, YCB-V and T-LESS done, deployment (ONNX, TensorRT fp16, latency) done, our own
 multi-class detector (M9 stretch), the 224 px resolution ablation, the paper ablations of
-`docs/PAPER_TODO.md` §3 and M11 phase A done. Still running: the YCB-V own-detector job
-and the second seed of the LM-O small detector; their rows are marked *pending*.
+`docs/PAPER_TODO.md` §3 and M11 phase A done. Nothing is running for the paper tables except the M11
+`tlw` + `occl` test.
 
 ## 1. Results
 
@@ -34,9 +34,10 @@ Times are per image as submitted, on each author's hardware.
 | *Ours, TensorRT fp16 engine, default detections* | | | *0.6685* | *0.4911* | *0.6415* | *0.8729* | |
 | *Ours, own LW-DETR small detector, full TensorRT fp16 pipeline* | | | *0.654* | *0.486* | *0.628* | *0.848* | *0.020* |
 | *Ours, own LW-DETR small detector, PyTorch* | | | *0.654* | *0.486* | *0.627* | *0.848* | *0.035* |
+| *Ours, own LW-DETR small detector, seed b, PyTorch* | | | *0.656* | *0.487* | *0.631* | *0.849* | |
 | *Ours, own LW-DETR tiny detector (2 seeds), PyTorch* | | | *0.645 / 0.650* | *0.475 / 0.478* | *0.619 / 0.619* | *0.843 / 0.851* | *0.032* |
 
-Own detector vs default: −0.014 AR, mostly MSPD (0.848 vs 0.873) and the smallest object (ape
+Own detector vs default: −0.014 AR (seed b: 0.656, −0.012), mostly MSPD (0.848 vs 0.873) and the smallest object (ape
 0.696 → 0.645; 11.4 % of our ape boxes have IoU < 0.5 vs 1.7 % for the default detector); duck and
 eggbox gain slightly. Per object: `$NAS_HOME/results/paper/per_object_ar_lmo_tok4x_ownsmall_trt.md`.
 
@@ -70,6 +71,7 @@ images (best RGB: 0.86); we do not (open issue D8, see §4).
 | EPOS-BOP20-PBR | no | 0.499 | 0.411 | 0.464 | 0.621 | 0.764 |
 | *Ours, GT boxes (oracle)* | | *0.707* | | | | |
 | *Ours, TensorRT fp16 engine, default detections* | | *0.7017* | *0.5908* | *0.6806* | *0.8338* | |
+| *Ours, own LW-DETR small detector (`tok4x2`), PyTorch (2026-11-16)* | | *0.681* | *0.574* | *0.663* | *0.805* | |
 
 Reading (corrected 2026-11-11 after checking every submission page; the tables above are
 incomplete, the verified ones are in `paper/sections/experiments.tex`): on **YCB-V** (PBR only) we
@@ -100,6 +102,7 @@ iterations; rotation unchanged). GPU, all estimates of an image batched: **3–4
 | LM-O, own LW-DETR small + TensorRT | 0.654 | **0.738** | 0.590 | 0.777 | 0.847 | **0.024** |
 | YCB-V `tok4x`, default det. | 0.694 | **0.849** | 0.795 | 0.904 | 0.847 | 0.124 |
 | YCB-V `tok4x2`, default det. | 0.702 | **0.851** | 0.797 | 0.908 | 0.849 | 0.121 |
+| YCB-V `tok4x2`, own LW-DETR small + PyTorch | 0.681 | **0.827** | 0.773 | 0.885 | 0.822 | |
 | T-LESS `tok4x`, default det. | 0.762 | **0.858** | 0.789 | 0.853 | 0.931 | 0.101 |
 | T-LESS `tok4x2`, default det. | 0.762 | **0.859** | 0.790 | 0.854 | 0.933 | 0.101 |
 
@@ -361,6 +364,8 @@ the box the pose evaluation uses (top-1 detection of that object, `scripts/detec
 | BOP default (GDRNPPDet-PBR) | YCB-V | 0.758 | 0.962 | 0.813 | ≤ 6.7 % per object | 78.8 ms (authors) |
 | Own LW-DETR tiny (2 seeds), PyTorch | LM-O | 0.628 / 0.631 | 0.925 / 0.930 | 0.703 / 0.706 | | 14.3 / 14.6 ms (A100, bf16) |
 | Own LW-DETR small, PyTorch | LM-O | 0.656 | 0.936 | 0.727 | | 16.8 ms (A100, bf16) |
+| Own LW-DETR small, seed b, PyTorch | LM-O | 0.653 | 0.932 | 0.727 | | 17.9 ms (A100, bf16) |
+| Own LW-DETR small, PyTorch | YCB-V | 0.702 | 0.859 | 0.815 | | 17.0 ms (A100, bf16) |
 | Own LW-DETR small, **TensorRT fp16** | LM-O | 0.657 | | 0.728 | 7.6 % (eggbox 21 %, cat 14 %) | **3.3 ms** (A100, incl. resize, top-k) |
 
 Reading: the detector explains part of the GT-box → detection gap (LM-O AR 0.689 → 0.668): the

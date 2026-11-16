@@ -3,7 +3,7 @@
 % Compile this file on its own (Overleaf: Menu -> Main document -> supplementary.tex, or a second
 % project). Sections are numbered S1, S2, ...; the main paper refers to them as "Supp. Sec. Sx".
 % Figures come from paper/figures (scripts vis/paper_*.py); numbers from docs/BOP.md and
-% TASKS.md §9. Status (2026-11-15): bbox jitter, T-LESS, the second seed of the single-object models and M11 phase A are in; the second seed of the small detector is still running.
+% TASKS.md §9. Status (2026-11-15): bbox jitter, T-LESS, the second seed of the single-object models and M11 phase A are in; the second seed of the small detector and the YCB-V own detector (2026-11-16) are in.
 \input{preamble}
 
 \renewcommand{\thesection}{S\arabic{section}}
@@ -281,19 +281,23 @@ gap'' augmentation 0.841.
   \footnotesize
   \begin{tabular}{lcccccc}
     \toprule
-    Detections (LM-O) & mAP & AP50 & AR100 & IoU $<$ 0.5 & Time & Pose AR \\
+    Detections & mAP & AP50 & AR100 & IoU $<$ 0.5 & Time & Pose AR \\
     \midrule
-    Default (GDRNPP) & 0.657 & 0.929 & 0.721 & 6.3\,\% & 81.6\,ms$^\dagger$ & 0.668 \\
-    LW-DETR tiny (a / b) & 0.628 / 0.631 & 0.925 / 0.930 & 0.703 / 0.706 & & 15.5\,ms & 0.645 / 0.650 \\
-    LW-DETR small (a / b) & 0.656 / \pending{} & 0.936 / \pending{} & 0.727 / \pending{} & & 18.0\,ms & 0.654 / \pending{} \\
-    LW-DETR small, TRT FP16 & 0.657 & & 0.728 & 7.6\,\% & 4.2\,ms & 0.654 \\
+    LM-O, default (GDRNPP) & 0.657 & 0.929 & 0.721 & 6.3\,\% & 81.6\,ms$^\dagger$ & 0.668 \\
+    LM-O, LW-DETR tiny (a / b) & 0.628 / 0.631 & 0.925 / 0.930 & 0.703 / 0.706 & & 15.5\,ms & 0.645 / 0.650 \\
+    LM-O, LW-DETR small (a / b) & 0.656 / 0.653 & 0.936 / 0.932 & 0.727 / 0.727 & & 18.0 / 17.9\,ms & 0.654 / 0.656 \\
+    LM-O, LW-DETR small, TRT FP16 & 0.657 & & 0.728 & 7.6\,\% & 4.2\,ms & 0.654 \\
+    \midrule
+    YCB-V, default (GDRNPP) & 0.758 & 0.962 & 0.813 & & 78.8\,ms$^\dagger$ & 0.702 \\
+    YCB-V, LW-DETR small & 0.702 & 0.859 & 0.815 & & 17.0\,ms & 0.681 \\
     \bottomrule
   \end{tabular}
   \caption{\textbf{Detection quality} on the LM-O test targets (COCO metrics against
   \texttt{bbox\_visib}); ``IoU $<$ 0.5'': share of targets whose box used by the pose stage (top
   detection of that object) overlaps the ground truth by less than 0.5. Times on one A100 (PyTorch
   BF16, or TensorRT, including resizing and top-$k$; mean per image). $^\dagger$As reported by its
-  authors, on their hardware. On YCB-V, the default detections reach 0.758 mAP.}
+  authors, on their hardware. Pose AR: LM-O with the pose model of seed a (the two values are the two
+  detector seeds), YCB-V with the pose model of seed b.}
   \label{tab:supp:det}
 \end{table}
 
@@ -306,7 +310,10 @@ loses 0.03; the duck (0.644 $\rightarrow$ 0.661) and the eggbox (0.357 $\rightar
 slightly. With the default detector, the eggbox has the worst boxes (27\,\% with IoU $< 0.5$),
 consistent with its low AR. Our detector predicts visible boxes, the default one boxes between
 visible and amodal; our pose model is trained on visible boxes, and training on amodal or mixed
-boxes did not help (\cref{tab:supp:other}).
+boxes did not help (\cref{tab:supp:other}). The second seed of the small detector gives the same
+result (0.656 AR, mAP 0.653). On YCB-V our detector has a lower mAP than the default one (0.702
+against 0.758, with the same AR100) and costs 0.021 pose AR (0.681 against 0.702), more than on
+LM-O; with the depth correction the loss is 0.024 (0.827 against 0.851).
 
 % ---------------------------------------------------------------------------------------------
 \section{Deployment details}
@@ -490,6 +497,7 @@ shift 18\,mm) and $-21$\,mm on YCB-V, the depth bias of \cref{sec:supp:depth}.
     LM-O & own LW-DETR, TensorRT & 0.654 & 0.738 & 0.590 & 0.777 & 0.847 \\
     YCB-V & seed a & 0.694 & 0.849 & 0.795 & 0.904 & 0.847 \\
     YCB-V & seed b & 0.702 & 0.851 & 0.797 & 0.908 & 0.849 \\
+    YCB-V & own LW-DETR, PyTorch (pose seed b) & 0.681 & 0.827 & 0.773 & 0.885 & 0.822 \\
     T-LESS & seed a & 0.762 & 0.858 & 0.789 & 0.853 & 0.931 \\
     T-LESS & seed b & 0.762 & 0.859 & 0.790 & 0.854 & 0.933 \\
     \bottomrule

@@ -1212,7 +1212,8 @@ time). Our errors are mostly in depth (VSD / MSSD) and on heavily occluded objec
    | **To do when jobs end** | |
    | T-LESS: leaderboard comparison (PBR-only RGB / RGB-D entries, training data to check) and second block in the paper | To do |
    | M11 A6: `tlw` + `occl` together, `lmo-m11-tlwocc{,2}-001` | Done 2026-11-16: AR 0.664 / 0.658 (+0.009), validation +0.009 |
-   | M11 phase B choice (B1 ViT-L/512, B2 8× budget, B3 YCB-V `train_real`) and whether to adopt `tlw` + `occl` (A6, +0.009) in the final models | To do (user) |
+   | M11 A7: confirm `tlw` + `occl` at 4×, one seed: `lmo-m13-tlwocc4x-001` (`SPE=4×42208 scripts/m10_ablations.sh tlwocc`, started Mon 13:15 CET) | Running, ~22 h of training + evaluation: ~Tue 12:00 CET. Compare with `tok4x` / `tok4x2` (0.668 / 0.664, older code) and the validation score of a 4× baseline (not trained: the old models have no `eval_valn`, run `scripts/m12_valeval.sh` on them) |
+   | M11 plan (user, 2026-11-16: "do your recommendation"): adopt `tlw` + `occl` and an 8× budget if A7 confirms the gain (≥ +0.005 on test and on `eval_valn`), then retrain all final models once (LM-O, YCB-V, T-LESS, 2 seeds) and redo RGB-D, latency and the paper tables | After A7 |
    | **Paper** | |
    | Positioning vs PViT-6D / PoseDETR (improve first, option c) | In progress (M11) |
    | Abstract / introduction / conclusion with T-LESS | Done 2026-11-15 (M11 / final numbers to update after phase B) |

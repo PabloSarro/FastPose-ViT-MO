@@ -1221,7 +1221,7 @@ time). Our errors are mostly in depth (VSD / MSSD) and on heavily occluded objec
    | M11 plan was: adopt `tlw` + `occl` + 8× if A7 confirmed. **A7 did not confirm: `tlw` + `occl` not adopted.** Open for the user: B2 8× budget (without the changes), B1 ViT-L/512, B3 YCB-V `train_real`, or stop improving and finalise the paper with the current models | To do (user) |
    | 8× budget test (B2), LM-O, 1 seed, no changes: `lmo-m13-base8x-001` (`SPE=8×42208 scripts/m10_ablations.sh base`, started Tue 14:00 CET) | Running, 18 min per epoch: ~Thu 11:30 CET. Compare with `tok4x` / `tok4x2` (0.668 / 0.664, validation 0.886 / 0.880) |
    | More seeds of `tlw` + `occl` at 4×: `lmo-m13-tlwocc4x2-001` (seed b, pairs with `tok4x2`) | Running, ~Wed 13:15 CET. One more seed only: the user asked for 1–2 |
-   | M11 B3 YCB-V PBR + real: `ycbv-m14-real2x-001`, `ycbv-m14-real2x2-001` (2×) | `real2x` running, ~Wed 08:00 CET; `real2x2` Pending (queue) |
+   | M11 B3 YCB-V PBR + real: `ycbv-m14-real2x-001`, `ycbv-m14-real2x2-001` (2×) | `real2x` running, 11.5 min per epoch: ~Wed 21:15 CET; `real2x2` was preempted and is Pending again (resumes from `last.pt`, epoch 3), ~Thu 08:00 CET if it restarts now |
    | **Paper** | |
    | Positioning vs PViT-6D / PoseDETR (improve first, option c) | In progress (M11) |
    | Abstract / introduction / conclusion with T-LESS | Done 2026-11-15 (M11 / final numbers to update after phase B) |

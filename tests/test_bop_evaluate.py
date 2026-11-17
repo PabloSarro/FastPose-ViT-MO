@@ -73,3 +73,19 @@ def test_per_object_table_means():
     assert means["mean over instances"]["ADD@0.1d"] == pytest.approx(0.25)
     assert means["mean over objects"]["n"] == 400
     assert "| 10 (sym.) | 300 |" in table and len(table.strip().splitlines()) == 2 + 2 + 2
+
+
+def test_per_object_table_ignores_objects_without_instances():
+    """Objects absent from a split (nan entries, n = 0) count in neither mean."""
+    from src.bop_evaluate import TABLE_COLUMNS, per_object_table
+
+    keys = [k for k, _, _ in TABLE_COLUMNS if k != "n"]
+    per_obj = {
+        "1": {"n": 10, **{k: 0.5 for k in keys}},
+        "2": {"n": 30, **{k: 0.9 for k in keys}},
+        "3": {"n": 0, **{k: float("nan") for k in keys}},
+    }
+    _, means = per_object_table(per_obj)
+    assert means["mean over objects"]["recall_MSSD"] == pytest.approx(0.7)
+    assert means["mean over instances"]["recall_MSSD"] == pytest.approx(0.8)
+    assert means["mean over instances"]["n"] == 40

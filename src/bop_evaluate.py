@@ -369,10 +369,15 @@ def per_object_table(per_obj: dict, symmetric_ids=()) -> tuple[str, dict]:
     """
     keys = [k for k, _, _ in TABLE_COLUMNS if k != "n"]
     n = np.array([per_obj[o]["n"] for o in per_obj], dtype=np.float64)
+    # Objects without instances in the split (e.g. the held-out YCB-V real videos) have nan
+    # entries: they count in neither mean.
+    present = [o for o in per_obj if per_obj[o]["n"] > 0] or list(per_obj)
+    weights = np.array([per_obj[o]["n"] for o in present], dtype=np.float64)
     means = {
-        "mean over objects": {k: float(np.mean([per_obj[o][k] for o in per_obj])) for k in keys},
+        "mean over objects": {k: float(np.mean([per_obj[o][k] for o in present])) for k in keys},
         "mean over instances": {
-            k: float(np.average([per_obj[o][k] for o in per_obj], weights=n)) for k in keys
+            k: float(np.average([per_obj[o][k] for o in present], weights=weights if weights.sum() else None))
+            for k in keys
         },
     }
     for m in means.values():

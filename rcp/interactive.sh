@@ -30,8 +30,4 @@ WAIT_MINUTES=30 bash "$RCP_DIR/wait.sh" "$name" running
 if [[ -n "${RCP_SHELL_DIR:-}" && "$WORK_DIR" == "$PROJECT_ROOT" ]]; then
     printf '%s\n' "$RCP_SHELL_DIR" > "$JOB_HOME/.rcp-cd"
 fi
-# A command for the new shell to run once, e.g. the Agent Huddle reopening a Claude session: RCP_RUN='...' dev
-if [[ -n "${RCP_RUN:-}" ]]; then
-    printf '%s\n' "$RCP_RUN" > "$JOB_HOME/.rcp-run"
-fi
 exec runai bash "$name"

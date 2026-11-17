@@ -203,7 +203,7 @@ difference above 0.01 in the right order).
     occlusion + translation loss $\times 2$ & 0.664 / 0.658 & 0.661 & 0.482 & 0.630 & 0.870 & 0.882 \\
     \bottomrule
   \end{tabular}
-  \caption{\textbf{Further training changes} (2$\times$ budget, two seeds, LM-O test AR with
+  \caption{\textbf{Further training changes (none adopted)} (2$\times$ budget, two seeds, LM-O test AR with
   default detections). Context: the crop is a square of side $\max(w, h)$ (or 1.25 / 1.5 times
   this) filled with the image instead of black bands, at training and test time; this costs
   0.03 AR, mainly in VSD and MSSD. Occlusion: one to four random rectangles (10--30\,\% of the
@@ -213,7 +213,9 @@ difference above 0.01 in the right order).
   measures; the translation weight gains 0.007 AR on the test set but only 0.001 on validation.
   Together they gain 0.009 on both test AR and validation, above the seed spread, with both
   seeds above both baseline seeds; this combination was tried after seeing the two single
-  results, and it has not been tried at 4$\times$ or on YCB-V.}
+  results. At the 4$\times$ budget of the final models, one seed gives 0.669 AR and 0.887
+  validation, against 0.668 / 0.664 and 0.886 / 0.880 for the two final models: the gain is no
+  longer above the seed spread, and the combination is not adopted.}
   \label{tab:supp:m11}
 \end{table}
 

@@ -240,6 +240,7 @@ Each block changes one thing; the bold row is the choice kept.
 | Synthetic occlusion (`--bop_occlusion_aug`, 1–4 rectangles, p = 0.5) | | 0.657 / 0.651 | 0.654 (+0.002), val 0.876 (+0.003) |
 | Translation loss weight ×2 (`--translation_loss_weight 2`) | | 0.659 / 0.658 | 0.659 (+0.007), val 0.874 (+0.001) |
 | Occlusion + translation weight ×2 (`tlwocc`, A6, 2026-11-16) | | 0.664 / 0.658 | 0.661 (+0.009), val 0.882 (+0.009) |
+| Same at 4× (A7, 2026-11-17, one seed) | 4× | 0.669 | +0.003 vs `tok4x` / `tok4x2` (0.666), val 0.887 (+0.004): not confirmed |
 
 Augmentation reading: augmentation matters (none −0.028); only color helps alone; blur or noise
 alone = none; `domain_gap` (adds gray, tone curve, CLAHE, solarize, sun flare, compression /
@@ -266,7 +267,7 @@ Reading (2026-11-08, replaces the earlier conclusions drawn from val ADD and dri
   (`eval_valn`, the choice rule), so they are not kept; the translation weight is the only one
   above the spread on test (+0.007). **A6 (2026-11-16): the two together (`tlwocc`) give 0.664 /
   0.658 AR (+0.009) and validation 0.885 / 0.880 (+0.009), both above the spread and both seeds
-  above both baseline seeds: the only M11 change that helps; not yet tried at 4× or on YCB-V.**
+  above both baseline seeds. **A7 (2026-11-17): at 4× the gain is gone (0.669 vs 0.668 / 0.664, validation 0.887 vs 0.886 / 0.880, +0.003 / +0.004, below the +0.005 rule): not adopted, the final models stay.**
 - The earlier metrics overstated the augmentation and conditioning effects; the paper should use
   this table.
 

@@ -6,9 +6,10 @@ spacecraft (SPEED) to many objects on the [BOP benchmark](https://bop.felk.cvut.
 network for all objects of a dataset, trained on synthetic (PBR) images only, evaluated with the
 official BOP19 metric (AR = mean of AR_VSD, AR_MSSD, AR_MSPD, `bop_toolkit`).
 
-Status (2026-11-16): LM-O, YCB-V and T-LESS done, deployment (ONNX, TensorRT fp16, latency) done, our own
-multi-class detector (M9 stretch), the 224 px resolution ablation, the paper ablations of
-`docs/PAPER_TODO.md` §3 and M11 phase A done. Nothing is running.
+Status (2026-11-17): LM-O, YCB-V and T-LESS done, deployment (ONNX, TensorRT fp16, latency) done, our own
+multi-class detector (M9 stretch, LM-O two seeds, YCB-V), the 224 px resolution ablation, the paper ablations of
+`docs/PAPER_TODO.md` §3, M11 phase A and the 4× check of `tlw` + `occl` done (nothing adopted). Running (results not in
+this document yet): an 8× budget on LM-O, a second seed of `tlw` + `occl` at 4×, and YCB-V trained on PBR + real images.
 
 ## 1. Results
 

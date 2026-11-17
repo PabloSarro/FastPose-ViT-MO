@@ -10,7 +10,7 @@ jobs; external = someone outside this project).
 
 **Draft (2026-11-11):** LaTeX draft in `paper/` (Overleaf-ready, see `paper/README.md`); pending results and TODOs are marked in it.
 
-## 1. Results still running
+## 1. Results (all done)
 - [x] *Done 2026-11-09: tiny AR 0.645 / 0.650, small 0.654 (default 0.668), `docs/BOP.md`.* **Own multi-class LW-DETR detector**: LM-O AR with our detections vs the default ones (0.668),
       val_pbr mAP, tiny vs small, seed spread. Jobs `lmo-m9-{dettiny,dettiny2,detsmall}-001`.
       Cost: running.
@@ -20,7 +20,7 @@ jobs; external = someone outside this project).
 - [x] *Done 2026-11-09: 0.643 / 0.643 vs 0.669 / 0.664.* **224 px vs 384 px AR** (D7): LM-O test AR with detections of the 224 px `tok4x` recipe
       (2 seeds) vs `tok4x` / `tok4x2`; latency already measured (pipeline 7.6 vs 14.2 ms at 8
       objects). Jobs `lmo-m10-r224tok4x{,2}-001`. Cost: running, then eval.
-- [ ] Optionally, the detector for YCB-V (21 classes), if the LM-O one holds up. Cost: train.
+- [x] *Done 2026-11-16: YCB-V detector mAP 0.702, AR 0.681 (default detections 0.702), RGB-D 0.827.* Optionally, the detector for YCB-V (21 classes), if the LM-O one holds up.
 
 ## 2. Evaluation only (no training)
 - [x] **Ablations on one metric.** *Done 2026-11-08: `docs/BOP.md` §2, `TASKS.md` §9.* Today they mix driller-only ADD (depth mode, translation loss,

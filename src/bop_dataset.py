@@ -42,6 +42,11 @@ LMO_OBJ_IDS = (1, 5, 6, 8, 9, 10, 11, 12)
 YCBV_OBJ_IDS = tuple(range(1, 22))
 # Objects of T-LESS (all 30; 27 symmetric, 11 of them with a continuous symmetry)
 TLESS_OBJ_IDS = tuple(range(1, 31))
+# YCB-V train_real: scenes 0-47 (uw camera, like the test images) and 60-91 (cmu camera).
+YCBV_REAL_VAL_SCENES = (7, 21, 33, 45)
+YCBV_REAL_TRAIN_SCENES = tuple(
+    s for s in (*range(0, 48), *range(60, 92)) if s not in YCBV_REAL_VAL_SCENES
+)
 
 
 @dataclass(frozen=True)
@@ -88,6 +93,15 @@ SPLITS = {
         "val_pbr": (Source("ycbv", "train_pbr", (48, 49)),),
         "val": (Source("ycbv", "train_pbr", (48, 49)),),
         "test": (Source("ycbv", "test", targets=True),),
+        # M11 B3 (user, 2026-11-17): real training images. `train_real_full` is the complete
+        # train_real (80 scenes, 000000-000091; the cluster copy has 3), extracted by hand into
+        # $NAS_HOME/datasets/ycbv_train_real and linked into the tree (TASKS.md D8). The test
+        # scenes (48-59) are not in it. Four whole uw-camera videos are held out as real val.
+        "train_mix": (
+            Source("ycbv", "train_pbr", tuple(range(0, 48))),
+            Source("ycbv", "train_real_full", YCBV_REAL_TRAIN_SCENES),
+        ),
+        "val_real": (Source("ycbv", "train_real_full", YCBV_REAL_VAL_SCENES),),
     },
     # T-LESS (M10, user 2026-11-08): PBR only, as LM-O / YCB-V. Real test images from the
     # Primesense sensor (BOP split "test", folder test_primesense); up to 7 instances of the same

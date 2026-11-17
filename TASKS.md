@@ -1086,7 +1086,9 @@ time). Our errors are mostly in depth (VSD / MSSD) and on heavily occluded objec
 - [ ] **Phase B** (after phase A, or alongside if the queue is short):
   - [ ] B1 ViT-L/16 at 512 px (SWAG E2E weights in torchvision), 2×; ~3-4× slower to train and run.
   - [ ] B2 8× budget on LM-O (2× → 4× gave +0.011), ~68 h per run.
-  - [ ] B3 YCB-V with its real training images (`train_real`, downloaded to `$NAS_HOME/datasets/ycbv_train_real/`, D8): should remove the +2.4 % depth bias; moves the result to the PBR + real leaderboard category (supervisor's view needed).
+  - [~] B3 YCB-V with its real training images (`train_real`, downloaded to `$NAS_HOME/datasets/ycbv_train_real/`, D8): should remove the +2.4 % depth bias; moves the result to the PBR + real leaderboard category. **User accepted it 2026-11-17** (positioning of the PBR + real result still to agree with the supervisor).
+    - **Code done 2026-11-17:** tree link `$NAS_HOME/datasets/bop/ycbv/train_real_full` → the extracted 80 scenes (our own tree; the broken `train_real` link is untouched); `SPLITS["ycbv"]["train_mix"]` = PBR scenes 0–47 (626,520 rows) + 76 real videos (481,668 rows, 43 % of the rows; object-balanced sampling keeps this ratio per object) and `"val_real"` = four held-out uw videos (scenes 7, 21, 33, 45; 28,613 rows); the test scenes 48–59 are in neither. `train.py --bop_train_split train_mix`; `scripts/m14_ycbv_real.sh` (train, val on the real videos with GT and noisy boxes, test GT and detections, official eval); `scripts/m14_valreal_eval.sh` (the PBR-only models on the same real videos). Tests: `tests/test_bop_dataset_ycbv.py` +4 (splits disjoint from the test scenes, real rows match the raw files, reprojected models match `bbox_obj` on real images), 18 pass. Smoke training run OK.
+    - **Jobs:** `ycbv-m14-real2x-001` / `ycbv-m14-real2x2-001` (2×, 2 seeds, compare `tok2x{,2}` 0.681 / 0.689 AR with detections, PBR validation 0.834 / 0.832) started 2026-11-17 ~14:00 CET. Choose on the real validation (`eval_valrealn`), baseline = the PBR-only models on the same videos (`$RUN/<variant>/eval_valreal{,n}`). If it helps: 4× (`real4x{,2}`) for the final model, then RGB-D, paper rows (new category).
 - [~] **Phase C: RGB-D variant** (user 2026-11-14: report RGB-D results too, in the main tables as a
   separate block; RGB stays the main result). Depth correction of the RGB estimates, training-free
   (`scripts/depth_correction.py`, runs via `scripts/m11_rgbd.sh`, results `$NAS_HOME/results/m11/rgbd_splat/`):
@@ -1216,6 +1218,9 @@ time). Our errors are mostly in depth (VSD / MSSD) and on heavily occluded objec
    | M11 A6: `tlw` + `occl` together, `lmo-m11-tlwocc{,2}-001` | Done 2026-11-16: AR 0.664 / 0.658 (+0.009), validation +0.009 |
    | M11 A7: `tlw` + `occl` at 4×, one seed, `lmo-m13-tlwocc4x-001` | Done 2026-11-17: AR 0.669 (`tok4x` 0.668 / `tok4x2` 0.664, +0.003), validation 0.887 (0.886 / 0.880, +0.004): below the +0.005 rule, **not confirmed** |
    | M11 plan was: adopt `tlw` + `occl` + 8× if A7 confirmed. **A7 did not confirm: `tlw` + `occl` not adopted.** Open for the user: B2 8× budget (without the changes), B1 ViT-L/512, B3 YCB-V `train_real`, or stop improving and finalise the paper with the current models | To do (user) |
+   | 8× budget test (B2), LM-O, 1 seed, no changes: `lmo-m13-base8x-001` (`SPE=8×42208 scripts/m10_ablations.sh base`, started Tue 14:00 CET) | Running, 18 min per epoch: ~Thu 11:30 CET. Compare with `tok4x` / `tok4x2` (0.668 / 0.664, validation 0.886 / 0.880) |
+   | More seeds of `tlw` + `occl` at 4×: `lmo-m13-tlwocc4x2-001` (seed b, pairs with `tok4x2`) | Running, ~Wed 13:15 CET. One more seed only: the user asked for 1–2 |
+   | M11 B3 YCB-V PBR + real: `ycbv-m14-real2x-001`, `ycbv-m14-real2x2-001` (2×) | `real2x` running, ~Wed 08:00 CET; `real2x2` Pending (queue) |
    | **Paper** | |
    | Positioning vs PViT-6D / PoseDETR (improve first, option c) | In progress (M11) |
    | Abstract / introduction / conclusion with T-LESS | Done 2026-11-15 (M11 / final numbers to update after phase B) |

@@ -20,6 +20,8 @@ from bop_toolkit_lib import inout
 from src.bop_dataset import (
     SPLITS,
     YCBV_OBJ_IDS,
+    YCBV_REAL_TRAIN_SCENES,
+    YCBV_REAL_VAL_SCENES,
     BOPDataset,
     Source,
     _image_size,
@@ -105,9 +107,31 @@ def test_pbr_rows_match_raw_annotations():
     assert rows == sorted(expected) and len(rows) > 10000
 
 
-@pytest.mark.parametrize("which", ["pbr", "test"])
-def test_row_contents_match_raw_files(which, pbr_index, test_index):
-    index = pbr_index if which == "pbr" else test_index
+@pytest.fixture(scope="module")
+def real_index():
+    """Real training images of one uw video and one cmu video (train_real_full, M11 B3)."""
+    return build_index(
+        BOP_ROOT, (Source("ycbv", "train_real_full", (0, 61)),), YCBV_OBJ_IDS, "ycbv"
+    )
+
+
+def test_real_splits_keep_val_and_test_scenes_out():
+    cfg = SPLITS["ycbv"]
+    assert cfg["train_mix"][0] == cfg["train"][0]  # the PBR part is the usual one
+    real = cfg["train_mix"][1]
+    assert real.split == "train_real_full" and cfg["val_real"] == (
+        Source("ycbv", "train_real_full", YCBV_REAL_VAL_SCENES),
+    )
+    assert not set(real.scenes) & set(YCBV_REAL_VAL_SCENES)
+    test_scenes = {t["scene_id"] for t in load(os.path.join(BOP_ROOT, "ycbv", "test_targets_bop19.json"))}
+    assert test_scenes == set(range(48, 60))
+    assert not (set(real.scenes) | set(YCBV_REAL_VAL_SCENES)) & test_scenes
+    assert len(real.scenes) == 76 and len(set(real.scenes)) == 76
+
+
+@pytest.mark.parametrize("which", ["pbr", "test", "real"])
+def test_row_contents_match_raw_files(which, pbr_index, test_index, real_index):
+    index = {"pbr": pbr_index, "test": test_index, "real": real_index}[which]
     rng = np.random.default_rng(0)
     for row in rng.choice(len(index["source"]), 20, replace=False):
         scene_dir = os.path.dirname(os.path.dirname(image_path(index, row)))
@@ -135,9 +159,9 @@ def test_object_table(test_index):
     assert test_index["diameters"].min() > 50 and test_index["diameters"].max() < 300  # mm
 
 
-@pytest.mark.parametrize("which", ["pbr", "test"])
-def test_reprojected_models_match_bbox_obj(which, pbr_index, test_index):
-    index = pbr_index if which == "pbr" else test_index
+@pytest.mark.parametrize("which", ["pbr", "test", "real"])
+def test_reprojected_models_match_bbox_obj(which, pbr_index, test_index, real_index):
+    index = {"pbr": pbr_index, "test": test_index, "real": real_index}[which]
     good, edges = [], []
     for row in reprojection_sample(index):
         obj = int(index["obj_id"][row])

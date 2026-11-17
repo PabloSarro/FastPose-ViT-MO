@@ -316,11 +316,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="BOP object ids to train/validate on (default: all objects of the dataset)",
     )
     parser.add_argument(
+        "--bop_train_split",
+        type=str,
+        default="train",
+        choices=["train", "train_mix"],
+        help="Training split; train_mix (YCBV only) = PBR + real train_real images (M11 B3)",
+    )
+    parser.add_argument(
         "--bop_val_split",
         type=str,
         default="val",
         choices=["val", "val_pbr", "val_real"],
-        help="Validation split (never the test split; YCBV has no val_real: val = val_pbr)",
+        help="Validation split (never the test split; YCBV: val = val_pbr, val_real = held-out train_real)",
     )
     parser.add_argument(
         "--max_val_samples",

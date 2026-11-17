@@ -112,7 +112,7 @@ def create_bop_datasets(args: argparse.Namespace, img_size: int, logger) -> tupl
     the same instances: a label/pipeline sanity check that must reach near-zero error.
     """
     dataset = args.dataset.lower()
-    train_index = load_index(dataset, "train")
+    train_index = load_index(dataset, args.bop_train_split)
     val_index = load_index(dataset, args.bop_val_split)
     obj_ids = args.bop_obj_ids or list(bop_config(args)["obj_ids"])
     train_rows = rows_for_objects(train_index, obj_ids)
@@ -1060,6 +1060,8 @@ if __name__ == "__main__":
         cfg = SPLITS[args.dataset.lower()]
         if args.bop_val_split not in cfg:
             parser.error(f"--bop_val_split {args.bop_val_split} does not exist for {args.dataset}")
+        if args.bop_train_split not in cfg:
+            parser.error(f"--bop_train_split {args.bop_train_split} does not exist for {args.dataset}")
         unknown = sorted(set(args.bop_obj_ids or ()) - set(cfg["obj_ids"]))
         if unknown:
             parser.error(f"--bop_obj_ids {unknown} are not objects of {args.dataset}")

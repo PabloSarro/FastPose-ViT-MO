@@ -50,8 +50,15 @@ SPE=${SPE:-$((2 * 42208))}
 DET=$(ls "$NAS_HOME"/datasets/bop_detections/default_task1/bop23_default_detections_for_task1/gdrnppdet-pbr/gdrnppdet-pbr_lmo-test_*.json)
 
 (( $# == 1 )) || { echo "usage: $0 VARIANT[2]"; exit 5; }
-v=$1 base=${1%2} seed=0
-[[ $v != "$base" ]] && seed=1
+# Seed b = a trailing "2", unless the whole name is a variant: vitb512 / vitl512 end in "2"
+# themselves (their seed b is vitb5122 / vitl5122). A first version read vitb512 as "vitb51",
+# seed b, and stopped with "unknown variant" (2026-11-18).
+VARIANTS=" absrot scratch bbox0 bbox20 legacy augnone augcolor augblur augnoise augsimple augstrong
+ bbox5 bbox15 bbox30 base ctx ctx125 ctx15 occl tlw tlwocc vitb512 vitb640 vitl512 vith518 "
+v=$1 base=$1 seed=0
+if [[ $VARIANTS != *" $v "* && $v == *2 ]]; then
+    base=${v%2} seed=1
+fi
 VIT=vit_b_16_384 DEPTH=site extra=() eval_extra=()
 case $base in
     absrot)  extra=(--no_rotation_compensation); eval_extra=(--no_rotation_compensation) ;;

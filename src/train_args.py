@@ -320,14 +320,22 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         default="train",
         choices=["train", "train_mix"],
-        help="Training split; train_mix (YCBV only) = PBR + real train_real images (M11 B3)",
+        help="Training split; train_mix = PBR + real images (YCBV: train_real, M11 B3; LMO: the "
+        "real LM images of the 8 objects without scene 2 and the BOP19 val images, M17)",
+    )
+    parser.add_argument(
+        "--bop_real_fraction",
+        type=float,
+        default=None,
+        help="M17, with train_mix and --bop_epoch_samples: fraction of each object's samples drawn "
+        "from the real images (default: as the rows fall, e.g. 43 %% real on YCB-V, ~3 %% on LM-O)",
     )
     parser.add_argument(
         "--bop_val_split",
         type=str,
         default="val",
         choices=["val", "val_pbr", "val_real"],
-        help="Validation split (never the test split; YCBV: val = val_pbr, val_real = held-out train_real)",
+        help="Validation split (never the test split; YCBV: val = val_pbr, val_real = held-out train_real; TLESS val_real = held-out train_primesense rings)",
     )
     parser.add_argument(
         "--max_val_samples",
@@ -366,6 +374,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--bop_occlusion_aug",
         action="store_true",
         help="BOP (M11): erase 1-4 random rectangles of each training crop (p = 0.5)",
+    )
+    parser.add_argument(
+        "--bop_real_background",
+        action="store_true",
+        help="BOP (M17, train_mix): paste the object of each real training image onto a random PBR "
+        "image with its mask_visib (T-LESS train_primesense has black backgrounds)",
     )
     parser.add_argument(
         "--translation_loss_weight",

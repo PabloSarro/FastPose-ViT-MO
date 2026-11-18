@@ -26,6 +26,8 @@ SUPPORTED_VIT_MODELS = [
     "vit_b_16_no_weights",
     "vit_b_16_384",
     "vit_b_16_384_no_weights",
+    "vit_b_16_512",
+    "vit_b_16_640",
     "vit_b_32",
     "vit_l_16",
     "vit_l_16_512",
@@ -46,6 +48,10 @@ VIT_MODELS = {
     "vit_b_16_no_weights": (vit_b_16, None, 768, (224, 224)),
     "vit_b_16_384": (vit_b_16, ViT_B_16_Weights.IMAGENET1K_SWAG_E2E_V1, 768, (384, 384)),
     "vit_b_16_384_no_weights": (vit_b_16, None, 768, (384, 384)),
+    # M15: the 384 px SWAG E2E weights at a larger input; the position embeddings are resized
+    # to the larger patch grid when the weights are loaded (resize_pos_embedding)
+    "vit_b_16_512": (vit_b_16, ViT_B_16_Weights.IMAGENET1K_SWAG_E2E_V1, 768, (512, 512)),
+    "vit_b_16_640": (vit_b_16, ViT_B_16_Weights.IMAGENET1K_SWAG_E2E_V1, 768, (640, 640)),
     "vit_b_32": (vit_b_32, ViT_B_32_Weights.IMAGENET1K_V1, 768, (224, 224)),
     "vit_l_16": (vit_l_16, ViT_L_16_Weights.IMAGENET1K_SWAG_LINEAR_V1, 1024, (224, 224)),
     "vit_l_16_512": (vit_l_16, ViT_L_16_Weights.IMAGENET1K_SWAG_E2E_V1, 1024, (512, 512)),
@@ -55,6 +61,31 @@ VIT_MODELS = {
     # ConvNeXt models
     "convnext_base": (convnext_base, ConvNeXt_Base_Weights.IMAGENET1K_V1, 1024, (224, 224)),
 }
+
+
+def resize_pos_embedding(state_dict: dict, grid: int, n_prefix: int = 1) -> dict:
+    """Resize a ViT state dict's patch position embeddings to a `grid` x `grid` patch grid (M15).
+
+    The first `n_prefix` entries (class tokens) are kept; the patch embeddings are resized
+    bicubically on their 2D grid, as when fine-tuning a ViT at a higher resolution. Unchanged
+    when the grid already matches.
+    """
+    pos = state_dict["encoder.pos_embedding"]  # (1, n_prefix + g * g, D)
+    prefix, patches = pos[:, :n_prefix], pos[:, n_prefix:]
+    old = int(round(patches.shape[1] ** 0.5))
+    if old * old != patches.shape[1]:
+        raise ValueError(f"patch position embeddings are not a square grid: {patches.shape[1]}")
+    if old == grid:
+        return state_dict
+    dim = patches.shape[-1]
+    patches = patches.reshape(1, old, old, dim).permute(0, 3, 1, 2).float()
+    patches = nn.functional.interpolate(
+        patches, size=(grid, grid), mode="bicubic", align_corners=False
+    )
+    patches = patches.permute(0, 2, 3, 1).reshape(1, grid * grid, dim).to(pos.dtype)
+    state_dict = dict(state_dict)
+    state_dict["encoder.pos_embedding"] = torch.cat([prefix, patches], dim=1)
+    return state_dict
 
 
 class MLPWithProjection(nn.Module):
@@ -255,6 +286,10 @@ class FastPoseViT(nn.Module):
                 # Load default weights if available
                 if default_weights is not None:
                     state_dict = default_weights.get_state_dict(progress=True, check_hash=True)
+                    # Weights of another input size (M15): resize the patch position embeddings
+                    state_dict = resize_pos_embedding(
+                        state_dict, img_size[0] // self.backbone.patch_size
+                    )
                     adapted_state_dict = self._adapt_state_dict_for_nb_class_tokens(
                         state_dict, nb_class_tokens
                     )

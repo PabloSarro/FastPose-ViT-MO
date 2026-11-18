@@ -34,7 +34,9 @@ from src.utils import (
 # Fix OpenCV threading conflicts with PyTorch DataLoader workers (as src/datasets.py)
 cv2.setNumThreads(0)
 
-INDEX_VERSION = 1
+# 2: img_wh read from each scene's images (T-LESS images are 720 x 540 and train_primesense
+# 400 x 400, not the 1280 x 1024 of camera_primesense.json); Source.exclude_targets (M17)
+INDEX_VERSION = 2
 
 # Objects of LM-O (the 8 LM objects that appear in the LM-O test scene)
 LMO_OBJ_IDS = (1, 5, 6, 8, 9, 10, 11, 12)
@@ -47,6 +49,10 @@ YCBV_REAL_VAL_SCENES = (7, 21, 33, 45)
 YCBV_REAL_TRAIN_SCENES = tuple(
     s for s in (*range(0, 48), *range(60, 92)) if s not in YCBV_REAL_VAL_SCENES
 )
+# T-LESS train_primesense (M17): one object per scene on a turntable, images in rings of 72 views
+# (5 deg azimuth steps), elevation +85 deg down to -85 deg (scenes 19 and 20: the upper 9 rings).
+# The real validation = rings 1, 4, 7 (elevations ~74, 42, 10 deg): 216 images per object.
+TLESS_REAL_VAL_IMAGES = tuple(72 * ring + j for ring in (1, 4, 7) for j in range(72))
 
 
 @dataclass(frozen=True)
@@ -59,12 +65,20 @@ class Source:
         scenes: Scene ids to use, or None for all scenes in the folder.
         targets: If True, keep only the instances listed in the dataset's test_targets_bop19.json
             (the official evaluation targets), without the visibility filter.
+        exclude_targets: If True, leave out every image listed in the dataset's
+            test_targets_bop19.json (M17: LM real training images without the LM BOP19 images,
+            which are the LM-O validation set `val_real`).
+        images: If given, keep only these image ids (in every scene); skip_images: leave these
+            image ids out (M17: T-LESS real validation rings).
     """
 
     dataset: str
     split: str
     scenes: tuple | None = None
     targets: bool = False
+    exclude_targets: bool = False
+    images: tuple | None = None
+    skip_images: tuple = ()
 
 
 # Splits per target dataset (see TASKS.md §5). LM-O has no training images of its own: the BOP
@@ -82,6 +96,15 @@ SPLITS = {
             Source("lm", "test", LMO_OBJ_IDS, targets=True),
         ),
         "test": (Source("lmo", "test", targets=True),),
+        # M17 (supervisor 2026-11-18): PBR + the real LM images of the 8 objects. LM test scene 2
+        # is the LM-O test sequence and is never used; the 200 BOP19 images per object (val_real)
+        # are left out, so validation stays the same as for the PBR-only models (their nearest
+        # training views are ~5 deg away: the real validation favours the real-trained models a
+        # little; the LM-O test does not).
+        "train_mix": (
+            Source("lm", "train_pbr", tuple(range(0, 48))),
+            Source("lm", "test_all", LMO_OBJ_IDS, exclude_targets=True),
+        ),
     },
     # YCB-V (M8): PBR only, as train_real is incomplete in our copy (TASKS.md §5). There is no
     # usable real val: test_all holds more frames of the same 12 test videos (a leak), so val is
@@ -113,6 +136,13 @@ SPLITS = {
         "val_pbr": (Source("tless", "train_pbr", (48, 49)),),
         "val": (Source("tless", "train_pbr", (48, 49)),),
         "test": (Source("tless", "test_primesense", targets=True),),
+        # M17: PBR + the real train_primesense images (black background: train with
+        # --bop_real_background), without the validation rings
+        "train_mix": (
+            Source("tless", "train_pbr", tuple(range(0, 48))),
+            Source("tless", "train_primesense", skip_images=TLESS_REAL_VAL_IMAGES),
+        ),
+        "val_real": (Source("tless", "train_primesense", images=TLESS_REAL_VAL_IMAGES),),
     },
 }
 
@@ -149,13 +179,43 @@ class ObjectBalancedSampler(Sampler):
     """
 
     def __init__(
-        self, obj_idx, samples_per_epoch: int, seed: int = 0, rank: int = 0, world_size: int = 1
+        self,
+        obj_idx,
+        samples_per_epoch: int,
+        seed: int = 0,
+        rank: int = 0,
+        world_size: int = 1,
+        source=None,
+        real_fraction: float | None = None,
     ):
+        """real_fraction (M17, with `source`): each object's samples are this fraction from its rows
+        of the later sources (the real images of a train_mix split, source > 0) and the rest from
+        source 0 (PBR); an object without real rows takes all from PBR. None: draw from all rows
+        alike (the row ratio decides), as before."""
         obj_idx = np.asarray(obj_idx)
-        self.groups = [np.flatnonzero(obj_idx == o) for o in np.unique(obj_idx)]
-        self.per_object = samples_per_epoch // len(self.groups)
+        objects = np.unique(obj_idx)
+        self.per_object = samples_per_epoch // len(objects)
         if self.per_object < 1:
-            raise ValueError(f"samples_per_epoch {samples_per_epoch} < {len(self.groups)} objects")
+            raise ValueError(f"samples_per_epoch {samples_per_epoch} < {len(objects)} objects")
+        if real_fraction is None:
+            self.groups = [np.flatnonzero(obj_idx == o) for o in objects]
+            self.counts = [self.per_object] * len(objects)
+        else:
+            if source is None or not 0.0 <= real_fraction <= 1.0:
+                raise ValueError("real_fraction needs `source` and a value in [0, 1]")
+            source = np.asarray(source)
+            self.groups, self.counts = [], []
+            for o in objects:
+                pbr = np.flatnonzero((obj_idx == o) & (source == 0))
+                real = np.flatnonzero((obj_idx == o) & (source > 0))
+                n_real = int(round(self.per_object * real_fraction)) if len(real) else 0
+                if len(pbr) == 0:
+                    n_real = self.per_object
+                for rows, n in ((pbr, self.per_object - n_real), (real, n_real)):
+                    if n:
+                        self.groups.append(rows)
+                        self.counts.append(n)
+        self.n_objects = len(objects)
         self.seed = seed
         self.epoch = 0
         self.rank, self.world_size = rank, world_size
@@ -165,12 +225,13 @@ class ObjectBalancedSampler(Sampler):
 
     def __len__(self) -> int:
         """Samples of this rank per epoch (all of them with world size 1)."""
-        return self.per_object * len(self.groups) // self.world_size
+        return sum(self.counts) // self.world_size
 
     def _draw(self, g: int, rows: np.ndarray) -> np.ndarray:
-        """This epoch's slice of object g's endless sequence of permutations."""
-        n, pos, parts = len(rows), self.epoch * self.per_object, []
-        end = pos + self.per_object
+        """This epoch's slice of group g's endless sequence of permutations."""
+        count = self.counts[g]
+        n, pos, parts = len(rows), self.epoch * count, []
+        end = pos + count
         while pos < end:
             p, off = divmod(pos, n)
             take = min(n - off, end - pos)
@@ -218,6 +279,16 @@ def _image_size(dataset_dir: str) -> tuple[int, int]:
     if len(sizes) != 1:
         raise ValueError(f"Expected one image size in {dataset_dir}/camera*.json, found {sizes}")
     return sizes.pop()
+
+
+def _scene_image_size(scene_dir: str) -> tuple[int, int]:
+    """(width, height) of a scene's images, from its first RGB image (header only)."""
+    from PIL import Image
+
+    for name in sorted(os.listdir(os.path.join(scene_dir, "rgb"))):
+        with Image.open(os.path.join(scene_dir, "rgb", name)) as im:
+            return im.size
+    raise FileNotFoundError(f"No images in {scene_dir}/rgb")
 
 
 def _rgb_extension(scene_dir: str) -> str:
@@ -302,7 +373,6 @@ def build_index(
 
     for s_idx, src in enumerate(sources):
         split_dir = os.path.join(bop_root, src.dataset, src.split)
-        img_wh = _image_size(os.path.join(bop_root, src.dataset))
         scenes = src.scenes
         if scenes is None:
             scenes = tuple(int(d) for d in sorted(os.listdir(split_dir)) if d.isdigit())
@@ -314,6 +384,14 @@ def build_index(
                     key = (tgt["scene_id"], tgt["im_id"], tgt["obj_id"])
                     targets[key] = targets.get(key, 0) + tgt["inst_count"]
             scenes = tuple(sc for sc in scenes if any(k[0] == sc for k in targets))
+        excluded = set()
+        if src.exclude_targets:
+            excluded = {
+                (tgt["scene_id"], tgt["im_id"])
+                for tgt in _load_json(os.path.join(bop_root, src.dataset, "test_targets_bop19.json"))
+            }
+        skip = set(src.skip_images)
+        keep_images = None if src.images is None else set(src.images)
         source_dirs.append(os.path.abspath(split_dir))
         source_exts.append(_rgb_extension(os.path.join(split_dir, f"{scenes[0]:06d}")))
 
@@ -322,8 +400,15 @@ def build_index(
             scene_gt = _load_json(os.path.join(scene_dir, "scene_gt.json"))
             scene_gt_info = _load_json(os.path.join(scene_dir, "scene_gt_info.json"))
             scene_camera = _load_json(os.path.join(scene_dir, "scene_camera.json"))
+            # The real size of this scene's images (camera*.json can describe another resolution:
+            # T-LESS camera_primesense.json says 1280 x 1024, the BOP images are 720 x 540)
+            img_wh = _scene_image_size(scene_dir)
             for im_key in sorted(scene_gt, key=int):
                 im_id = int(im_key)
+                if (scene_id, im_id) in excluded or im_id in skip:
+                    continue
+                if keep_images is not None and im_id not in keep_images:
+                    continue
                 keep = None
                 if targets is not None:
                     # A target lists inst_count instances of an object; T-LESS images can hold
@@ -758,6 +843,7 @@ class BOPDataset(Dataset):
         crop_context: bool = False,
         crop_scale: float = 1.0,
         occlusion_aug: bool = False,
+        real_background: bool = False,
         no_rotation_compensation: bool = False,
         index: dict | None = None,
         bop_root: str | None = None,
@@ -781,6 +867,9 @@ class BOPDataset(Dataset):
             crop_scale: Side of the square crop in units of max(w, h) of the box (M11; 1 = tight).
                 The labels still refer to the box, so this only changes what the network sees.
             occlusion_aug: Also erase 1-4 random rectangles of the crop (M11), when augmenting.
+            real_background: When augmenting, paste the object of a real training image (rows of
+                source > 0, e.g. T-LESS train_primesense on a black background) onto a random
+                PBR image (source 0), with its mask_visib (M17).
             no_rotation_compensation: Regress the egocentric rotation instead.
             index: A prebuilt index (dict of arrays), e.g. for tests.
             bop_root, cache_dir: Passed to load_index.
@@ -807,6 +896,8 @@ class BOPDataset(Dataset):
         self.crop_context = crop_context
         self.crop_scale = crop_scale
         self.no_rotation_compensation = no_rotation_compensation
+        self.real_background = real_background and self.augment
+        self.pbr_rows = np.flatnonzero(self.index["source"] == 0) if self.real_background else None
         self.transform = pixel_transform(
             pixel_aug if self.augment else "none", occlusion=occlusion_aug and self.augment
         )
@@ -824,6 +915,25 @@ class BOPDataset(Dataset):
         if image is None:
             raise FileNotFoundError(f"Could not load image: {path}")
         return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+    def mask_path(self, row: int) -> str:
+        """Path of the mask_visib image of a row (BOP: <scene>/mask_visib/<im>_<gt>.png)."""
+        index = self.index
+        return os.path.join(
+            str(index["source_dirs"][int(index["source"][row])]),
+            f"{int(index['scene_id'][row]):06d}",
+            "mask_visib",
+            f"{int(index['im_id'][row]):06d}_{int(index['gt_id'][row]):06d}.png",
+        )
+
+    def replace_background(self, row: int, image: np.ndarray) -> np.ndarray:
+        """The row's visible object on a random PBR image resized to this image (M17)."""
+        mask = cv2.imread(self.mask_path(row), cv2.IMREAD_GRAYSCALE)
+        if mask is None:
+            raise FileNotFoundError(f"Could not load mask: {self.mask_path(row)}")
+        bg = self.load_image(int(np.random.choice(self.pbr_rows)))
+        bg = cv2.resize(bg, (image.shape[1], image.shape[0]), interpolation=cv2.INTER_AREA)
+        return np.where(mask[..., None] > 0, image, bg)
 
     def crop_bbox(self, row: int) -> list[float]:
         """The [x1, y1, x2, y2] bbox the crop and labels use, jittered when augmenting."""
@@ -863,9 +973,10 @@ class BOPDataset(Dataset):
     def __getitem__(self, row: int) -> dict:
         index = self.index
         bbox = self.crop_bbox(row)
-        crop = crop_image(
-            self.load_image(row), bbox, self.img_size, self.crop_context, self.crop_scale
-        )
+        image = self.load_image(row)
+        if self.real_background and index["source"][row] > 0:
+            image = self.replace_background(row, image)
+        crop = crop_image(image, bbox, self.img_size, self.crop_context, self.crop_scale)
         image = self.transform(image=crop.astype(np.float32) / 255.0)["image"]
         U, rotation = self.labels(row, bbox)
         obj_idx = int(index["obj_idx"][row])

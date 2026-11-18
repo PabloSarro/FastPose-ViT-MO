@@ -212,3 +212,23 @@ def test_noisy_boxes_deterministic_bounded_and_scaled():
     n = noisy_boxes(big, np.tile(wh[:1], (4000, 1)), 0.1, seed=0)
     assert np.abs(n[:, 0] - 100.0).max() <= 0.1 * 60 + 1e-9  # a side moves by at most 10 % of w
     assert 0.5 * 0.1 * 60 * 0.8 < np.abs(n[:, 0] - 100.0).mean() < 0.5 * 0.1 * 60 * 1.2
+
+
+def test_noisy_boxes_same_per_instance_for_any_object_subset():
+    """M16: a single-object evaluation must see the shared model's noisy box for each instance,
+    and an all-object evaluation must keep the boxes of the earlier validation runs."""
+    from src.bop_dataset import rows_for_objects
+    from src.bop_evaluate import noisy_boxes, noisy_boxes_for_rows
+
+    rng = np.random.default_rng(3)
+    n = 50
+    index = {
+        "obj_id": rng.choice([1, 5, 8], n),
+        "bbox_visib": np.column_stack([rng.uniform(0, 400, (n, 2)), rng.uniform(20, 100, (n, 2))]),
+        "img_wh": np.tile([640, 480], (n, 1)),
+    }
+    full = noisy_boxes(index["bbox_visib"], index["img_wh"], 0.1, seed=0)
+    all_rows = rows_for_objects(index, [1, 5, 8])
+    assert np.array_equal(noisy_boxes_for_rows(index, all_rows, 0.1, 0), full)
+    rows = rows_for_objects(index, [5])
+    assert np.array_equal(noisy_boxes_for_rows(index, rows, 0.1, 0), full[rows])

@@ -130,6 +130,13 @@ def noisy_boxes(bbox_xywh: np.ndarray, img_wh: np.ndarray, fraction: float, seed
     return out.astype(np.asarray(bbox_xywh).dtype)
 
 
+def noisy_boxes_for_rows(index: dict, rows, fraction: float, seed: int) -> np.ndarray:
+    """noisy_boxes drawn over the whole split, then taken at `rows`: an instance gets the same
+    box whatever subset of objects is evaluated (M16: single-object models vs the shared one).
+    With all objects (rows = every row) this equals noisy_boxes on the split."""
+    return noisy_boxes(index["bbox_visib"], index["img_wh"], fraction, seed)[np.asarray(rows)]
+
+
 def pose_transformer(dataset, args) -> CoordinateTransformer:
     """R, t recovery from the network outputs, as in predict()."""
     return CoordinateTransformer(
@@ -560,8 +567,8 @@ def main() -> None:
             if args.detections or bbox_source != "visib":
                 parser.error("--box_noise needs GT boxes (bbox_source visib, no --detections)")
             pred_index = dict(pred_index)
-            pred_index["bbox_visib"] = noisy_boxes(
-                pred_index["bbox_visib"], pred_index["img_wh"], args.box_noise, args.box_noise_seed
+            pred_index["bbox_visib"] = noisy_boxes_for_rows(
+                index, all_rows, args.box_noise, args.box_noise_seed
             )
         dataset = BOPDataset(
             index=pred_index,

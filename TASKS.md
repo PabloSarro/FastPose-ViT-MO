@@ -17,7 +17,7 @@ Keep it current: update §1 (status), §9 (results) and §10 (next steps) at the
 |---|---|
 | "Multi-image" means | Multi-object: several objects/instances per RGB image (not multi-view or temporal) |
 | Success metric | BOP19 AR = mean(AR_VSD, AR_MSSD, AR_MSPD) via `bop_toolkit` on `test_targets_bop19.json` |
-| ~~Must keep~~ | ~~RGB only (no depth) · direct regression (no PnP, no render-and-compare refinement) · real-time / Jetson deployable~~ · SPEED keeps working (score 0.0093). **Replaced 2026-11-18 by the four rows below (supervisor meeting); SPEED must still keep working.** |
+| ~~Must keep~~ | ~~RGB only (no depth) · direct regression (no PnP, no render-and-compare refinement) · real-time / Jetson deployable~~ · SPEED keeps working (score 0.0093). **Replaced 2026-11-18 by the rows below (supervisor meeting); SPEED must still keep working.** |
 | **Goal (2026-11-18)** | **Best BOP19 AR on LM-O, YCB-V and T-LESS. Inference cost and model size do not matter** (supervisor: accuracy is what counts, even if the model gets much more expensive; a "small" or "cheap and fast" positioning is not attractive enough) |
 | **Allowed (2026-11-18)** | PnP, render-and-compare refinement, one network per object, larger backbones and input resolution, ensembles. RGB stays the main input; the RGB-D block (depth correction) is kept as a separate block |
 | **Training data (2026-11-18)** | Both **PBR only** and **PBR + real**, always labelled. Compare with the general leaderboard (both categories) and report the category where we place best (e.g. top 3 among PBR-only and/or PBR + real) |
@@ -1147,13 +1147,20 @@ prefixes follow the milestone number (m12–m14 were used by audit / M11 jobs).
 - Supervisor: try ViT-L / ViT-H and larger inputs (e.g. 640 × 640). We already use ViT-B/16 at
   384 px (not 224; 224 px lost 0.023 AR, M10). User 2026-11-18: launch all of them now, ViT-H
   included (multi-GPU).
-- [ ] Code: position-embedding interpolation in `src/vit_models.py` when `image_size` differs from
+- [x] Code: position-embedding interpolation in `src/vit_models.py` when `image_size` differs from
   the weights' size (bicubic on the patch grid, class tokens kept), with a unit test (identity at
   the native size; output shapes at 512 / 640). New variants in `scripts/m10_ablations.sh`
   (`vitb512`, `vitb640`, `vitl512`, `vith518`, all on the `tlwocc` recipe) and `torchrun` when
-  `GPUS > 1` (pattern: `scripts/ddp_bench.sh`).
-- [ ] Smoke in `dev`: memory and step time at batch 32 for ViT-L/16-512 and ViT-H/14-518; choose
-  1, 2 or 4 GPUs (gradient accumulation only if memory forces it).
+  `GPUS > 1` (pattern: `scripts/ddp_bench.sh`). **Done 2026-11-18:** `resize_pos_embedding` in
+  `src/models.py` (applied when the pretrained weights are loaded), new backbones `vit_b_16_512`
+  and `vit_b_16_640` (384 px SWAG weights), 2 tests in `tests/test_multi_object_heads.py`;
+  `scripts/m10_ablations.sh` uses torchrun when the job has several GPUs (`NUM_WORKERS` per GPU).
+- [x] Smoke in `dev`: memory and step time at batch 32 for ViT-L/16-512 and ViT-H/14-518; choose
+  1, 2 or 4 GPUs (gradient accumulation only if memory forces it). **Done 2026-11-18 (A100 80 GB,
+  after compilation):** ViT-B/16-384 10.2 it/s (reference, from the running jobs); ViT-B/16-640
+  3.8 it/s (2.7× slower, ~29 h per 2× run on 1 GPU); ViT-L/16-512 2.1 it/s, 35 GB (4.9× slower,
+  ~53 h on 1 GPU → 2 GPUs); **ViT-H/14-518 does not fit at batch 32 on one GPU** (out of memory
+  at 71 GB) → 4 GPUs (8 crops per GPU). ViT-B/16-512 not measured (~2×).
 - [ ] Jobs `lmo-m15-{vitb512,vitb640,vitl512,vith518}{,2}-001` (2×, 2 seeds). Rough cost per
   sample vs ViT-B/384: B/512 ~2×, B/640 ~3×, L/512 ~5–6×, H/518 ~18× (estimates: B/512 ~21 h,
   B/640 ~35 h, L/512 ~38 h on 2 GPUs, H/518 ~3 days on 4 GPUs). Baseline: `tlwocc` 2×.
@@ -1166,12 +1173,22 @@ prefixes follow the milestone number (m12–m14 were used by audit / M11 jobs).
 ### M16 — One network per object, all datasets (W5–W7)
 - Supervisor: re-run, and accept any improvement even if it costs 8× the weights. LM-O so far
   (M10 / W4): test 0.672 / 0.666 (mean 0.669) vs shared 0.668 / 0.664 (mean 0.666).
-- [ ] LM-O: evaluate the 16 existing per-object models on `eval_valn` (each on its object; merge)
-  to apply the rule.
-- [ ] Code: generalise `scripts/m10_single.sh` (dataset argument, object list, the dataset's
+- [x] LM-O: evaluate the 16 existing per-object models on `eval_valn` (each on its object; merge)
+  to apply the rule. **Done 2026-11-18** (`scripts/m16_single_valn.sh`, pooled with
+  `scripts/m16_merge_valn.py`; log `$NAS_HOME/results/m16_lmo_single_valn.log`): validation
+  **0.878 / 0.880 (mean 0.879)** vs shared `tok4x` / `tok4x2` 0.886 / 0.880 (mean 0.883); test
+  0.672 / 0.666 (mean 0.669) vs 0.668 / 0.664 (mean 0.666). **Better on test, worse on
+  validation (−0.004, mostly MSSD 0.775 vs 0.783): not adopted on LM-O by the rule.** Fix found
+  on the way: the validation box noise was drawn over the evaluated objects only, so a
+  single-object run saw other noisy boxes than the shared model; now drawn over the whole split
+  and taken per instance (`noisy_boxes_for_rows`, test added; all-object runs unchanged).
+- [x] Code: generalise `scripts/m10_single.sh` (dataset argument, object list, the dataset's
   default detections, per-object budget = that dataset's 4× budget / number of objects = 21,104
   samples per epoch, the recipe of that dataset's `tok4x` so the comparison is fair) and
-  `scripts/m10_merge.py` (YCB-V, T-LESS).
+  `scripts/m10_merge.py` (YCB-V, T-LESS). **Done 2026-11-18: `scripts/m16_single.sh DATASET OBJ
+  [SEED]`** (train, validation per dataset, test GT and detections for that object;
+  `scripts/m10_merge.py` was already dataset-independent). Smoke run in `dev` (YCB-V object 2, 1
+  epoch) OK.
 - [ ] Jobs (user 2026-11-18: re-train now on all datasets): `ycbv-m16-obj<ID>{,s1}-001` (21 × 2)
   and `tless-m16-obj<ID>{,s1}-001` (30 × 2), ~3 h each, launched in waves of ~20. Compare with
   `tok4x` / `tok4x2` (YCB-V 0.694 / 0.702; T-LESS 0.762 / 0.762) on validation (YCB-V
@@ -1183,19 +1200,42 @@ prefixes follow the milestone number (m12–m14 were used by audit / M11 jobs).
 - [~] YCB-V: M11 B3 jobs `ycbv-m14-real2x{,2}-001` (run `scripts/summary_remean.py` on their
   `eval_valreal{,n}` first). If they win → 4× (`real4x{,2}`). Pierre's warning checked
   (2026-11-18): the BOP page warns against `train_synt` (same poses as test), not `train_real`.
-- [ ] LM-O (Pierre: LM images that are not in LM-O): `train_mix` = LM `train_pbr` + LM
+- [x] LM-O (Pierre: LM images that are not in LM-O): `train_mix` = LM `train_pbr` + LM
   `test_all` scenes 1, 5, 6, 8, 9, 10, 11, 12 (real; only the scene's central object is annotated;
   never scene 2, which is the LM-O test sequence; BOP rule: "not a single pixel of test images").
-  Held-out real validation = a contiguous block of image ids per scene, to limit near-duplicate
-  leakage (check first how close consecutive poses are); evaluate the PBR-only models on the same
-  block. Note: `lmo/train` (10,504 images) is **rendered** (1,313 per object, black background),
-  not real.
-- [ ] T-LESS: `train_mix` = `train_pbr` + `train_primesense` (real, turntable, black background),
+  Note: `lmo/train` (10,504 images) is **rendered** (1,313 per object, black background), not
+  real. **Done 2026-11-18:** the LM image order is not a video (consecutive views are ~8–9° apart,
+  and every BOP19 image has a non-BOP19 view within ~5°), so a contiguous block would not reduce
+  leakage. Validation therefore stays `val_real` (the 200 BOP19 images per object), and
+  `train_mix` leaves those images out (`Source.exclude_targets`): ~1,000 real images per object.
+  The real validation slightly favours real-trained models (neighbouring views ~5° away); the
+  LM-O test does not. **Sampling:** by row counts LM-O would see ~3 % real crops (1,000 vs
+  40,000 rows per object), so `--bop_real_fraction 0.25` draws 25 % of each object's samples from
+  the real images (`ObjectBalancedSampler(real_fraction=…)`; unchanged when not set).
+- [x] T-LESS: `train_mix` = `train_pbr` + `train_primesense` (real, turntable, black background),
   with a held-out real validation block (also T-LESS validation for M16). Background replacement
-  for the real crops (with `mask_visib`) if the black backgrounds hurt.
-- [ ] Tests as `tests/test_bop_dataset_ycbv.py` (splits disjoint from test, rows match the raw
-  files, reprojected models match `bbox_obj`). Jobs `lmo-m17-real2x{,2}-001`,
-  `tless-m17-real2x{,2}-001` (2×, 2 seeds).
+  for the real crops (with `mask_visib`) if the black backgrounds hurt. **Done 2026-11-18:**
+  `train_primesense` = rings of 72 views (5° azimuth), 18 rings from +85° to −85° elevation (9
+  upper rings for objects 19, 20); `val_real` = rings 1, 4, 7 (~74°, 42°, 10°; 216 images per
+  object, `TLESS_REAL_VAL_IMAGES`), `train_mix` = PBR + the other rings. Background replacement
+  is on from the start (`--bop_real_background`: the object, by its `mask_visib`, pasted on a
+  random PBR image of the index), with `--bop_real_fraction 0.25`.
+- [x] **Bug found and fixed 2026-11-18: T-LESS image size.** The index took (width, height) from
+  `camera_primesense.json` (1280 × 1024), but the BOP T-LESS images are 720 × 540 (PBR and test)
+  and 400 × 400 (`train_primesense`). Now read from each scene's first image
+  (`_scene_image_size`; `INDEX_VERSION` 2, all index caches rebuilt). Effects: the own MSPD
+  recalls of T-LESS (val_pbr, own test tables) used a 640/1280 instead of 640/720 pixel scale (too
+  lenient), and the training box jitter was clamped to 1280 × 1024 instead of the image. **The
+  official T-LESS AR (bop_toolkit, its own image size) is not affected**; LM-O and YCB-V are
+  unchanged (camera.json = image size). The shared T-LESS `tok4x` models were trained with the
+  old clamp (small effect: only boxes near the right / bottom border).
+- [x] Scripts: `scripts/m17_real.sh DATASET VARIANT` (LM-O `real2x{,2}`; T-LESS `base2x{,2}` =
+  PBR-only baseline with the same recipe, and `real2x{,2}`), the current recipe (+ `tlw` +
+  `occl`), 2×; `scripts/m14_valreal_eval.sh` takes `DS=tless`. Tests: real-fraction sampler,
+  LM-O `train_mix` rows (no scene 2, no BOP19 image, rows match the raw files), T-LESS image size
+  and splits, background replacement (object kept, background replaced).
+- [ ] Jobs `lmo-m17-real2x{,2}-001` (baseline: `tlwocc{,2}` 2×), `tless-m17-base2x{,2}-001` and
+  `tless-m17-real2x{,2}-001` (2×, 2 seeds; ~42 h each).
 
 ### M18 — Multi-head network: direct regression + masks + PnP (W6–W7)
 - Supervisor: a ViT backbone with several heads (DR, PnP, masks), trained together; compare

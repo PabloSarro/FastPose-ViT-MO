@@ -28,6 +28,14 @@
 #   occl     synthetic occlusion: 1-4 random rectangles erased per training crop (p = 0.5)
 #   tlw      translation loss weighted x2 (total = 2 * translation + rotation)
 #   tlwocc   tlw + occl together (user, 2026-11-15: both were within the seed spread alone)
+# M15 backbone and input size (2026-11-18, supervisor + user; TASKS.md M15), all on the tlwocc
+# recipe (adopted 2026-11-18), so the baseline is tlwocc / tlwocc2:
+#   vitb512  ViT-B/16 at 512 px (384 px SWAG weights, position embeddings resized)
+#   vitb640  ViT-B/16 at 640 px (same)
+#   vitl512  ViT-L/16 at 512 px (SWAG E2E weights)
+#   vith518  ViT-H/14 at 518 px (SWAG E2E weights)
+# Several GPUs: GPUS=N bash rcp/train.sh ... runs train.py under torchrun on all the job's GPUs
+# (--batch_size stays the global batch, 32); NUM_WORKERS sets the loader workers per GPU process.
 # Audit 2026-11-14 (TASKS.md W1, W2):
 #   base     no change: the ablation baseline re-trained on the current code (the old baseline
 #            symtok2x of 2026-10-26 ran older code); seed b = base2
@@ -67,17 +75,24 @@ case $base in
     occl)    extra=(--bop_occlusion_aug) ;;
     tlw)     extra=(--translation_loss_weight 2) ;;
     tlwocc)  extra=(--translation_loss_weight 2 --bop_occlusion_aug) ;;
+    vitb512) VIT=vit_b_16_512; extra=(--translation_loss_weight 2 --bop_occlusion_aug) ;;
+    vitb640) VIT=vit_b_16_640; extra=(--translation_loss_weight 2 --bop_occlusion_aug) ;;
+    vitl512) VIT=vit_l_16_512; extra=(--translation_loss_weight 2 --bop_occlusion_aug) ;;
+    vith518) VIT=vit_h_14_518; extra=(--translation_loss_weight 2 --bop_occlusion_aug) ;;
     *) echo "unknown variant $v"; exit 5 ;;
 esac
 out=$RUN_DIR/$v
 mkdir -p "$out"
+NGPU=$(nvidia-smi -L | wc -l)
+PY=(.venv/bin/python)
+(( NGPU > 1 )) && PY=(.venv/bin/python -m torch.distributed.run --standalone --nproc_per_node="$NGPU")
 if [[ ! -e $out/TRAINED ]]; then
-    echo "== $v: train, seed $seed ($(date '+%F %T'))"
-    .venv/bin/python src/train.py --dataset LMO --bop_val_split val \
+    echo "== $v: train, seed $seed, $NGPU GPU(s) ($(date '+%F %T'))"
+    "${PY[@]}" src/train.py --dataset LMO --bop_val_split val \
         --max_val_samples 2000 --rotation_format matrix --rotation_loss 6d_relative_frobenius \
         --max_lr 1e-4 --min_lr 1e-6 --epochs "$EPOCHS" --num_hidden_layers 0 --hidden_layer_dim 0 \
         --nb_class_tokens 1 --batch_size 32 --vit_model "$VIT" --optimizer muon \
-        --scheduler cosineannealingwarmrestarts --num_workers 14 --merge_outputs --no_mlp \
+        --scheduler cosineannealingwarmrestarts --num_workers "${NUM_WORKERS:-14}" --merge_outputs --no_mlp \
         --bbox_crop_percent 10 --depth_mode "$DEPTH" --translation_loss relative_translation \
         --log_dir "$out/" --model_save_path "$out/model.pth" --resume auto \
         --object_conditioning token --symmetric_rotation_loss --bop_pixel_aug domain_gap \

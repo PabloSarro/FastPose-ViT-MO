@@ -128,6 +128,7 @@ def test_val_real_excludes_the_lmo_test_scene():
 # --- BOPDataset.__getitem__: crop warp, labels, augmentations ---------------------------------
 
 import albumentations as A  # noqa: E402
+import cv2  # noqa: E402
 import torch  # noqa: E402
 
 from src.bop_dataset import BOPDataset, crop_image, crop_warp_matrix, pixel_transform  # noqa: E402
@@ -456,6 +457,68 @@ def test_balanced_sampler_depends_only_on_seed_and_epoch():
     assert list(c) != list(b)
 
 
+def test_balanced_sampler_real_fraction():
+    """M17: a fixed share of each object's samples from the real rows (source > 0)."""
+    obj_idx = np.repeat([0, 0, 1, 2], [40, 5, 30, 20])
+    source = np.repeat([0, 1, 0, 0], [40, 5, 30, 20])  # objects 1 and 2 have no real rows
+    s = ObjectBalancedSampler(obj_idx, 60, seed=0, source=source, real_fraction=0.25)
+    assert len(s) == 60 and s.n_objects == 3
+    for epoch in range(4):
+        s.set_epoch(epoch)
+        idx = np.array(list(s))
+        assert np.bincount(obj_idx[idx], minlength=3).tolist() == [20, 20, 20]
+        assert (source[idx][obj_idx[idx] == 0] == 1).sum() == 5  # 25 % of object 0's 20
+    # None keeps the original sampler exactly (same groups, same order)
+    a = ObjectBalancedSampler(obj_idx, 60, seed=0)
+    b = ObjectBalancedSampler(obj_idx, 60, seed=0, source=source, real_fraction=None)
+    assert list(a) == list(b)
+    with pytest.raises(ValueError):
+        ObjectBalancedSampler(obj_idx, 60, real_fraction=0.5)  # needs source
+
+
+def test_lmo_train_mix_real_rows():
+    """M17: LM real training images = LM test_all of the 8 objects, without scene 2 (LM-O test)
+    and without the BOP19 images (val_real)."""
+    cfg = SPLITS["lmo"]
+    pbr, real = cfg["train_mix"]
+    assert pbr == cfg["train"][0] and real.split == "test_all" and real.exclude_targets
+    assert 2 not in real.scenes and set(real.scenes) == set(LMO_OBJ_IDS)
+    src = Source("lm", "test_all", (1, 8), exclude_targets=True)
+    index = build_index(BOP_ROOT, (src,), LMO_OBJ_IDS, "lmo")
+    targets = load(os.path.join(BOP_ROOT, "lm", "test_targets_bop19.json"))
+    val_images = {(t["scene_id"], t["im_id"]) for t in targets}
+    rows = set(zip(index["scene_id"].tolist(), index["im_id"].tolist()))
+    assert not rows & val_images
+    for sc in (1, 8):
+        gt = load(os.path.join(BOP_ROOT, "lm", "test_all", f"{sc:06d}", "scene_gt.json"))
+        info = load(os.path.join(BOP_ROOT, "lm", "test_all", f"{sc:06d}", "scene_gt_info.json"))
+        expected = {
+            (sc, int(im))
+            for im in gt
+            if (sc, int(im)) not in val_images
+            and any(
+                g["obj_id"] == sc and i["visib_fract"] >= 0.1 and min(i["bbox_visib"][2:]) > 0
+                for g, i in zip(gt[im], info[im])
+            )
+        }
+        assert {r for r in rows if r[0] == sc} == expected and len(expected) > 900
+    assert set(index["obj_id"].tolist()) == {1, 8}  # only the scene's own object is annotated
+    np.testing.assert_array_equal(index["img_wh"], np.tile([640, 480], (len(index["obj_id"]), 1)))
+    assert os.path.exists(image_path(index, 0))
+
+
+def test_tless_image_size_is_read_from_the_images():
+    """camera_primesense.json says 1280 x 1024; the BOP T-LESS images are 720 x 540 (PBR, test)
+    and 400 x 400 (train_primesense)."""
+    from src.bop_dataset import TLESS_OBJ_IDS
+
+    if not os.path.exists(os.path.join(BOP_ROOT, "tless", "test_targets_bop19.json")):
+        pytest.skip("T-LESS tree not available")
+    for split, scenes, wh in (("train_pbr", (0,), (720, 540)), ("train_primesense", (1,), (400, 400))):
+        index = build_index(BOP_ROOT, (Source("tless", split, scenes),), TLESS_OBJ_IDS, "tless")
+        assert (index["img_wh"] == wh).all(), split
+
+
 def test_bbox_source_mix_picks_both_boxes_when_augmenting():
     # "mix" (M7): bbox_visib or bbox_obj at random per training sample; bbox_visib without
     # augmentation. Without jitter the crop box is exactly one of the two.
@@ -503,3 +566,45 @@ def test_occlusion_augmentation_runs():
     out = t(image=crop)["image"]
     assert tuple(out.shape) == (3, 64, 64)
     assert not any(type(a).__name__ == "CoarseDropout" for a in pixel_transform("none").transforms)
+
+
+def test_tless_real_splits_and_background():
+    """M17: T-LESS train_mix leaves the validation rings out; with real_background the black
+    background of a train_primesense image is replaced and the visible object is kept."""
+    from src.bop_dataset import TLESS_OBJ_IDS, TLESS_REAL_VAL_IMAGES
+
+    if not os.path.exists(os.path.join(BOP_ROOT, "tless", "test_targets_bop19.json")):
+        pytest.skip("T-LESS tree not available")
+    cfg = SPLITS["tless"]
+    assert cfg["train_mix"][0] == cfg["train"][0]
+    assert cfg["train_mix"][1].skip_images == cfg["val_real"][0].images == TLESS_REAL_VAL_IMAGES
+    assert len(TLESS_REAL_VAL_IMAGES) == 216 and max(TLESS_REAL_VAL_IMAGES) < 648  # 9-ring scenes
+    real = build_index(
+        BOP_ROOT, (Source("tless", "train_primesense", (5,), skip_images=TLESS_REAL_VAL_IMAGES),),
+        TLESS_OBJ_IDS, "tless",
+    )
+    val = build_index(
+        BOP_ROOT, (Source("tless", "train_primesense", (5,), images=TLESS_REAL_VAL_IMAGES),),
+        TLESS_OBJ_IDS, "tless",
+    )
+    assert not set(real["im_id"].tolist()) & set(val["im_id"].tolist())
+    assert len(val["im_id"]) == 216 and len(real["im_id"]) + 216 == 1296
+    pbr = build_index(BOP_ROOT, (Source("tless", "train_pbr", (0,)),), TLESS_OBJ_IDS, "tless")
+    # One index with a PBR source (0) and a real source (1), as train_mix
+    mix = {k: np.concatenate([pbr[k], real[k]]) for k in ("scene_id", "im_id", "gt_id", "obj_id",
+           "obj_idx", "R", "t", "K", "img_wh", "bbox_obj", "bbox_visib", "visib_fract",
+           "px_count_visib")}
+    mix["source"] = np.concatenate([pbr["source"], real["source"] + 1])
+    mix.update(source_dirs=np.concatenate([pbr["source_dirs"], real["source_dirs"]]),
+               source_exts=np.concatenate([pbr["source_exts"], real["source_exts"]]),
+               obj_ids=pbr["obj_ids"], diameters=pbr["diameters"], symmetric=pbr["symmetric"])
+    ds = BOPDataset(dataset="tless", index=mix, augment=True, pixel_aug="none",
+                    bbox_jitter_prob=0.0, real_background=True, img_size=64)
+    row = len(pbr["source"])  # first real row
+    np.random.seed(0)
+    img = ds.load_image(row)
+    mask = cv2.imread(ds.mask_path(row), cv2.IMREAD_GRAYSCALE) > 0
+    new = ds.replace_background(row, img)
+    assert np.array_equal(new[mask], img[mask])  # the object is untouched
+    assert new[~mask].mean() > img[~mask].mean() + 10  # the black background is replaced
+    assert ds[row]["images"].shape[-1] == 64

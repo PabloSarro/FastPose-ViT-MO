@@ -171,3 +171,42 @@ def test_object_tokens_go_to_muon_like_the_class_token():
     g = torch.randn(8, 1, 768)
     per_token = torch.cat([zeropower_via_newtonschulz5(g[i : i + 1], 5) for i in range(8)])
     torch.testing.assert_close(zeropower_via_newtonschulz5(g, 5), per_token)
+
+
+# ------------------------------------------------------------------ M15: larger input sizes
+def test_resize_pos_embedding_identity_and_shapes():
+    from src.models import resize_pos_embedding
+
+    torch.manual_seed(0)
+    pos = torch.randn(1, 1 + 24 * 24, 8)
+    same = resize_pos_embedding({"encoder.pos_embedding": pos}, 24)
+    assert torch.equal(same["encoder.pos_embedding"], pos)  # native grid: unchanged
+    for grid in (32, 40):  # 512 and 640 px with 16 px patches
+        out = resize_pos_embedding({"encoder.pos_embedding": pos}, grid)["encoder.pos_embedding"]
+        assert out.shape == (1, 1 + grid * grid, 8)
+        assert torch.equal(out[:, :1], pos[:, :1])  # the class token's embedding is kept
+    # A linear ramp keeps its slope away from the borders (PyTorch's bicubic kernel, a = -0.75,
+    # alternates the single steps at 2x, so compare steps of two new patches = one old patch)
+    ys, xs = torch.meshgrid(torch.arange(24.0), torch.arange(24.0), indexing="ij")
+    lin = torch.cat([torch.zeros(1, 1, 1), (xs + 2 * ys).reshape(1, -1, 1)], dim=1)
+    big = resize_pos_embedding({"encoder.pos_embedding": lin}, 48)["encoder.pos_embedding"]
+    inner = big[0, 1:, 0].reshape(48, 48)[4:-4, 4:-4]
+    assert torch.allclose(inner[:, 2:] - inner[:, :-2], torch.ones_like(inner[:, 2:]), atol=1e-3)
+    assert torch.allclose(inner[2:] - inner[:-2], torch.full_like(inner[2:], 2.0), atol=1e-3)
+
+
+def test_vit_b_512_and_640_build_from_384_weights():
+    """The 384 px SWAG weights load at 512 / 640 px (torchvision cache; skipped if offline)."""
+    from torchvision.models import ViT_B_16_Weights
+
+    try:
+        ViT_B_16_Weights.IMAGENET1K_SWAG_E2E_V1.get_state_dict(progress=False, check_hash=True)
+    except Exception as e:  # no cached weights and no network
+        pytest.skip(f"SWAG weights not available: {e}")
+    for name, size in (("vit_b_16_512", 512), ("vit_b_16_640", 640)):
+        model = FastPoseViT(name, num_objects=3, object_conditioning="token", **BEST_SPEED).eval()
+        n = (size // 16) ** 2
+        assert model.backbone.encoder.pos_embedding.shape[1] == 1 + n
+        with torch.no_grad():
+            out = model(torch.randn(1, 3, size, size), torch.tensor([1]))
+        assert out.shape == (1, 9) and torch.isfinite(out).all()

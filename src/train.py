@@ -140,6 +140,7 @@ def create_bop_datasets(args: argparse.Namespace, img_size: int, logger) -> tupl
         pixel_aug="none" if args.no_pixel_augmentation else args.bop_pixel_aug,
         bbox_source=args.bop_bbox_source,
         occlusion_aug=args.bop_occlusion_aug,
+        real_background=args.bop_real_background,
         **common,
     )
     val_rows = rows_for_objects(val_index, obj_ids)
@@ -478,11 +479,18 @@ def train(
             seed=args.bop_sampler_seed,
             rank=dist_info.rank,
             world_size=dist_info.world_size,
+            source=train_dataset.index["source"],
+            real_fraction=args.bop_real_fraction,
         )
         logger.info(
             f"Object-balanced virtual epochs: {train_sampler.per_object} samples x "
-            f"{len(train_sampler.groups)} objects = {len(train_sampler)} per epoch"
+            f"{train_sampler.n_objects} objects = {len(train_sampler)} per epoch"
             + (f" on each of {dist_info.world_size} GPUs" if dist_info.enabled else "")
+            + (
+                f", {args.bop_real_fraction:.0%} of each object's samples from real images"
+                if args.bop_real_fraction is not None
+                else ""
+            )
         )
     elif dist_info.enabled:
         # DDP without virtual epochs: a disjoint shuffled share of the training set per rank
@@ -1062,6 +1070,10 @@ if __name__ == "__main__":
             parser.error(f"--bop_val_split {args.bop_val_split} does not exist for {args.dataset}")
         if args.bop_train_split not in cfg:
             parser.error(f"--bop_train_split {args.bop_train_split} does not exist for {args.dataset}")
+        if args.bop_real_background and args.bop_train_split != "train_mix":
+            parser.error("--bop_real_background needs --bop_train_split train_mix")
+        if args.bop_real_fraction is not None and args.bop_train_split != "train_mix":
+            parser.error("--bop_real_fraction needs --bop_train_split train_mix")
         unknown = sorted(set(args.bop_obj_ids or ()) - set(cfg["obj_ids"]))
         if unknown:
             parser.error(f"--bop_obj_ids {unknown} are not objects of {args.dataset}")

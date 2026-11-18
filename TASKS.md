@@ -1161,7 +1161,8 @@ prefixes follow the milestone number (m12–m14 were used by audit / M11 jobs).
   3.8 it/s (2.7× slower, ~29 h per 2× run on 1 GPU); ViT-L/16-512 2.1 it/s, 35 GB (4.9× slower,
   ~53 h on 1 GPU → 2 GPUs); **ViT-H/14-518 does not fit at batch 32 on one GPU** (out of memory
   at 71 GB) → 4 GPUs (8 crops per GPU). ViT-B/16-512 not measured (~2×).
-- [ ] Jobs `lmo-m15-{vitb512,vitb640,vitl512,vith518}{,2}-001` (2×, 2 seeds). Rough cost per
+- [~] Jobs `lmo-m15-{vitb512,vitb640,vitl512,vith518}{,2}-001` (2×, 2 seeds). **Launched 2026-11-18
+  ~19:45 CET** (L on 2 GPUs, H on 4 GPUs). Rough cost per
   sample vs ViT-B/384: B/512 ~2×, B/640 ~3×, L/512 ~5–6×, H/518 ~18× (estimates: B/512 ~21 h,
   B/640 ~35 h, L/512 ~38 h on 2 GPUs, H/518 ~3 days on 4 GPUs). Baseline: `tlwocc` 2×.
 - Note for the report: LM-O crops are usually smaller than 384 px natively, so a gain at 640 px
@@ -1189,7 +1190,8 @@ prefixes follow the milestone number (m12–m14 were used by audit / M11 jobs).
   [SEED]`** (train, validation per dataset, test GT and detections for that object;
   `scripts/m10_merge.py` was already dataset-independent). Smoke run in `dev` (YCB-V object 2, 1
   epoch) OK.
-- [ ] Jobs (user 2026-11-18: re-train now on all datasets): `ycbv-m16-obj<ID>{,s1}-001` (21 × 2)
+- [~] Jobs (user 2026-11-18: re-train now on all datasets; wave 1 = YCB-V seed 0, launched
+  2026-11-18 ~19:45 CET): `ycbv-m16-obj<ID>{,s1}-001` (21 × 2)
   and `tless-m16-obj<ID>{,s1}-001` (30 × 2), ~3 h each, launched in waves of ~20. Compare with
   `tok4x` / `tok4x2` (YCB-V 0.694 / 0.702; T-LESS 0.762 / 0.762) on validation (YCB-V
   `eval_valrealn`; T-LESS the real validation of M17) and test.
@@ -1234,8 +1236,8 @@ prefixes follow the milestone number (m12–m14 were used by audit / M11 jobs).
   `occl`), 2×; `scripts/m14_valreal_eval.sh` takes `DS=tless`. Tests: real-fraction sampler,
   LM-O `train_mix` rows (no scene 2, no BOP19 image, rows match the raw files), T-LESS image size
   and splits, background replacement (object kept, background replaced).
-- [ ] Jobs `lmo-m17-real2x{,2}-001` (baseline: `tlwocc{,2}` 2×), `tless-m17-base2x{,2}-001` and
-  `tless-m17-real2x{,2}-001` (2×, 2 seeds; ~42 h each).
+- [~] Jobs `lmo-m17-real2x{,2}-001` (baseline: `tlwocc{,2}` 2×), `tless-m17-base2x{,2}-001` and
+  `tless-m17-real2x{,2}-001` (2×, 2 seeds; ~42 h each). **Launched 2026-11-18 ~19:45 CET.**
 
 ### M18 — Multi-head network: direct regression + masks + PnP (W6–W7)
 - Supervisor: a ViT backbone with several heads (DR, PnP, masks), trained together; compare
@@ -1379,13 +1381,15 @@ prefixes follow the milestone number (m12–m14 were used by audit / M11 jobs).
    | **Running jobs** | |
    | M11 B2 8× budget, LM-O, 1 seed: `lmo-m13-base8x-001` | Running (epoch ~100 of 150 on 2026-11-18 19:00): ~Fri morning. Compare with `tok4x` / `tok4x2` (0.668 / 0.664, validation 0.886 / 0.880); second seed if it wins |
    | M17 / M11 B3 YCB-V PBR + real: `ycbv-m14-real2x-001`, `ycbv-m14-real2x2-001` (2×) | Preempted, Pending (epochs 123 and 91 of 150); resume from `last.pt`. When done: `scripts/summary_remean.py` on `eval_valreal{,n}`, then the rule against `tok2x{,2}` |
-   | **To launch (user, 2026-11-18), in this order** | |
-   | M16 LM-O: the 16 per-object models on `eval_valn` (dev) | To do |
-   | M15 code (position-embedding interpolation, torchrun in `m10_ablations.sh`) + dev smoke, then `lmo-m15-{vitb512,vitb640,vitl512,vith518}{,2}-001` | To do |
-   | M16 code (`m10_single.sh` / `m10_merge.py` for YCB-V and T-LESS), then `ycbv-m16-obj*` (42) and `tless-m16-obj*` (60) in waves of ~20 | To do |
-   | M17 code (LM-O and T-LESS `train_mix` + real validation), then `lmo-m17-real2x{,2}-001`, `tless-m17-real2x{,2}-001` | To do |
-   | M18 multi-head (DR + mask + XYZ, PnP at test), then `lmo-m18-dense{,2}-001` | To do |
+   | **Launched 2026-11-18 ~19:45 CET (all Pending at first: the cluster was full, 29 nodes × 8 GPUs in use)** | |
+   | M15 `lmo-m15-{vitb512,vitb640}{,2}-001` (1 GPU), `lmo-m15-vitl512{,2}-001` (2 GPUs), `lmo-m15-vith518{,2}-001` (4 GPUs, `NUM_WORKERS=11`) | Queued. Estimates once running: B/512 ~19 h, B/640 ~29 h, L/512 ~32 h, H/518 ~2.5–3 days. Baseline `tlwocc{,2}` 2× (test 0.661, `eval_valn` 0.882) |
+   | M17 `lmo-m17-real2x{,2}-001`; `tless-m17-{base2x,real2x}{,2}-001` | Queued (~11 h LM-O, ~42 h T-LESS). LM-O baseline `tlwocc{,2}`; T-LESS baseline `base2x{,2}` |
+   | M16 wave 1: `ycbv-m16-obj{1..21}-001` (seed 0) | Queued (~3 h each). Next waves: T-LESS seed 0 (30), then seeds 1 (`…s1-001`, 51) |
+   | M16 baselines: T-LESS `tok4x` / `tok4x2` on the new `val_real` (`DS=tless scripts/m14_valreal_eval.sh`, dev) | Running in dev |
+   | **Still to do** | |
+   | M18 multi-head (DR + mask + XYZ, PnP at test), then `lmo-m18-dense{,2}-001` | To code |
    | M19 R1 CosyPose PBR refiner on our poses (separate venv) | To do |
+   | M16 LM-O result (`eval_valn` of the 16 per-object models) | Done 2026-11-18: validation 0.879 vs 0.883, test 0.669 vs 0.666 → not adopted on LM-O |
    | **Report (M20)** | |
    | Decision gate: final recipe per dataset | Fri 2026-12-04 |
    | Final models (3 datasets × PBR only / PBR + real × 2 seeds) + RGB-D | W8–W9 |

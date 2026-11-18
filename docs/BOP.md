@@ -44,7 +44,7 @@ eggbox gain slightly. Per object: `$NAS_HOME/results/paper/per_object_ar_lmo_tok
 Our time is the BOP `time` of the evaluation run (A100, PyTorch, including the default detector's
 81.6 ms, re-timed 2026-11-08 with the current per-image path; the M7 run gave 0.134 s with the
 older path, same AR); see §3 for the deployment latency. Seeds: `tok4x` / `tok4x2` give
-0.669 / 0.664 (mean 0.666). **Selection rule (audit W3, 2026-11-14):** the reported seed is the one
+0.668 / 0.664 (mean 0.666). **Selection rule (audit W3, 2026-11-14):** the reported seed is the one
 with the higher *validation* score ((AR_MSSD + AR_MSPD)/2, own recalls, GT boxes; scripts/val_score.py):
 LM-O real LM val `tok4x` 0.8969 vs `tok4x2` 0.8909; YCB-V val_pbr `tok4x2` 0.8619 vs `tok4x` 0.8583.
 Always quote the mean next to it (LM-O 0.666, YCB-V 0.698); the best-seed number is optimistic by
@@ -212,11 +212,11 @@ Each block changes one thing; the bold row is the choice kept.
 | Training crop source (token, 2×, symmetric loss) | **`bbox_visib`** | 0.655 / 0.655 | 0.655 |
 | | `bbox_obj` | 0.646 / 0.650 | 0.648 |
 | | mix | 0.650 / 0.654 | 0.652 |
-| Final model (token, 4×) | **`tok4x` / `tok4x2`** | **0.669 / 0.664** | **0.666** |
+| Final model (token, 4×) | **`tok4x` / `tok4x2`** | **0.668 / 0.664** | **0.666** |
 | One model per object (M10, same total compute) | 8 single-object models | 0.672 / 0.666 (GT boxes 0.688 / 0.682) | 0.669 (shared: 0.666) |
 | Checkpoint (final model) | `model.pth` (best val) vs **`last.pt`** | 0.6686 vs 0.6685 (YCB-V 0.7021 vs 0.7021) | |
 | Precision at deployment (M9) | PyTorch vs **TensorRT fp16** | 0.6685 vs 0.6685 (YCB-V 0.7021 vs 0.7017) | |
-| Backbone resolution (M10) | **384 px** vs 224 px | 0.669 / 0.664 vs 0.643 / 0.643 | 0.666 vs 0.643 |
+| Backbone resolution (M10) | **384 px** vs 224 px | 0.668 / 0.664 vs 0.643 / 0.643 | 0.666 vs 0.643 |
 | **Paper ablations (M10)**: each = baseline token, 2×, symmetric loss, `domain_gap`, 10 % jitter, `site`, SWAG, apparent rotation (0.655 / 0.655) with one change | | | |
 | Rotation target | **apparent (allocentric)** vs absolute (egocentric) | 0.546 / 0.548 | 0.547 (−0.108) |
 | Pre-training | **SWAG** vs random init (scratch) | 0.516 / 0.517 | 0.517 (−0.138) |

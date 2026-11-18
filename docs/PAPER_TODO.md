@@ -17,7 +17,7 @@ jobs; external = someone outside this project).
 - [x] *Done 2026-11-09, re-measured 2026-11-11: 55 FPS for 8 objects (pipeline 14.1 ms + detector 4.2 ms mean), `docs/BOP.md` §3.* **End-to-end latency with our detector**: TensorRT engine of the detector + pose pipeline,
       per image vs number of objects (the real-time claim of the whole method). Cost: eval, after
       the detector jobs.
-- [x] *Done 2026-11-09: 0.643 / 0.643 vs 0.669 / 0.664.* **224 px vs 384 px AR** (D7): LM-O test AR with detections of the 224 px `tok4x` recipe
+- [x] *Done 2026-11-09: 0.643 / 0.643 vs 0.668 / 0.664.* **224 px vs 384 px AR** (D7): LM-O test AR with detections of the 224 px `tok4x` recipe
       (2 seeds) vs `tok4x` / `tok4x2`; latency already measured (pipeline 7.6 vs 14.2 ms at 8
       objects). Jobs `lmo-m10-r224tok4x{,2}-001`. Cost: running, then eval.
 - [x] *Done 2026-11-16: YCB-V detector mAP 0.702, AR 0.681 (default detections 0.702), RGB-D 0.827.* Optionally, the detector for YCB-V (21 classes), if the LM-O one holds up.
@@ -29,7 +29,7 @@ jobs; external = someone outside this project).
       LM-O test AR and the default detections (`scripts/m7_det_eval.sh`), 2 seeds each, so that
       every ablation table uses the same metric. Check first which run folders still have
       `last.pt`. Cost: eval (~3 min per model + official eval).
-- [x] **Seed spread of the headline numbers** *Done 2026-11-08: LM-O 0.669 / 0.664 (mean 0.666), YCB-V 0.694 / 0.702.*: LM-O `tok4x2` was never evaluated on test with
+- [x] **Seed spread of the headline numbers** *Done 2026-11-08: LM-O 0.668 / 0.664 (mean 0.666), YCB-V 0.694 / 0.702.*: LM-O `tok4x2` was never evaluated on test with
       detections; report mean ± spread of the 2 seeds on LM-O (YCB-V has both: 0.694 / 0.702).
       Cost: eval.
 - [x] **`model.pth` (best val) vs `last.pt` (final epoch)** *Done 2026-11-08: identical (LM-O 0.6686 vs 0.6685, YCB-V 0.7021 both).*: AR of both for the final models, to

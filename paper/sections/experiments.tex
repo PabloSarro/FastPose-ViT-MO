@@ -277,7 +277,7 @@ spread; we keep the class token alone, which needs no per-object output layer. O
 objects, 2$\times$) the class token is again better than per-object heads (0.681 / 0.689 against
 0.674 / 0.678 AR, mean 0.685 against 0.676; \cref{sec:supp:ablations}). Eight
 single-object models, trained with the same total compute, reach 0.672 and 0.666 AR for the two
-seeds (mean 0.669), the same as the shared model (0.669 and 0.664, mean 0.666), with eight times as
+seeds (mean 0.669), the same as the shared model (0.668 and 0.664, mean 0.666), with eight times as
 many parameters and no batching across objects.
 
 \begin{table}[t]
@@ -291,7 +291,7 @@ many parameters and no batching across objects.
     \textbf{per-object class token} & \textbf{0.659 / 0.651} & \textbf{0.655} \\
     heads + class token & 0.660 / 0.661 & 0.660 \\
     \midrule
-    Final model (token, 4$\times$) & 0.669 / 0.664 & 0.666 \\
+    Final model (token, 4$\times$) & 0.668 / 0.664 & 0.666 \\
     8 single-object models (4$\times$ total) & 0.672 / 0.666 & 0.669 \\
     \bottomrule
   \end{tabular}
@@ -332,7 +332,7 @@ score (Supp.~Sec.~S3).
     Component & Setting & AR (seed a / b)$\uparrow$ & Mean \\
     \midrule
     \multirow{2}{*}{Budget, LM-O} & 2$\times$ & 0.659 / 0.651 & 0.655 \\
-     & \textbf{4$\times$} & \textbf{0.669 / 0.664} & \textbf{0.666} \\
+     & \textbf{4$\times$} & \textbf{0.668 / 0.664} & \textbf{0.666} \\
     \multirow{2}{*}{Budget, YCB-V} & 2$\times$ & 0.681 / 0.689 & 0.685 \\
      & \textbf{4$\times$} & \textbf{0.694 / 0.702} & \textbf{0.698} \\
     \midrule

@@ -10,6 +10,8 @@ jobs; external = someone outside this project).
 
 **Draft (2026-11-11):** LaTeX draft in `paper/` (Overleaf-ready, see `paper/README.md`); pending results and TODOs are marked in it.
 
+**Supervisor meeting 2026-11-18 (`TASKS.md` §0, D9–D13):** the draft becomes the **EPFL report, due 2027-01-01** (no page limit, ~20 pages; authors Pablo Sarró Sánchez, Mathieu Salzmann; a later publication adds Pierre Ancey). **Positioning decided: accuracy first** (beat other methods on LM-O, YCB-V, T-LESS; cost does not matter). The speed claims ("fastest pipeline apart from …") become context only, and the text is rewritten after the final models (`TASKS.md` M20). Results: PBR only and PBR + real, both labelled.
+
 ## 1. Results (all done)
 - [x] *Done 2026-11-09: tiny AR 0.645 / 0.650, small 0.654 (default 0.668), `docs/BOP.md`.* **Own multi-class LW-DETR detector**: LM-O AR with our detections vs the default ones (0.668),
       val_pbr mAP, tiny vs small, seed spread. Jobs `lmo-m9-{dettiny,dettiny2,detsmall}-001`.
@@ -58,7 +60,7 @@ jobs; external = someone outside this project).
       Done 2026-11-16: token 0.681 / 0.689, heads 0.674 / 0.678 (2×, detections).
 
 ## 4. Needs outside input or resources
-- [ ] **Jetson Orin Nano latency** for BOP (the WACV paper's central claim was on-device; we only
+- [x] *Dropped 2026-11-18 (supervisor): not for the semester project; state it as a limitation.* **Jetson Orin Nano latency** for BOP (the WACV paper's central claim was on-device; we only
       have A100). Needs device access (supervisor question in `TASKS.md` §8). Cost: external.
 - [x] *Done 2026-11-11: every LM-O / YCB-V entry checked on its BOP submission page (training data,
       number of models, refinement); tables rebuilt in `paper/sections/experiments.tex`. Finding:
@@ -75,14 +77,14 @@ jobs; external = someone outside this project).
       Findings) have no citable paper in the bib yet.* **Bibliography**: exact references for every compared and related method (ZebraPose,
       GDRNPP, SurfEmb, CosyPose, CDPN, EPOS, MRC-Net, PoseDETR, SC6D, PViT-6D, MegaPose, LW-DETR,
       BOP challenge papers, …). Cost: manual.
-- [ ] **Venue, page limit, authorship** (supervisor question "expected deliverable"). Cost: external.
-- [ ] **Release plan**: BOP weights (e.g. Hugging Face, as for the WACV weights) and code; the
+- [x] *Decided 2026-11-18: EPFL report by 2027-01-01, no page limit (~20 pages), authors Pablo Sarró Sánchez + Mathieu Salzmann; publication later (+ Pierre Ancey), venue and page limit then.* **Venue, page limit, authorship** (supervisor question "expected deliverable"). Cost: external.
+- [x] *Decided 2026-11-18: release not required; if done, code on GitHub and weights on Hugging Face.* **Release plan**: BOP weights (e.g. Hugging Face, as for the WACV weights) and code; the
       paper argues reproducibility. Cost: external decision, then upload.
 
 ## 5. Scope decisions (user)
 - [x] *Decided 2026-11-08: in. Data, tree, index (+ multi-instance fix), overfit check (all 30 objects 1.000) done; jobs `tless-m10-tok4x{,2}-002` queued 2026-11-08 ~23:20 (priority 3), ~83 h each.* **T-LESS**: in or out? Most BOP papers report LM-O, T-LESS and YCB-V; T-LESS also brings
       several instances of the same object (D6). Cost: train if in. **Result 2026-11-15: AR 0.762 (default detections), 0.813 (GT boxes), RGB-D 0.859 (2 seeds, `docs/BOP.md` §1.4); leaderboard comparison still to do.**
-- [~] *2026-11-08: the user asks the supervisor; meanwhile the missing `.z01` was downloaded and the data extracted to `$NAS_HOME/datasets/ycbv_train_real/`. Training with it not decided.* **YCB-V `train_real` (D8)**: fix the real-image depth bias (+2.4 % median) by training on
+- [~] *2026-11-18 (supervisor): report both PBR only and PBR + real, labelled; also for LM-O (LM images not in LM-O) and T-LESS (`TASKS.md` M17). YCB-V jobs running.* *2026-11-08: the user asks the supervisor; meanwhile the missing `.z01` was downloaded and the data extracted to `$NAS_HOME/datasets/ycbv_train_real/`. Training with it not decided.* **YCB-V `train_real` (D8)**: fix the real-image depth bias (+2.4 % median) by training on
       PBR + real, or keep the PBR-only result as a stated limitation. Cost: download 48 GB + train
       if in.
 

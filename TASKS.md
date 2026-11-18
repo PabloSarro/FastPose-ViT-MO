@@ -17,12 +17,19 @@ Keep it current: update §1 (status), §9 (results) and §10 (next steps) at the
 |---|---|
 | "Multi-image" means | Multi-object: several objects/instances per RGB image (not multi-view or temporal) |
 | Success metric | BOP19 AR = mean(AR_VSD, AR_MSSD, AR_MSPD) via `bop_toolkit` on `test_targets_bop19.json` |
-| Must keep | RGB only (no depth) · direct regression (no PnP, no render-and-compare refinement) · real-time / Jetson deployable · SPEED keeps working (score 0.0093) |
-| Datasets | **LM-O first** (train on LM `train_pbr`), then YCB-V, then T-LESS (stretch) |
-| Timeline | Semester project, ~14 weeks |
+| ~~Must keep~~ | ~~RGB only (no depth) · direct regression (no PnP, no render-and-compare refinement) · real-time / Jetson deployable~~ · SPEED keeps working (score 0.0093). **Replaced 2026-11-18 by the four rows below (supervisor meeting); SPEED must still keep working.** |
+| **Goal (2026-11-18)** | **Best BOP19 AR on LM-O, YCB-V and T-LESS. Inference cost and model size do not matter** (supervisor: accuracy is what counts, even if the model gets much more expensive; a "small" or "cheap and fast" positioning is not attractive enough) |
+| **Allowed (2026-11-18)** | PnP, render-and-compare refinement, one network per object, larger backbones and input resolution, ensembles. RGB stays the main input; the RGB-D block (depth correction) is kept as a separate block |
+| **Training data (2026-11-18)** | Both **PBR only** and **PBR + real**, always labelled. Compare with the general leaderboard (both categories) and report the category where we place best (e.g. top 3 among PBR-only and/or PBR + real) |
+| **Adoption rule (2026-11-18)** | Adopt a change when its **2-seed mean beats the baseline's 2-seed mean on both the noisy-box validation and the test AR, by any margin** (replaces "+0.005 above the seed spread"). Validation: LM-O `eval_valn`; YCB-V `eval_valrealn` (held-out real videos); T-LESS a real validation from `train_primesense` (M17) |
+| Speed (2026-11-18) | Jetson dropped for the semester project (a limitation sentence). Times of other methods only as context, no speed ranking claim |
+| Datasets | **LM-O first** (train on LM `train_pbr`), then YCB-V, then T-LESS |
+| Timeline | Semester project. **EPFL report due 2027-01-01**: no page limit (usually ~20 pages), authors **Pablo Sarró Sánchez, Mathieu Salzmann** (not Pierre), written on the `paper/` draft. A later publication: Pablo Sarró Sánchez, Mathieu Salzmann, **Pierre Ancey**, with the conference's page limit |
+| Release (2026-11-18) | Not required. If done: code on GitHub, weights on Hugging Face |
 
 Week calendar (Mondays): W1 Oct 19 · W2 Oct 26 · W3 Nov 2 · W4 Nov 9 · W5 Nov 16 · W6 Nov 23 · W7 Nov 30 · W8 Dec 7 ·
 W9 Dec 14 · W10 Dec 21 · W11 Dec 28 · W12 Jan 4 · W13 Jan 11 · W14 Jan 18. W10–W11 are holidays, a good slot for long runs.
+**Schedule to the report (2026-11-18):** W5–W7 experiments M15–M19 · **decision gate Fri 2026-12-04** (final recipe per dataset) · W8–W9 final models (3 datasets × PBR only / PBR + real × 2 seeds, RGB-D) · W9–W11 report · **due 2027-01-01**.
 
 ---
 
@@ -39,8 +46,15 @@ W9 Dec 14 · W10 Dec 21 · W11 Dec 28 · W12 Jan 4 · W13 Jan 11 · W14 Jan 18. 
 | M6 Official BOP eval (GT boxes) | W8–9 | `[x]` | Official LM-O AR (oracle) | **Closed 2026-10-28.** Official BOP19 eval of `tok4x` with GT boxes: **LM-O test AR 0.689** (VSD 0.514, MSSD 0.660, MSPD 0.892, 53 ms/image); LM real val AR 0.835. Own MSSD/MSPD = official to ≤ 0.001 (exit ±0.01). BOP CSV `fastposevitmo_lmo-test.csv` from `bop_evaluate.py` with real `time`. DDP: code + tests, N = 1 unchanged; speed-ups 2026-10-28: 1 GPU 221 → 332 samples/s, 2 GPUs 492 → 548 (1.65×; table in M6 and §9); 1 GPU stays the default (user). Optional, not done: 1 vs 2-GPU AR at equal epochs |
 | M7 Real detections | W9–11 | `[x]` | First BOP-comparable LM-O AR | Started 2026-11-02. Default detections (GDRNPPDet) downloaded; they match bbox_obj slightly better than bbox_visib (IoU 0.824 vs 0.811, partly amodal); `tok4x` loses 0.05 ADD on amodal GT boxes (val_pbr). **First comparable number: LM-O test AR 0.668 with default detections** (VSD 0.491, MSSD 0.641, MSPD 0.873; GT boxes 0.689); exit criterion met. Crop-source ablation done 2026-11-03 (options 1–3 × 2 seeds, 2×): with detections all within 0.01 AR (0.646–0.655), option 1 (bbox_visib) marginally best, so **kept**; final model stays `tok4x` |
 | M8 YCB-V | W11–12 | `[x]` | YCB-V AR + per-object table | Started 2026-11-03. Data report to Pierre handed to Pablo (4 issues, checked against the official HF file lists). Tree + index done: train 626,520 PBR rows, val = PBR scenes 48–49 (no real val), test 4,123 targets; 11 new tests pass. `--dataset YCBV` in train/eval done; 21-object overfit passes. Symmetries with translation offsets done (clamps 19/20 now 1.000 in the overfit check). 4 training jobs done (2026-11-05/06, deleted). **YCB-V test AR 0.702 with default detections** (0.707 with GT boxes), final model `tok4x2` (best on val_pbr). 4× beats 2× on YCB-V (+0.013 AR with detections, +0.03 MSSD on val_pbr), so YCB-V runs keep 4×. Weak objects 16/17: a depth bias of real YCB-V (all objects too far, median +2.4 %; GT fits the depth, objects look smaller in RGB than GT predicts), not fixable without real training data: **accepted as a PBR-only result (user, 2026-11-07)**, `train_real` left as open issue D8. **Closed 2026-11-07** |
-| M9 Jetson / deployment | W12–13 | `[~]` | Latency vs number of objects | Started 2026-11-08 (A100 only, user). Bullet 1 done: ONNX export with dynamic batch (`optimization/bop_export.py`), ONNX Runtime (CPU) vs PyTorch fp32 max diff **3.0e-6** at batch 1/4/8/16 (< 1e-3). Bullet 2 done: TensorRT fp16 engine (profile 1/8/16), **LM-O AR 0.6685 = PyTorch 0.6685, YCB-V 0.7017 vs 0.7021** with detections (< 0.005); SPEED engine builds again. Bullet 3 done: latency table (A100): TensorRT fp16 pipeline **5.3 / 9.3 / 14.2 / 24.0 ms for N = 1 / 4 / 8 / 16** (network alone 1.8 / 3.5 / 5.7 / 11.0); with the BOP default detector (82 ms) ~10 FPS → exit met; stretch (own multi-class LW-DETR detector): 3 training jobs running since 2026-11-08 ~11:00 |
-| M10 Write-up (+ T-LESS stretch) | W13–14 | `[~]` | Report and final tables | Per-object models (8 single-object LM-O runs, 2026-11-08): **AR 0.672 with detections vs shared `tok4x` 0.668** (GT boxes 0.688 vs 0.689), within noise: keep the shared model. Write-up draft `docs/BOP.md` + README BOP section (2026-11-08). 224 px: AR 0.643 / 0.643 (−0.023). Paper §3 ablations done 2026-11-11 (absrot −0.11, scratch −0.14, legacy −0.04, bbox0 −0.03, bbox20 ≈). LaTeX draft `paper/` with figures (2026-11-11); leaderboard check: not best on LM-O, PViT-6D prior art (positioning with the supervisor). Augmentation study done 2026-11-14 (`domain_gap` p = 0.5 kept: best 0.655; none 0.627, color 0.645, blur 0.629, noise 0.627, all three 0.642, p = 0.8 0.636); box jitter study done 2026-11-15 (test AR, mean of 2 seeds: 5 % 0.650, 10 % 0.655, 15 % 0.653, 30 % 0.644; 10 % kept). Paper split into `paper/main.tex` + `paper/supplementary.tex` (2026-11-14). **T-LESS done 2026-11-15** (`tok4x` / `tok4x2`, 4×, PBR only): **AR 0.762 / 0.762 with default detections** (GT boxes 0.813 / 0.812), RGB-D 0.858 / 0.859. M11 phase A done (context −0.03, occlusion and translation weight within noise: nothing adopted); baseline re-trained on the current code 0.652 (original 0.655); single-object models, seed 1: 0.666 (mean 0.669, shared 0.666) |
+| M9 Jetson / deployment | W12–13 | `[x]` | Latency vs number of objects | **Jetson dropped for the semester project (supervisor, 2026-11-18): the A100 latency below is kept as context, the report states the missing Jetson numbers as a limitation.** Started 2026-11-08 (A100 only, user). Bullet 1 done: ONNX export with dynamic batch (`optimization/bop_export.py`), ONNX Runtime (CPU) vs PyTorch fp32 max diff **3.0e-6** at batch 1/4/8/16 (< 1e-3). Bullet 2 done: TensorRT fp16 engine (profile 1/8/16), **LM-O AR 0.6685 = PyTorch 0.6685, YCB-V 0.7017 vs 0.7021** with detections (< 0.005); SPEED engine builds again. Bullet 3 done: latency table (A100): TensorRT fp16 pipeline **5.3 / 9.3 / 14.2 / 24.0 ms for N = 1 / 4 / 8 / 16** (network alone 1.8 / 3.5 / 5.7 / 11.0); with the BOP default detector (82 ms) ~10 FPS → exit met; stretch (own multi-class LW-DETR detector): 3 training jobs running since 2026-11-08 ~11:00 |
+| M10 Write-up (+ T-LESS stretch) | W13–14 | `[~]` | Report and final tables | Per-object models (8 single-object LM-O runs, 2026-11-08): **AR 0.672 with detections vs shared `tok4x` 0.668** (GT boxes 0.688 vs 0.689), within noise: keep the shared model. Write-up draft `docs/BOP.md` + README BOP section (2026-11-08). 224 px: AR 0.643 / 0.643 (−0.023). Paper §3 ablations done 2026-11-11 (absrot −0.11, scratch −0.14, legacy −0.04, bbox0 −0.03, bbox20 ≈). LaTeX draft `paper/` with figures (2026-11-11); leaderboard check: not best on LM-O, PViT-6D prior art (positioning with the supervisor). Augmentation study done 2026-11-14 (`domain_gap` p = 0.5 kept: best 0.655; none 0.627, color 0.645, blur 0.629, noise 0.627, all three 0.642, p = 0.8 0.636); box jitter study done 2026-11-15 (test AR, mean of 2 seeds: 5 % 0.650, 10 % 0.655, 15 % 0.653, 30 % 0.644; 10 % kept). Paper split into `paper/main.tex` + `paper/supplementary.tex` (2026-11-14). **T-LESS done 2026-11-15** (`tok4x` / `tok4x2`, 4×, PBR only): **AR 0.762 / 0.762 with default detections** (GT boxes 0.813 / 0.812), RGB-D 0.858 / 0.859. M11 phase A done (context −0.03, occlusion and translation weight within noise: nothing adopted); baseline re-trained on the current code 0.652 (original 0.655); single-object models, seed 1: 0.666 (mean 0.669, shared 0.666). **2026-11-18: the write-up becomes the EPFL report (due 2027-01-01) → M20** |
+| M11 Improve first | W5 | `[x]` | Changes chosen on validation | **Closed 2026-11-18.** Phase A: nothing adopted under the old rule. **`tlw` + `occl` adopted under the new rule (2-seed means at 4×: test 0.668 vs 0.666, validation 0.886 vs 0.883).** B1 → M15, B3 → M17, B4 → M20; B2 8× (`lmo-m13-base8x-001`) still running; C RGB-D done (C8 with the finals) |
+| M15 Backbone and resolution | W5–W7 | `[ ]` | Best backbone / input size by the rule | ViT-B/16 at 512 and 640, ViT-L/16 at 512, ViT-H/14 at 518 on LM-O, 2×, 2 seeds each (user: all now, ViT-H included) |
+| M16 One network per object | W5–W7 | `[ ]` | Per-object vs shared by the rule, 3 datasets | LM-O: 2 seeds done (test 0.669 vs 0.666), validation to add; YCB-V (21 objects) and T-LESS (30 objects), 2 seeds each (user: re-train now on all datasets) |
+| M17 PBR + real training | W5–W7 | `[ ]` | PBR + real vs PBR only by the rule, 3 datasets | YCB-V running (M11 B3); LM-O (LM test scenes ≠ 2) and T-LESS (`train_primesense`) to code |
+| M18 Multi-head: DR + masks + PnP | W6–W7 | `[ ]` | DR / PnP / combined, AR and time | New architecture (supervisor): one ViT, heads for direct regression, visible mask and dense object coordinates; PnP at test time |
+| M19 Render-and-compare refinement | W6–W7 | `[ ]` | AR gain of refinement | R1 CosyPose PBR refiner on our poses (upper bound); R2 own refiner only if R1 gains |
+| M20 Final models and EPFL report | W7–W11 | `[ ]` | Report sent by 2027-01-01 | Decision gate 2026-12-04, finals W8–W9, report on `paper/` |
 
 ---
 
@@ -1076,6 +1090,7 @@ time). Our errors are mostly in depth (VSD / MSSD) and on heavily occluded objec
   - [x] A4 `occl`: synthetic occlusion, 1-4 random rectangles (10-30 % of the side) erased, p = 0.5. **0.654, 0.876: within the seed spread of the baseline (0.652, 0.873): not adopted.**
   - [x] A5 `tlw`: translation loss weighted × 2 (depth emphasis). **0.659 (+0.007), validation 0.874 (+0.001): not confirmed on validation, not adopted.**
   - [x] A7 (2026-11-17) `tlwocc` at 4×, one seed (`lmo-m13-tlwocc4x-001`, `SPE=4×42208 scripts/m10_ablations.sh tlwocc`): **AR 0.669** (VSD 0.490, MSSD 0.642, MSPD 0.875), `eval_valn` **0.887** (`eval_val` LM real 0.901, PBR 0.926), against `tok4x` / `tok4x2` 0.668 / 0.664 (mean 0.666) and 0.886 / 0.880 (mean 0.883): **+0.003 and +0.004, below the +0.005 rule: the 2× gain (+0.009) shrinks at 4× and is within the seed spread (0.004). Not adopted, final models stay as they are.** One seed; `tok4x` / `tok4x2` ran older code (no effect, W1).
+  - [x] A8 (2026-11-18) `tlwocc` at 4×, seed b (`lmo-m13-tlwocc4x2-001`, pairs with `tok4x2`): **AR 0.6666** (VSD 0.487, MSSD 0.640, MSPD 0.873), `eval_valn` **0.8855** (`eval_val` LM real 0.900, PBR 0.923), against `tok4x2` 0.664 / 0.880. **2-seed means at 4×: test 0.668 vs 0.666 (+0.002), validation 0.886 vs 0.883 (+0.003). Adopted under the new rule of 2026-11-18 (2-seed mean better on validation AND test, any margin): `tlw` + `occl` is part of the recipe from now on.**
   - [x] A6 `tlwocc` (**done 2026-11-16: test AR 0.664 / 0.658 (mean 0.661, +0.009; VSD 0.482, MSSD 0.630, MSPD 0.870), `eval_valn` 0.885 / 0.880 (mean 0.882, +0.009), `eval_val` LM real 0.902 / 0.896, PBR 0.909 / 0.907: passes the rule; the only M11 change adopted-able, open for the user: adopt for the final models or not; not tested at 4× or on YCB-V**): `tlw` + `occl` together (user, 2026-11-15; variant added to `scripts/m10_ablations.sh`). Jobs `lmo-m11-tlwocc{,2}-001` started 2026-11-16 00:20 CET, 2×, 2 seeds; adopt only if test AND `eval_valn` beat the baseline (0.652 / 0.873) by more than the seed spread (0.004).
 - [x] **B4** (evaluation only, `dev`, `scripts/pose_ensemble.py`): average the poses of the two seed
   models (`tok4x` + `tok4x2`) at test time, symmetry-aware (align seed b to the closest symmetric
@@ -1083,10 +1098,11 @@ time). Our errors are mostly in depth (VSD / MSSD) and on heavily occluded objec
   (`$NAS_HOME/results/m11/ensemble/`):* LM-O **0.6689** (VSD 0.491, MSSD 0.641, MSPD 0.874) vs seeds
   0.668 / 0.664; YCB-V **0.7048** (0.596 / 0.680 / 0.838) vs 0.694 / 0.702. +0.003 / +0.007 over the
   seed mean for twice the pose time: **not kept**.
+- **2026-11-18 (supervisor meeting): M11 closed; its open items continue in M15–M20 under the new scope and adoption rule (§0).**
 - [ ] **Phase B** (after phase A, or alongside if the queue is short):
-  - [ ] B1 ViT-L/16 at 512 px (SWAG E2E weights in torchvision), 2×; ~3-4× slower to train and run.
-  - [ ] B2 8× budget on LM-O (2× → 4× gave +0.011), ~68 h per run.
-  - [~] B3 YCB-V with its real training images (`train_real`, downloaded to `$NAS_HOME/datasets/ycbv_train_real/`, D8): should remove the +2.4 % depth bias; moves the result to the PBR + real leaderboard category. **User accepted it 2026-11-17** (positioning of the PBR + real result still to agree with the supervisor).
+  - [ ] B1 ViT-L/16 at 512 px (SWAG E2E weights in torchvision), 2×; ~3-4× slower to train and run. **→ M15 (with ViT-B at 512 / 640 and ViT-H/14 at 518).**
+  - [~] B2 8× budget on LM-O (2× → 4× gave +0.011), ~68 h per run. **Job `lmo-m13-base8x-001` running (one seed, recipe without `tlw` + `occl`); under the new rule a second seed is needed if seed a beats `tok4x` (0.668, validation 0.886). Feeds the M20 decision gate.**
+  - [~] B3 YCB-V with its real training images (`train_real`, downloaded to `$NAS_HOME/datasets/ycbv_train_real/`, D8): should remove the +2.4 % depth bias; moves the result to the PBR + real leaderboard category. **User accepted it 2026-11-17**; supervisor 2026-11-18: report both PBR-only and PBR + real results (→ M17). **Checked 2026-11-18 (Pierre's warning):** the BOP datasets page says not to use the **80K synthetic `train_synt` images** of the original YCB-V ("objects in the same poses as the test images"); it has no such note for `train_real`. We never use `train_synt`, so this setup is allowed.
     - **Code done 2026-11-17:** tree link `$NAS_HOME/datasets/bop/ycbv/train_real_full` → the extracted 80 scenes (our own tree; the broken `train_real` link is untouched); `SPLITS["ycbv"]["train_mix"]` = PBR scenes 0–47 (626,520 rows) + 76 real videos (481,668 rows, 43 % of the rows; object-balanced sampling keeps this ratio per object) and `"val_real"` = four held-out uw videos (scenes 7, 21, 33, 45; 28,613 rows); the test scenes 48–59 are in neither. `train.py --bop_train_split train_mix`; `scripts/m14_ycbv_real.sh` (train, val on the real videos with GT and noisy boxes, test GT and detections, official eval); `scripts/m14_valreal_eval.sh` (the PBR-only models on the same real videos). Tests: `tests/test_bop_dataset_ycbv.py` +4 (splits disjoint from the test scenes, real rows match the raw files, reprojected models match `bbox_obj` on real images), 18 pass. Smoke training run OK.
     - **Baseline on the held-out real videos (PBR-only models, 2026-11-17; `eval_valreal` GT boxes / `eval_valrealn` noisy boxes, score (AR_MSSD + AR_MSPD)/2):** `tok2x` 0.692 / 0.668, `tok2x2` 0.704 / 0.683, `tok4x` 0.713 / 0.693, `tok4x2` 0.708 / 0.689 (n = 28,613; objects 1, 5, 9, 10, 15, 17, 18, 19, 21 do not appear in the four videos). Bug found: objects without instances gave nan means in `per_object_table`; fixed (`src/bop_evaluate.py`, test added) and the baseline summaries re-meaned with `scripts/summary_remean.py`. **The two running `ycbv-m14-real*` jobs have the old code copy: when they finish, run `scripts/summary_remean.py` on their `eval_valreal{,n}` folders before reading the scores.**
     - **Jobs:** `ycbv-m14-real2x-001` / `ycbv-m14-real2x2-001` (2×, 2 seeds, compare `tok2x{,2}` 0.681 / 0.689 AR with detections, PBR validation 0.834 / 0.832) started 2026-11-17 ~14:00 CET. Choose on the real validation (`eval_valrealn`), baseline = the PBR-only models on the same videos (`$RUN/<variant>/eval_valreal{,n}`). If it helps: 4× (`real4x{,2}`) for the final model, then RGB-D, paper rows (new category).
@@ -1109,14 +1125,118 @@ time). Our errors are mostly in depth (VSD / MSSD) and on heavily occluded objec
   - [ ] C8 RGB-D for the final M11 models (after phase A / B).
   - [ ] C9 optional: RGB-D latency vs number of objects in `optimization/bop_latency.py` (today: mean per
     image over the test set).
-- [ ] Final: combine the phase A / B winners into new 4× runs (LM-O ~34 h, YCB-V ~58 h), then
-  update the paper (main + supplementary) and decide the positioning with the supervisor.
+- [x] ~~Final: combine the phase A / B winners into new 4× runs (LM-O ~34 h, YCB-V ~58 h), then
+  update the paper (main + supplementary) and decide the positioning with the supervisor.~~ **Positioning decided 2026-11-18 (accuracy first, §0); the finals are M20.**
 
 - **Verification audit 2026-11-14, items in M11 (W2, W7):**
   - [x] **W2, M11 choices would be made on LM-O test** (the ablation script only evaluates on test): choose on validation. Add a validation step (`eval_val/`: LM real val + PBR val, GT boxes, own score = (AR_MSSD + AR_MSPD) / 2 and ADD-S) to `scripts/m10_ablations.sh` and a script for finished runs (`scripts/m12_valeval.sh`), run it on the existing ablation models first to check that validation ranks them like test does; decide phase A / B only on validation, report test once.
     - **Status 2026-11-14:** `scripts/val_score.py`, the `eval_val/` step of `scripts/m10_ablations.sh` (smoke run OK) and `scripts/m12_valeval.sh` are in. Validation evaluation (LM real val + PBR val, 15,084 instances) of the 30 finished ablation models is running (`$RUN/<variant>/eval_val/`): **Done 2026-11-15, with a finding:** over the 31 finished ablation models, validation with perfect GT boxes ranks them poorly against the official test AR (Spearman **0.61** on LM real val, **0.40** on PBR val): it cannot see box-jitter effects (`bbox0` is the *best* model on GT-box validation, 0.918, and among the worst on test, 0.625, because test uses detections). Fix: `--box_noise 0.1` in `bop_evaluate.py` (GT boxes perturbed by up to 10 % per side, fixed seed, unit-tested) and an `eval_valn/` step (LM real val, noisy boxes) in `scripts/m10_ablations.sh` and `scripts/m12_valeval.sh`. **With noisy boxes the validation ranking has Spearman 0.934 against test AR** and orders 324 of 341 clearly different pairs (test gap > 0.01) correctly. **Rule from now on: M11 / M12 choices use `eval_valn` (score (AR_MSSD + AR_MSPD)/2 on noisy boxes), `eval_val` and PBR val are secondary; the test number is read once.** Results: `$RUN/<variant>/eval_val{,n}/val_score.txt`.
   - [x] **W7, RGB-D settings (bands 20 / 10 / 5 %, 50 points, 4-px cells) were set a priori, not validated**: sensitivity analysis on LM real val (`scripts/depth_correction_tune.py`: bands, iterations, minimum points, cell size, visibility threshold); keep the defaults or adopt better ones chosen on validation, then re-run the (cheap) RGB-D test evaluations if the settings change.
     - **Status 2026-11-14:** `scripts/depth_correction_tune.py`: 13 settings on LM real val with the official AR (VSD included). So far (9 of 13) the defaults (bands 20 / 10 / 5 %, 50 points, 4-px cells) are best or tied: AR 0.9412 for the default and for the neighbouring band / minimum-point settings, 0.9403 with a single iteration, 0.9327 with 5 % bands only (worse). **Done (all 13 settings, `$NAS_HOME/results/m12/rgbd_tune/tune.json`):** the defaults are within 0.001 AR of the best setting on every axis (best 0.9421 with visibility 10 %, 0.9417 with 2-px cells, default 0.9412; bands, minimum points and iterations are flat; only 5 % bands alone lose, 0.9327): the correction is not sensitive to its settings. **Decision: keep the defaults**; the RGB-D test numbers stand, no re-run.
+
+### Scope change 2026-11-18 (supervisor meeting) → M15–M20
+
+Accuracy first, cost does not matter (§0). Every candidate is decided by the **new adoption rule**:
+its 2-seed mean beats the baseline's 2-seed mean on the noisy-box validation AND on test, by any
+margin. **Common recipe from now on = the final recipe + `tlw` + `occl`** (adopted, M11 A8). Its
+2× LM-O baseline already exists (`lmo-m11-tlwocc{,2}-001`: test 0.664 / 0.658, mean 0.661;
+`eval_valn` 0.885 / 0.880, mean 0.882), so LM-O 2× candidates need no new baseline runs. Job
+prefixes follow the milestone number (m12–m14 were used by audit / M11 jobs).
+
+### M15 — Backbone and input resolution (W5–W7)
+- Supervisor: try ViT-L / ViT-H and larger inputs (e.g. 640 × 640). We already use ViT-B/16 at
+  384 px (not 224; 224 px lost 0.023 AR, M10). User 2026-11-18: launch all of them now, ViT-H
+  included (multi-GPU).
+- [ ] Code: position-embedding interpolation in `src/vit_models.py` when `image_size` differs from
+  the weights' size (bicubic on the patch grid, class tokens kept), with a unit test (identity at
+  the native size; output shapes at 512 / 640). New variants in `scripts/m10_ablations.sh`
+  (`vitb512`, `vitb640`, `vitl512`, `vith518`, all on the `tlwocc` recipe) and `torchrun` when
+  `GPUS > 1` (pattern: `scripts/ddp_bench.sh`).
+- [ ] Smoke in `dev`: memory and step time at batch 32 for ViT-L/16-512 and ViT-H/14-518; choose
+  1, 2 or 4 GPUs (gradient accumulation only if memory forces it).
+- [ ] Jobs `lmo-m15-{vitb512,vitb640,vitl512,vith518}{,2}-001` (2×, 2 seeds). Rough cost per
+  sample vs ViT-B/384: B/512 ~2×, B/640 ~3×, L/512 ~5–6×, H/518 ~18× (estimates: B/512 ~21 h,
+  B/640 ~35 h, L/512 ~38 h on 2 GPUs, H/518 ~3 days on 4 GPUs). Baseline: `tlwocc` 2×.
+- Note for the report: LM-O crops are usually smaller than 384 px natively, so a gain at 640 px
+  comes from finer patches, not from more image detail.
+- Deadline: a final ViT-L / ViT-H model at 4× on YCB-V would take ~5× / ~18× the 58 h of ViT-B
+  on one GPU; the M20 gate decides the budget (multi-GPU, 2× budget, or per-object models, which
+  split the compute over many parallel jobs).
+
+### M16 — One network per object, all datasets (W5–W7)
+- Supervisor: re-run, and accept any improvement even if it costs 8× the weights. LM-O so far
+  (M10 / W4): test 0.672 / 0.666 (mean 0.669) vs shared 0.668 / 0.664 (mean 0.666).
+- [ ] LM-O: evaluate the 16 existing per-object models on `eval_valn` (each on its object; merge)
+  to apply the rule.
+- [ ] Code: generalise `scripts/m10_single.sh` (dataset argument, object list, the dataset's
+  default detections, per-object budget = that dataset's 4× budget / number of objects = 21,104
+  samples per epoch, the recipe of that dataset's `tok4x` so the comparison is fair) and
+  `scripts/m10_merge.py` (YCB-V, T-LESS).
+- [ ] Jobs (user 2026-11-18: re-train now on all datasets): `ycbv-m16-obj<ID>{,s1}-001` (21 × 2)
+  and `tless-m16-obj<ID>{,s1}-001` (30 × 2), ~3 h each, launched in waves of ~20. Compare with
+  `tok4x` / `tok4x2` (YCB-V 0.694 / 0.702; T-LESS 0.762 / 0.762) on validation (YCB-V
+  `eval_valrealn`; T-LESS the real validation of M17) and test.
+
+### M17 — PBR + real training, all datasets (W5–W7)
+- Supervisor: try both PBR only and PBR + real and keep them clearly apart; compare with the
+  general leaderboard and report the category where we place best.
+- [~] YCB-V: M11 B3 jobs `ycbv-m14-real2x{,2}-001` (run `scripts/summary_remean.py` on their
+  `eval_valreal{,n}` first). If they win → 4× (`real4x{,2}`). Pierre's warning checked
+  (2026-11-18): the BOP page warns against `train_synt` (same poses as test), not `train_real`.
+- [ ] LM-O (Pierre: LM images that are not in LM-O): `train_mix` = LM `train_pbr` + LM
+  `test_all` scenes 1, 5, 6, 8, 9, 10, 11, 12 (real; only the scene's central object is annotated;
+  never scene 2, which is the LM-O test sequence; BOP rule: "not a single pixel of test images").
+  Held-out real validation = a contiguous block of image ids per scene, to limit near-duplicate
+  leakage (check first how close consecutive poses are); evaluate the PBR-only models on the same
+  block. Note: `lmo/train` (10,504 images) is **rendered** (1,313 per object, black background),
+  not real.
+- [ ] T-LESS: `train_mix` = `train_pbr` + `train_primesense` (real, turntable, black background),
+  with a held-out real validation block (also T-LESS validation for M16). Background replacement
+  for the real crops (with `mask_visib`) if the black backgrounds hurt.
+- [ ] Tests as `tests/test_bop_dataset_ycbv.py` (splits disjoint from test, rows match the raw
+  files, reprojected models match `bbox_obj`). Jobs `lmo-m17-real2x{,2}-001`,
+  `tless-m17-real2x{,2}-001` (2×, 2 seeds).
+
+### M18 — Multi-head network: direct regression + masks + PnP (W6–W7)
+- Supervisor: a ViT backbone with several heads (DR, PnP, masks), trained together; compare
+  accuracy and speed at test time.
+- [ ] Heads on one ViT: (1) the current direct-regression head (class token); (2) visible mask;
+  (3) dense object coordinates (XYZ, normalised by the model extents) from a small upsampling
+  decoder on the patch tokens (e.g. 24 × 24 → 64 × 64). Losses: current pose loss + BCE (mask) +
+  L1 on XYZ inside the mask.
+- [ ] Targets without a renderer for PBR: depth + `mask_visib` + GT pose back-projected to object
+  coordinates; real images (M17): bop_toolkit renderer.
+- [ ] Inference variants, each with the official AR and its time: DR only; PnP (OpenCV
+  `solvePnPRansac` + LM refinement on the masked correspondences); PnP initialised at the DR pose;
+  DR rotation + PnP translation.
+- Questions: do the extra heads improve the DR head itself? Is PnP better than DR, mainly on depth
+  (VSD / MSSD)? What does each variant cost?
+- [ ] Tests: XYZ targets reproject onto their pixels with the GT pose; PnP on GT correspondences
+  returns the GT pose. Jobs `lmo-m18-dense{,2}-001` (2×, 2 seeds).
+
+### M19 — Render-and-compare refinement (W6–W7)
+- What it does: render the object at the current pose estimate, let a network compare rendering
+  and crop and predict a pose update, repeat 1–4 times. It corrects the residual error of a
+  single-shot estimate, mostly depth (our weakest part). Typical BOP gains: a few AR points
+  (CosyPose, GDRNPP + refiner, MegaPose), for several times the inference time.
+- [ ] R1 upper-bound check: CosyPose's PBR-trained refiner (public weights for LM-O, T-LESS, YCB-V;
+  via `happypose`, installed in a separate venv so training jobs are not disturbed) on our poses,
+  1–4 iterations, official eval. The training data stays PBR only; credit CosyPose.
+- [ ] R2 only if R1 gains clearly: our own refiner (FastPose-ViT on crop + rendering at the current
+  pose → pose update, trained on PBR with perturbed poses; needs a batched GPU renderer).
+
+### M20 — Final models and EPFL report (W7–W11)
+- [ ] Re-examine older candidates with the new rule (evaluation-only table over existing runs):
+  heads + token "both" (2× test 0.660 / 0.661 vs token 0.659 / 0.651), seed ensemble (M11 B4:
+  LM-O +0.003, YCB-V +0.007 on test; validation to add), 8× budget (B2). Optional: test-time
+  augmentation (average of several jittered crops), evaluation only.
+- [ ] **Decision gate Fri 2026-12-04:** final recipe per dataset (backbone, heads / PnP,
+  per-object, refinement, real images), within the GPU time left before the deadline.
+- [ ] Finals W8–W9 (Dec 7–20): 3 datasets × {PBR only, PBR + real} × 2 seeds; RGB-D (C8);
+  leaderboard tables in both categories, including the T-LESS block.
+- [ ] Report W9–W11 on the `paper/` draft (main + supplementary → ~20 pages; authors Pablo Sarró
+  Sánchez, Mathieu Salzmann), sent by **2027-01-01**. The publication version (+ Pierre Ancey) is
+  cut from it later.
 
 ## 8. Open decisions and questions
 
@@ -1131,11 +1251,17 @@ time). Our errors are mostly in depth (VSD / MSSD) and on heavily occluded objec
 | D7 | Backbone resolution for real time: 224 vs 384 | M3 / M9 |
 | D8 | **Data being prepared (2026-11-08): the user asks the supervisor to add `train_real` to the cluster copy; meanwhile the missing part `ycbv_train_real.z01` (48.3 GB, HF `bop-benchmark/ycbv`) was downloaded to `$NAS_HOME/datasets/ycbv_raw/`, joined with the cluster `.zip` (27.4 GB, symlinked, unchanged) into a temporary `ycbv_train_real_full.zip` (75.7 GB, deleted after the check) and extracted to `$NAS_HOME/datasets/ycbv_train_real/train_real/` (1,257,337 files, 80 scenes; `unzip` refuses joined split archives, so a `zipfile` script with the disk-0 offsets corrected, kept as `$NAS_HOME/datasets/ycbv_raw/unzip_split.py`; it also recomputes zipfile's per-entry end offsets for the overlap check). **Verified 2026-11-08 13:57: all 1,257,336 files present with the archive's sizes, 80 scenes (000000–000091), each with scene_gt / scene_gt_info / scene_camera.** The `.z01` is kept in `ycbv_raw/`. NAS free space 14 TB (90 % used). Training with it is not decided yet.** Earlier **(user, 2026-11-07):** complete YCB-V with `train_real` (download `ycbv_train_real`, 48 GB incl. the missing `.z01`, into `$NAS_HOME/datasets/`) and train PBR + real, to reduce the real-image domain gap: on YCB-V real test every object is predicted ~2.4 % too far (16 wood block +6.7 %, 17 scissors +5.3 %; see M8). Until then YCB-V numbers are PBR-only | future |
 
+| D9 | **Scope (supervisor, 2026-11-18): accuracy first.** Of three framings (small architecture with equivalent results; cheap and fast direct regression with equivalent results; beat other methods in accuracy), only the third: cost and size do not matter. PnP, refinement, per-object models, bigger backbones are allowed (§0) | Decided |
+| D10 | **Adoption rule (user, 2026-11-18):** 2-seed mean better on noisy-box validation AND test, any margin (§0) | Decided |
+| D11 | **Training data (supervisor, 2026-11-18):** PBR only and PBR + real, both tried and labelled; one general leaderboard with both categories, report where we place best | Decided |
+| D12 | **Deliverable (supervisor, 2026-11-18):** EPFL report by 2027-01-01, no page limit (~20 pages), authors Pablo Sarró Sánchez + Mathieu Salzmann; publication later with Pierre Ancey (conference page limit). Time comparisons only if the report were framed on speed: it is not | Decided |
+| D13 | **Release (supervisor, 2026-11-18):** not required; if done, code on GitHub and weights on Hugging Face | Decided |
+
 **For the supervisor:**
 - [ ] Are IPD / XYZ-IBD / HB, downloaded on 2026-10-19, meant for this project?
 - [ ] GPU-hour budget.
-- [ ] Access to a Jetson Orin Nano.
-- [ ] Expected deliverable (report, paper, presentation).
+- [x] Access to a Jetson Orin Nano. *2026-11-18: not for the semester project (setup and quantisation take too long; only worth it for a speed framing).*
+- [x] Expected deliverable (report, paper, presentation). *2026-11-18: EPFL report by 2027-01-01 (D12).*
 
 ---
 
@@ -1199,39 +1325,39 @@ time). Our errors are mostly in depth (VSD / MSSD) and on heavily occluded objec
 | 2026-11-16 | `outputs/FastPose-ViT/runs/lmo-m12-detsmall2-001`, `ycbv-m10-detsmall-001`; `results/m11/rgbd_splat/ycbv_ownsmall` | **LM-O / YCB-V test**, own LW-DETR small detections (`scripts/m9_det.sh small`) | LM-O seed b of the detector (pose model `tok4x`); YCB-V detector, 50 epochs, pose model `tok4x2`; YCB-V RGB-D (C7) | LM-O AR 0.656 (VSD 0.487, MSSD 0.631, MSPD 0.849), mAP 0.653; YCB-V AR **0.681** (VSD 0.574, MSSD 0.663, MSPD 0.805), mAP 0.702 (default 0.758), RGB-D **0.827** (0.773 / 0.885 / 0.822) | LM-O: same as seed a (0.654). YCB-V: own detector −0.021 AR (−0.024 with depth), a larger loss than LM-O (−0.014); mAP lower than the default one, AR100 the same. Paper: supplementary detection and RGB-D tables, one sentence in §4.4 |
 | 2026-11-16 | `outputs/FastPose-ViT/runs/lmo-m11-tlwocc{,2}-001` | **LM-O test**, default detections; LM real val noisy boxes (`eval_valn`) | M11 A6, 2× baseline + occlusion + translation weight ×2, 2 seeds | Test AR 0.664 / 0.658 (VSD 0.486 / 0.478, MSSD 0.634 / 0.626, MSPD 0.871 / 0.869); `eval_valn` 0.885 / 0.880; `eval_val` LM real 0.902 / 0.896, PBR 0.909 / 0.907 | Baseline 0.652 / 0.873: +0.009 on both, above the seed spread (0.004), both seeds above both baseline seeds. Combination chosen after seeing the single results. Paper: supplementary `tab:supp:m11` |
 | 2026-11-17 | `outputs/FastPose-ViT/runs/lmo-m13-tlwocc4x-001` | **LM-O test**, default detections; LM real val noisy boxes | M11 A7: occlusion + translation weight ×2 at 4×, 1 seed | AR 0.669 (VSD 0.490, MSSD 0.642, MSPD 0.875); `eval_valn` 0.887; `eval_val` LM real 0.901, PBR 0.926 | `tok4x` / `tok4x2`: 0.668 / 0.664, 0.886 / 0.880: +0.003 / +0.004, not confirmed; the 2× gain does not carry to 4×. Not adopted |
+| 2026-11-18 | `outputs/FastPose-ViT/runs/lmo-m13-tlwocc4x2-001` | **LM-O test**, default detections; LM real val noisy boxes | M11 A8: occlusion + translation weight ×2 at 4×, seed b | AR 0.6666 (VSD 0.487, MSSD 0.640, MSPD 0.873); `eval_valn` 0.8855; `eval_val` LM real 0.900, PBR 0.923 | `tok4x2` 0.664 / 0.880. 2-seed means at 4×: test 0.668 vs 0.666, validation 0.886 vs 0.883: **adopted under the new rule (2026-11-18)** |
 (Paths relative to `$NAS_HOME`.)
 
 ---
 
 ## 10. Next session: start here
 
-0. **Tracker (updated 2026-11-15 16:45 CET = 15:45 UTC; times below are Swiss time, the cluster logs are UTC):**
+0. **Tracker (updated 2026-11-18 19:30 CET = 18:30 UTC; times below are Swiss time, the cluster logs are UTC). Scope changed on 2026-11-18 (§0, D9–D13): accuracy first, report due 2027-01-01, decision gate 2026-12-04.**
 
    | Task | Status |
    |---|---|
    | **Running jobs** | |
-   | Detector second seed: `lmo-m12-detsmall2-001` | Done 2026-11-16: AR 0.656 (seed a 0.654), mAP 0.653 |
-   | T-LESS: `tless-m10-tok4x-002` / `tless-m10-tok4x2-002` | Done 2026-11-15 (AR 0.762 / 0.762, RGB-D 0.858 / 0.859) |
-   | YCB-V own detector: `ycbv-m10-detsmall-001` | Done 2026-11-16: AR 0.681 (default 0.702), RGB-D 0.827 (0.851) |
-   | YCB-V conditioning heads: `ycbv-m10-heads2x{,2}-001` | Done 2026-11-16: AR 0.674 / 0.678 (token `tok2x{,2}` 0.681 / 0.689) |
-   | **To do when jobs end** | |
-   | T-LESS: leaderboard comparison (PBR-only RGB / RGB-D entries, training data to check) and second block in the paper | To do |
-   | M11 A6: `tlw` + `occl` together, `lmo-m11-tlwocc{,2}-001` | Done 2026-11-16: AR 0.664 / 0.658 (+0.009), validation +0.009 |
-   | M11 A7: `tlw` + `occl` at 4×, one seed, `lmo-m13-tlwocc4x-001` | Done 2026-11-17: AR 0.669 (`tok4x` 0.668 / `tok4x2` 0.664, +0.003), validation 0.887 (0.886 / 0.880, +0.004): below the +0.005 rule, **not confirmed** |
-   | M11 plan was: adopt `tlw` + `occl` + 8× if A7 confirmed. **A7 did not confirm: `tlw` + `occl` not adopted.** Open for the user: B2 8× budget (without the changes), B1 ViT-L/512, B3 YCB-V `train_real`, or stop improving and finalise the paper with the current models | To do (user) |
-   | 8× budget test (B2), LM-O, 1 seed, no changes: `lmo-m13-base8x-001` (`SPE=8×42208 scripts/m10_ablations.sh base`, started Tue 14:00 CET) | Running, 18 min per epoch: ~Thu 11:30 CET. Compare with `tok4x` / `tok4x2` (0.668 / 0.664, validation 0.886 / 0.880) |
-   | More seeds of `tlw` + `occl` at 4×: `lmo-m13-tlwocc4x2-001` (seed b, pairs with `tok4x2`) | Running, ~Wed 13:15 CET. One more seed only: the user asked for 1–2 |
-   | M11 B3 YCB-V PBR + real: `ycbv-m14-real2x-001`, `ycbv-m14-real2x2-001` (2×) | `real2x` running, 11.5 min per epoch: ~Wed 21:15 CET; `real2x2` was preempted and is Pending again (resumes from `last.pt`, epoch 3), ~Thu 08:00 CET if it restarts now |
-   | **Paper** | |
-   | Positioning vs PViT-6D / PoseDETR (improve first, option c) | In progress (M11) |
-   | Abstract / introduction / conclusion with T-LESS | Done 2026-11-15 (M11 / final numbers to update after phase B) |
+   | M11 B2 8× budget, LM-O, 1 seed: `lmo-m13-base8x-001` | Running (epoch ~100 of 150 on 2026-11-18 19:00): ~Fri morning. Compare with `tok4x` / `tok4x2` (0.668 / 0.664, validation 0.886 / 0.880); second seed if it wins |
+   | M17 / M11 B3 YCB-V PBR + real: `ycbv-m14-real2x-001`, `ycbv-m14-real2x2-001` (2×) | Preempted, Pending (epochs 123 and 91 of 150); resume from `last.pt`. When done: `scripts/summary_remean.py` on `eval_valreal{,n}`, then the rule against `tok2x{,2}` |
+   | **To launch (user, 2026-11-18), in this order** | |
+   | M16 LM-O: the 16 per-object models on `eval_valn` (dev) | To do |
+   | M15 code (position-embedding interpolation, torchrun in `m10_ablations.sh`) + dev smoke, then `lmo-m15-{vitb512,vitb640,vitl512,vith518}{,2}-001` | To do |
+   | M16 code (`m10_single.sh` / `m10_merge.py` for YCB-V and T-LESS), then `ycbv-m16-obj*` (42) and `tless-m16-obj*` (60) in waves of ~20 | To do |
+   | M17 code (LM-O and T-LESS `train_mix` + real validation), then `lmo-m17-real2x{,2}-001`, `tless-m17-real2x{,2}-001` | To do |
+   | M18 multi-head (DR + mask + XYZ, PnP at test), then `lmo-m18-dense{,2}-001` | To do |
+   | M19 R1 CosyPose PBR refiner on our poses (separate venv) | To do |
+   | **Report (M20)** | |
+   | Decision gate: final recipe per dataset | Fri 2026-12-04 |
+   | Final models (3 datasets × PBR only / PBR + real × 2 seeds) + RGB-D | W8–W9 |
+   | EPFL report on `paper/` (~20 pages; Pablo Sarró Sánchez, Mathieu Salzmann) | W9–W11, due 2027-01-01 |
+   | T-LESS leaderboard block; tables in both categories (PBR only, PBR + real) | With the finals |
    | First compile on Overleaf (`main.tex`, `supplementary.tex`) | To do (user) |
-   | Venue, page limit, authors | To do (user / supervisor) |
-   | Cite PoseDETR, RACE-6D, MRPE, HiPose, GPose, RCVPose, FFB6D | Done 2026-11-14 (RACE-6D CVPR 2026 Findings, HiPose CVPR 2024, FFB6D CVPR 2021, RCVPose ECCV 2022; PoseDETR, GPose2023, MRPE cited as BOP submissions, no paper) |
-   | **External / later** | |
-   | Jetson Orin latency | Blocked (no device; ask the supervisor) |
-   | YCB-V `train_real` (M11 B3, D8) | To do, needs the supervisor's view |
-   | Release plan (weights, code); merge `multi-object` into `main` | Later (user) |
+   | **Closed by the 2026-11-18 meeting** | |
+   | Positioning vs PViT-6D / PoseDETR | Decided: accuracy first (D9) |
+   | Venue, page limit, authors | Report: no limit, ~20 pages, 2 authors; publication later with Pierre Ancey (D12) |
+   | Jetson Orin latency | Dropped for the semester project (limitation) |
+   | Release plan | Optional: GitHub + Hugging Face (D13) |
+   | M11 A8 `lmo-m13-tlwocc4x2-001` | Done 2026-11-18: AR 0.6666, validation 0.8855; **`tlw` + `occl` adopted** (2-seed means +0.002 test, +0.003 validation) |
    | **Done 2026-11-15** | |
    | bbox 5 / 15 / 30 % (paper recipe table, supplementary S3, `docs/BOP.md`); T-LESS RGB, RGB-D (C6), per-object tables; M11 phase A (+ validation, re-trained baseline `base`, W1); single-object second seed (W4); paper / README / BOP.md / TASKS.md updated | Done |
    | **Done 2026-11-14** | |

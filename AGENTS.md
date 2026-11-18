@@ -35,7 +35,7 @@ Exit codes: 0 ok · 1 job failed · 2 no such job · 3 still waiting · 4 runai 
 ## Project notes
 
 **What this is:** FastPose-ViT is a ViT that directly regresses the 6D pose of one spacecraft from a bbox crop of one RGB image (SPEED/SPEED+). The current project extends it to **multi-object 6D pose estimation on BOP** (LM-O first, then YCB-V), measured with bop_toolkit BOP19 AR.
-- Constraints: RGB only, direct regression (no PnP or refinement), Jetson real-time, and SPEED must keep working.
+- Scope (supervisor, 2026-11-18; replaces "RGB only, direct regression, no PnP / refinement, Jetson real-time"): **accuracy first** on LM-O, YCB-V and T-LESS; inference cost and model size do not matter, so PnP, refinement, per-object models, bigger backbones and ensembles are allowed. PBR-only and PBR + real results are both reported, always labelled. Adopt a change when its 2-seed mean beats the baseline on noisy-box validation AND test, by any margin. EPFL report due 2027-01-01. SPEED must keep working. Details: `TASKS.md` §0.
 - **Read `TASKS.md` §1 (status) and §10 (next steps) at the start of every session, and update §1, §9 (results) and §10 before ending.**
 
 **Data** (read only):

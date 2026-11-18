@@ -1162,7 +1162,10 @@ prefixes follow the milestone number (m12–m14 were used by audit / M11 jobs).
   ~53 h on 1 GPU → 2 GPUs); **ViT-H/14-518 does not fit at batch 32 on one GPU** (out of memory
   at 71 GB) → 4 GPUs (8 crops per GPU). ViT-B/16-512 not measured (~2×).
 - [~] Jobs `lmo-m15-{vitb512,vitb640,vitl512,vith518}{,2}-001` (2×, 2 seeds). **Launched 2026-11-18
-  ~19:45 CET** (L on 2 GPUs, H on 4 GPUs). Rough cost per
+  ~19:45 CET** (L on 2 GPUs, H on 4 GPUs). **2026-11-19:** seed a of `vitb512` / `vitl512` failed
+  at start ("unknown variant": the variant parser read the trailing "2" of `vitb512` as seed b);
+  fixed in `scripts/m10_ablations.sh` (an exact variant name wins), relaunched as
+  `lmo-m15-vitb512-002`, `lmo-m15-vitl512-002`. Rough cost per
   sample vs ViT-B/384: B/512 ~2×, B/640 ~3×, L/512 ~5–6×, H/518 ~18× (estimates: B/512 ~21 h,
   B/640 ~35 h, L/512 ~38 h on 2 GPUs, H/518 ~3 days on 4 GPUs). Baseline: `tlwocc` 2×.
 - Note for the report: LM-O crops are usually smaller than 384 px natively, so a gain at 640 px
@@ -1194,7 +1197,9 @@ prefixes follow the milestone number (m12–m14 were used by audit / M11 jobs).
   2026-11-18 ~19:45 CET): `ycbv-m16-obj<ID>{,s1}-001` (21 × 2)
   and `tless-m16-obj<ID>{,s1}-001` (30 × 2), ~3 h each, launched in waves of ~20. Compare with
   `tok4x` / `tok4x2` (YCB-V 0.694 / 0.702; T-LESS 0.762 / 0.762) on validation (YCB-V
-  `eval_valrealn`; T-LESS the real validation of M17) and test.
+  `eval_valrealn`; T-LESS the real validation of M17) and test. **T-LESS baselines on the new real
+  validation (2026-11-18):** `tok4x` / `tok4x2` `eval_valrealn` 0.877 / 0.879 (mean 0.878), GT
+  boxes 0.910 / 0.911 (`$RUN/tok4x*/eval_valreal{,n}`).
 
 ### M17 — PBR + real training, all datasets (W5–W7)
 - Supervisor: try both PBR only and PBR + real and keep them clearly apart; compare with the
@@ -1385,7 +1390,8 @@ prefixes follow the milestone number (m12–m14 were used by audit / M11 jobs).
    | M15 `lmo-m15-{vitb512,vitb640}{,2}-001` (1 GPU), `lmo-m15-vitl512{,2}-001` (2 GPUs), `lmo-m15-vith518{,2}-001` (4 GPUs, `NUM_WORKERS=11`) | Queued. Estimates once running: B/512 ~19 h, B/640 ~29 h, L/512 ~32 h, H/518 ~2.5–3 days. Baseline `tlwocc{,2}` 2× (test 0.661, `eval_valn` 0.882) |
    | M17 `lmo-m17-real2x{,2}-001`; `tless-m17-{base2x,real2x}{,2}-001` | Queued (~11 h LM-O, ~42 h T-LESS). LM-O baseline `tlwocc{,2}`; T-LESS baseline `base2x{,2}` |
    | M16 wave 1: `ycbv-m16-obj{1..21}-001` (seed 0) | Queued (~3 h each). Next waves: T-LESS seed 0 (30), then seeds 1 (`…s1-001`, 51) |
-   | M16 baselines: T-LESS `tok4x` / `tok4x2` on the new `val_real` (`DS=tless scripts/m14_valreal_eval.sh`, dev) | Running in dev |
+   | M16 baselines: T-LESS `tok4x` / `tok4x2` on the new `val_real` (`DS=tless scripts/m14_valreal_eval.sh`, dev) | Done 2026-11-18: `eval_valrealn` **0.877 / 0.879 (mean 0.878)**, GT boxes 0.910 / 0.911 |
+   | M15 fix 2026-11-19: `lmo-m15-vitb512-001` stopped with "unknown variant" (a trailing "2" was read as seed b: `vitb512` → `vitb51`); parsing fixed (`8c894c0`), relaunched as `lmo-m15-vitb512-002`; `lmo-m15-vitl512-001` (would have failed the same way) replaced by `lmo-m15-vitl512-002`. The seed-b jobs `vitb5122`, `vitl5122` parse correctly | Queued |
    | **Still to do** | |
    | M18 multi-head (DR + mask + XYZ, PnP at test), then `lmo-m18-dense{,2}-001` | To code |
    | M19 R1 CosyPose PBR refiner on our poses (separate venv) | To do |

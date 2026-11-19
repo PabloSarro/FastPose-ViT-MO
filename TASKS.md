@@ -1194,7 +1194,7 @@ prefixes follow the milestone number (m12–m14 were used by audit / M11 jobs).
   `scripts/m10_merge.py` was already dataset-independent). Smoke run in `dev` (YCB-V object 2, 1
   epoch) OK.
 - [~] Jobs (user 2026-11-18: re-train now on all datasets; wave 1 = YCB-V seed 0, launched
-  2026-11-18 ~19:45 CET): `ycbv-m16-obj<ID>{,s1}-001` (21 × 2)
+  2026-11-18 ~19:45 CET; the other 81 submitted 2026-11-19 ~01:00 CET, user: not held for M15): `ycbv-m16-obj<ID>{,s1}-001` (21 × 2)
   and `tless-m16-obj<ID>{,s1}-001` (30 × 2), ~3 h each, launched in waves of ~20. Compare with
   `tok4x` / `tok4x2` (YCB-V 0.694 / 0.702; T-LESS 0.762 / 0.762) on validation (YCB-V
   `eval_valrealn`; T-LESS the real validation of M17) and test. **T-LESS baselines on the new real
@@ -1389,7 +1389,9 @@ prefixes follow the milestone number (m12–m14 were used by audit / M11 jobs).
    | **Launched 2026-11-18 ~19:45 CET (all Pending at first: the cluster was full, 29 nodes × 8 GPUs in use)** | |
    | M15 `lmo-m15-{vitb512,vitb640}{,2}-001` (1 GPU), `lmo-m15-vitl512{,2}-001` (2 GPUs), `lmo-m15-vith518{,2}-001` (4 GPUs, `NUM_WORKERS=11`) | Queued. Estimates once running: B/512 ~19 h, B/640 ~29 h, L/512 ~32 h, H/518 ~2.5–3 days. Baseline `tlwocc{,2}` 2× (test 0.661, `eval_valn` 0.882) |
    | M17 `lmo-m17-real2x{,2}-001`; `tless-m17-{base2x,real2x}{,2}-001` | Queued (~11 h LM-O, ~42 h T-LESS). LM-O baseline `tlwocc{,2}`; T-LESS baseline `base2x{,2}` |
-   | M16 wave 1: `ycbv-m16-obj{1..21}-001` (seed 0) | Queued (~3 h each). Next waves: T-LESS seed 0 (30), then seeds 1 (`…s1-001`, 51) |
+   | M16 wave 1: `ycbv-m16-obj{1..21}-001` (seed 0) | Queued (~3 h each) |
+   | M16 rest (user 2026-11-19: submit now, not held for M15): `tless-m16-obj{1..30}-001`, `ycbv-m16-obj{1..21}s1-001`, `tless-m16-obj{1..30}s1-001` | Submitted 2026-11-19 ~01:00 CET (81 jobs, ~3 h each) |
+   | Jobs removed by the cluster (status "Deleted", no exit code, not stopped by us; most likely preemption with ~120 of our jobs queued over the project share, but such jobs were requeued before): `lmo-m17-real2x-001` (after 40 s, 2026-11-18 23:36 UTC), `lmo-m15-vitb640{,2}-001` (in epoch 2, ~23:55 UTC). Resubmitted as `lmo-m17-real2x-002`, `lmo-m15-vitb640{,2}-002` (from scratch: only 1 epoch was lost). **When checking jobs, look for "Deleted" and resubmit with a new name** | Queued |
    | M16 baselines: T-LESS `tok4x` / `tok4x2` on the new `val_real` (`DS=tless scripts/m14_valreal_eval.sh`, dev) | Done 2026-11-18: `eval_valrealn` **0.877 / 0.879 (mean 0.878)**, GT boxes 0.910 / 0.911 |
    | M15 fix 2026-11-19: `lmo-m15-vitb512-001` stopped with "unknown variant" (a trailing "2" was read as seed b: `vitb512` → `vitb51`); parsing fixed (`8c894c0`), relaunched as `lmo-m15-vitb512-002`; `lmo-m15-vitl512-001` (would have failed the same way) replaced by `lmo-m15-vitl512-002`. The seed-b jobs `vitb5122`, `vitl5122` parse correctly | Queued |
    | **Still to do** | |

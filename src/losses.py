@@ -926,3 +926,24 @@ class Identity(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x
+
+
+def dense_losses(
+    dense: torch.Tensor, mask: torch.Tensor, xyz: torch.Tensor, valid: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Losses of the M18 dense heads: BCE of the mask logits and L1 of the XYZ in valid pixels.
+
+    Args:
+        dense: Network output (B, 4, S, S): channel 0 = mask logit, 1-3 = normalised XYZ.
+        mask: Visible-object mask target (B, 1, S, S) in {0, 1}.
+        xyz: Normalised object-coordinate target (B, 3, S, S) (BOPDataset.dense_targets).
+        valid: Pixels where xyz is defined (B, 1, S, S) in {0, 1}.
+
+    Returns:
+        (BCE averaged over all pixels, L1 averaged over the valid pixels and the 3 coordinates).
+    """
+    dense = dense.float()
+    bce = F.binary_cross_entropy_with_logits(dense[:, :1], mask)
+    n_valid = valid.sum().clamp(min=1.0)
+    l1 = ((dense[:, 1:4] - xyz).abs() * valid).sum() / (3.0 * n_valid)
+    return bce, l1

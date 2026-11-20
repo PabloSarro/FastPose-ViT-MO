@@ -22,8 +22,10 @@ from src.utils import (
     rotation_matrix_to_6d,
     quaternion_to_rotation_matrix,
 )
-from src.losses import SymmetricRotation6DLoss
+from src.losses import SymmetricRotation6DLoss, dense_losses
 from src.metrics import compute_metrics
+
+logger = logging.getLogger("src.utils")  # the training log: setup_logging attaches its handlers there
 
 
 @dataclass
@@ -42,6 +44,10 @@ class TrainingConfig:
     use_per_iteration_scheduling: bool = True
     global_iteration_start: int = 0
     translation_loss_weight: float = 1.0  # M11: total = weight * translation + rotation (training)
+    # M18 dense heads: total += mask_loss_weight * BCE(mask) + xyz_loss_weight * L1(XYZ)
+    dense: bool = False
+    mask_loss_weight: float = 1.0
+    xyz_loss_weight: float = 1.0
 
 
 @dataclass
@@ -56,6 +62,8 @@ class ValidationConfig:
     depth_mode: str = "legacy"
     # BOP: src.bop_metrics.BOPPoseMetrics for the symmetric ADD(-S)/MSSD/MSPD recalls, or None
     pose_metrics: Optional[object] = None
+    # M18: also report the dense losses and mask IoU (they are not part of the validation loss)
+    dense: bool = False
 
 
 # Batch fields beyond SPEED's (images, translations, rotations, bboxes); None when absent
@@ -107,6 +115,23 @@ def forward_model(
     if merge_outputs:
         return output[:, :3], output[:, 3:]
     return output
+
+
+def forward_dense(
+    model: nn.Module, images: torch.Tensor, obj_idx: torch.Tensor | None, merge_outputs: bool
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """forward_model for a model with dense heads: (translations, rotations, dense (B, 4, S, S))."""
+    output, dense = model(images, obj_idx, return_dense=True)
+    if merge_outputs:
+        return output[:, :3], output[:, 3:], dense
+    return output[0], output[1], dense
+
+
+def dense_targets_of(batch: dict, device: torch.device) -> tuple:
+    """(mask, xyz, valid) of a batch on `device`; a clear error if the dataset has no dense targets."""
+    if "mask" not in batch:
+        raise KeyError("dense heads need dense targets: build the BOPDataset with dense_size > 0")
+    return tuple(batch[k].to(device, non_blocking=True) for k in ("mask", "xyz", "xyz_valid"))
 
 
 class ProgressTracker:
@@ -469,6 +494,7 @@ def train_epoch(
     # Use global iteration counter from config
     current_iteration = config.global_iteration_start
     is_6d_rotation_loss = config.rotation_loss_type and "6d" in config.rotation_loss_type
+    dense_sums = torch.zeros(2, device=device)  # M18: summed mask BCE and XYZ L1
 
     for batch_idx, batch in enumerate(train_loader):
         batch = unpack_batch(batch)
@@ -492,9 +518,14 @@ def train_epoch(
         # Forward pass with conditional autocast
         use_amp = scaler is not None
         with autocast("cuda", enabled=use_amp):
-            pred_translations, pred_rotations = forward_model(
-                model, images, obj_idx, config.merge_outputs
-            )
+            if config.dense:
+                pred_translations, pred_rotations, pred_dense = forward_dense(
+                    model, images, obj_idx, config.merge_outputs
+                )
+            else:
+                pred_translations, pred_rotations = forward_model(
+                    model, images, obj_idx, config.merge_outputs
+                )
 
             # Process rotations based on loss type
             if isinstance(rotation_criterion, SymmetricRotation6DLoss) and (
@@ -518,6 +549,15 @@ def train_epoch(
 
             loss_translation = translation_criterion(pred_translations, translations, bboxes)
             total_loss = config.translation_loss_weight * loss_translation + loss_rotation
+            if config.dense:
+                mask, xyz, valid = dense_targets_of(batch, device)
+                loss_mask, loss_xyz = dense_losses(pred_dense, mask, xyz, valid)
+                total_loss = (
+                    total_loss
+                    + config.mask_loss_weight * loss_mask
+                    + config.xyz_loss_weight * loss_xyz
+                )
+                dense_sums += torch.stack([loss_mask.detach(), loss_xyz.detach()])
 
         # Backward pass
         if use_amp:
@@ -561,6 +601,15 @@ def train_epoch(
     train_loss, train_loss_translation, train_loss_rotation = loss_accumulator.get_averages(
         total_batches
     )
+
+    if config.dense:
+        mask_avg, xyz_avg = (dense_sums / total_batches).tolist()
+        logger.info(
+            f"Epoch {epoch + 1} dense train losses: mask BCE {mask_avg:.4f}, XYZ L1 {xyz_avg:.4f}"
+        )
+        if writer is not None:
+            writer.add_scalar("Loss/Train/Mask", mask_avg, epoch)
+            writer.add_scalar("Loss/Train/XYZ", xyz_avg, epoch)
 
     # Log results
     if writer is not None:
@@ -631,6 +680,7 @@ def val_epoch(
     inv_total_batches_tensor = torch.tensor(
         1.0 / total_val_batches, device=device, dtype=torch.float32
     )
+    dense_sums = torch.zeros(4, device=device)  # M18: mask BCE, XYZ L1 (summed), mask inter, union
 
     with torch.no_grad():
         for batch_idx, batch in enumerate(val_loader):
@@ -652,9 +702,14 @@ def val_epoch(
 
             # Forward pass with conditional autocast
             with autocast("cuda", enabled=device.type == "cuda"):
-                pred_translations, pred_rotations = forward_model(
-                    model, images, obj_idx, config.merge_outputs
-                )
+                if config.dense:
+                    pred_translations, pred_rotations, pred_dense = forward_dense(
+                        model, images, obj_idx, config.merge_outputs
+                    )
+                else:
+                    pred_translations, pred_rotations = forward_model(
+                        model, images, obj_idx, config.merge_outputs
+                    )
 
                 pred_rotations = process_rotation(pred_rotations, config.rotation_format)
 
@@ -692,6 +747,20 @@ def val_epoch(
                     batch["img_wh"][:, 0],
                 )
 
+            if config.dense:
+                mask, xyz, valid = dense_targets_of(batch, device)
+                loss_mask, loss_xyz = dense_losses(pred_dense, mask, xyz, valid)
+                predicted = pred_dense[:, :1].float() > 0
+                target = mask > 0.5
+                dense_sums += torch.stack(
+                    [
+                        loss_mask.detach(),
+                        loss_xyz.detach(),
+                        (predicted & target).sum().float(),
+                        (predicted | target).sum().float(),
+                    ]
+                )
+
             # Accumulate losses
             val_loss.add_(total_loss.detach())
             val_loss_translation.add_(loss_translation.detach())
@@ -725,9 +794,24 @@ def val_epoch(
 
     if config.pose_metrics is not None:
         val_metrics["bop"] = config.pose_metrics.compute()
+    if config.dense:
+        mask_loss, xyz_loss, inter, union = dense_sums.tolist()
+        val_metrics["dense"] = {
+            "mask_loss": mask_loss * inv_total_batches_scalar,
+            "xyz_loss": xyz_loss * inv_total_batches_scalar,
+            "mask_iou": inter / max(union, 1.0),
+        }
+        logger.info(
+            "Epoch %d dense val: mask BCE %.4f, XYZ L1 %.4f, mask IoU %.4f"
+            % (epoch + 1, *val_metrics["dense"].values())
+        )
 
     # Log results
     if writer is not None:
+        if "dense" in val_metrics:
+            writer.add_scalar("Loss/Validation/Mask", val_metrics["dense"]["mask_loss"], epoch)
+            writer.add_scalar("Loss/Validation/XYZ", val_metrics["dense"]["xyz_loss"], epoch)
+            writer.add_scalar("Dense/Validation/MaskIoU", val_metrics["dense"]["mask_iou"], epoch)
         if "bop" in val_metrics:
             bop = val_metrics["bop"]
             for key in ("AR_MSSD", "AR_MSPD", "score", "ADD@0.1d"):

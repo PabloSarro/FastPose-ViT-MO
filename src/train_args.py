@@ -388,6 +388,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="M11: total loss = weight * translation loss + rotation loss",
     )
     parser.add_argument(
+        "--dense_heads",
+        action="store_true",
+        help="BOP (M18): add the decoder on the patch tokens (visible mask + normalised object "
+        "coordinates) and train it with the pose losses; needs a ViT backbone",
+    )
+    parser.add_argument(
+        "--dense_size", type=int, default=64, help="M18: side of the dense outputs / targets"
+    )
+    parser.add_argument(
+        "--mask_loss_weight", type=float, default=1.0, help="M18: weight of the mask BCE"
+    )
+    parser.add_argument(
+        "--xyz_loss_weight", type=float, default=1.0, help="M18: weight of the XYZ L1"
+    )
+    parser.add_argument(
         "--bop_overfit",
         type=int,
         default=0,

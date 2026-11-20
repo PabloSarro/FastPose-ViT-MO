@@ -1276,9 +1276,10 @@ prefixes follow the milestone number (m12–m14 were used by audit / M11 jobs).
   - [x] **M18.2 Model**: `VisionTransformer` can return the patch tokens; `FastPoseViT(dense_heads=…)`
     adds the decoder and returns (pose output, {mask logits, xyz}). Tests: shapes, per-object
     selection, unchanged state dict / output without it. **Done 2026-11-20** (`tests/test_dense_head.py`, 9 tests; `FastPoseViT(dense_heads=True, dense_size=64)`, `model(x, obj_idx, return_dense=True)` → (pose output, (B, 4, S, S)); the pose output is bit-identical with or without the flag).
-  - [ ] **M18.3 Loss, engine, train args** (`--dense_heads --dense_size --mask_loss_weight
+  - [x] **M18.3 Loss, engine, train args** (`--dense_heads --dense_size --mask_loss_weight
     --xyz_loss_weight`): total = pose loss + w_m · BCE(mask) + w_x · L1(XYZ in valid pixels);
     separate loss values in the log; validation reports them too. Overfit smoke run (`--bop_overfit`).
+    **Done 2026-11-20** (`tests/test_dense_engine.py`, 4 tests; full suite 210 pass). The dense terms are in the training total only: the reported translation / rotation losses and the validation loss stay pose-only, so selection (BOP score) is unchanged; per-epoch mask BCE, XYZ L1 and (validation) mask IoU go to the log and TensorBoard (`Loss/{Train,Validation}/{Mask,XYZ}`, `Dense/Validation/MaskIoU`; under DDP the train values are rank 0's). Smoke run on `dev`, `--bop_overfit 256 --dense_heads`, 30 epochs: mask IoU 0.65 → 0.957, XYZ L1 0.49 → 0.061 (normalised units), BOP score on the same instances 0.979.
   - [ ] **M18.4 `src/pnp.py`**: the four solvers (PnP RANSAC + LM; LM from the DR pose; DR rotation
     + least-squares translation; DR only), batched over instances. Tests: GT correspondences give
     the GT pose, noise / outlier robustness.

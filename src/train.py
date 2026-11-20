@@ -117,6 +117,8 @@ def create_bop_datasets(args: argparse.Namespace, img_size: int, logger) -> tupl
     obj_ids = args.bop_obj_ids or list(bop_config(args)["obj_ids"])
     train_rows = rows_for_objects(train_index, obj_ids)
     common = dict(
+        dataset=dataset,  # the models of the XYZ normalisation (M18 dense targets)
+        dense_size=args.dense_size if args.dense_heads else 0,
         img_size=img_size,
         rotation_format=args.rotation_format,
         depth_mode=args.depth_mode,
@@ -340,6 +342,8 @@ def train(
         no_mlp=args.no_mlp,
         num_objects=len(bop_config(args)["obj_ids"]) if is_bop(args) else 1,
         object_conditioning=args.object_conditioning,
+        dense_heads=args.dense_heads,
+        dense_size=args.dense_size,
     ).to(device)
 
     # Set basic torch inductor optimization flags (always applied for better performance)
@@ -855,6 +859,9 @@ def train(
             use_per_iteration_scheduling=use_per_iteration_scheduling,
             global_iteration_start=global_iteration,
             translation_loss_weight=args.translation_loss_weight,
+            dense=args.dense_heads,
+            mask_loss_weight=args.mask_loss_weight,
+            xyz_loss_weight=args.xyz_loss_weight,
         )
 
         train_start = time.time()
@@ -894,6 +901,7 @@ def train(
             use_absolute_translation=args.use_absolute_translation,
             depth_mode=args.depth_mode,
             pose_metrics=pose_metrics,
+            dense=args.dense_heads,
         )
 
         if dist_info.is_main:
@@ -1047,6 +1055,10 @@ if __name__ == "__main__":
         args.selection_metric = "bop_score" if args.dataset in BOP_DATASETS else "val_loss"
     if args.selection_metric == "bop_score" and args.dataset not in BOP_DATASETS:
         parser.error("--selection_metric bop_score needs a BOP dataset")
+    if args.dense_heads and args.dataset not in BOP_DATASETS:
+        parser.error("--dense_heads needs a BOP dataset (its targets come from depth and the pose)")
+    if args.dense_heads and args.vit_model.startswith("convnext"):
+        parser.error("--dense_heads needs a ViT backbone")
     symmetric_ok = (
         args.dataset in BOP_DATASETS
         and args.rotation_format == "matrix"

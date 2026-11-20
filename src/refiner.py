@@ -80,31 +80,41 @@ def exact_update(
 
 
 class RefinerNet(nn.Module):
-    """FastPoseViT on IN_CHANNELS channels with a zero-initialised head (= the identity update).
+    """FastPoseViT (a ViT with an object token, or a ConvNeXt with per-object heads) on IN_CHANNELS
+    channels with a zero-initialised head (= the identity update).
 
-    The first convolution takes the pretrained RGB filters for the image and again for the render
-    colour (so the two are compared through the same features); the xyz / mask channels start at
-    zero. forward(x (B, 10, S, S), obj_idx (B,)) -> (B, 9).
+    The first convolution takes the pretrained RGB filters for the image; the render's colour
+    filters start at zero (default), negated or copied (render_init) and the xyz / mask channels
+    at zero. forward(x (B, 10, S, S), obj_idx (B,)) -> (B, 9).
     """
 
-    def __init__(self, vit_model: str, num_objects: int):
+    def __init__(self, vit_model: str, num_objects: int, render_init: str = "zero"):
         super().__init__()
+        if render_init not in ("zero", "copy", "neg"):
+            raise ValueError(f"render_init must be zero, copy or neg, got {render_init!r}")
+        cnn = vit_model.startswith("convnext")
         self.net = FastPoseViT(
             vit_model=vit_model, num_hidden_layers=0, hidden_layer_dim=0, out_dim_translation=3,
             out_dim_rotation=6, merge_outputs=True, nb_class_tokens=1, no_mlp=True,
-            num_objects=num_objects, object_conditioning="token",
+            num_objects=num_objects, object_conditioning="heads" if cnn else "token",
         )
-        old = self.net.backbone.conv_proj
+        old = self.net.backbone.features[0][0] if cnn else self.net.backbone.conv_proj
         new = nn.Conv2d(IN_CHANNELS, old.out_channels, old.kernel_size, old.stride, bias=old.bias is not None)
         with torch.no_grad():
             new.weight.zero_()
             new.weight[:, 0:3] = old.weight
-            new.weight[:, 3:6] = old.weight
+            # the render's colour filters: 0 = start as the pretrained image model and learn to use
+            # the render; neg = the first layer computes image - render (a built-in comparison);
+            # copy = image + render (entangled: kept for the record, it did not learn)
+            new.weight[:, 3:6] = {"zero": 0.0, "copy": 1.0, "neg": -1.0}[render_init] * old.weight
             if old.bias is not None:
                 new.bias.copy_(old.bias)
             self.net.output.weight.zero_()
             self.net.output.bias.zero_()
-        self.net.backbone.conv_proj = new
+        if cnn:
+            self.net.backbone.features[0][0] = new
+        else:
+            self.net.backbone.conv_proj = new
 
     def forward(self, x: torch.Tensor, obj_idx: torch.Tensor) -> torch.Tensor:
         return self.net(x, obj_idx)
@@ -208,11 +218,15 @@ class RefineDataset(BOPDataset):
     obj_idx, diameter, row. With augment=False the perturbation is deterministic per row.
     """
 
-    def __init__(self, assets: dict, size: int = 256, margin: float = 1.4, noise_seed: int = 0, **kwargs):
+    def __init__(
+        self, assets: dict, size: int = 256, margin: float = 1.4, noise_seed: int = 0,
+        noise_levels=NOISE_LEVELS, **kwargs,
+    ):
         kwargs.setdefault("img_size", size)
         kwargs.setdefault("crop_context", True)
         super().__init__(**kwargs)
         self.size, self.margin, self.noise_seed = size, margin, noise_seed
+        self.noise_levels = noise_levels
         self.points_box = np.asarray(assets["points"][:, :2000], dtype=np.float64)
 
     def __getitem__(self, row: int) -> dict:
@@ -222,7 +236,7 @@ class RefineDataset(BOPDataset):
         R_gt = nearest_rotation(index["R"][row].astype(np.float64))
         t_gt = index["t"][row].astype(np.float64)
         rng = np.random.default_rng() if self.augment else np.random.default_rng((self.noise_seed, row))
-        R, t = perturb_pose(R_gt, t_gt, K, self.size / self.margin, rng)
+        R, t = perturb_pose(R_gt, t_gt, K, self.size / self.margin, rng, self.noise_levels)
         image = self.load_image(row)
         if self.real_background and index["source"][row] > 0:
             image = self.replace_background(row, image)

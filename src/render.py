@@ -200,7 +200,7 @@ class PointRenderer:
             dim=1,
         )
         image = attrs.view(B, size, size, 8).permute(0, 3, 1, 2).contiguous()
-        image = self._close_holes(image)
+        image = self._close_holes(self._close_holes(image))  # two passes: ~1 point per pixel on large crops
         return image[:, :7].contiguous(), image[:, 7:8].contiguous()
 
     @staticmethod

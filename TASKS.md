@@ -1336,8 +1336,9 @@ prefixes follow the milestone number (m12–m14 were used by audit / M11 jobs).
   - [x] **M19.2 `src/refiner.py`**: the network, the update, the symmetric disentangled point loss.
     Tests: the exact update recovers GT, loss zero at GT and invariant to symmetries, gradients.
     **Done 2026-11-20** (`tests/test_refiner.py`, 9 tests; new backbone `vit_b_16_256` = the 384 px SWAG weights at 256 px). Noise levels of the starting poses: 45 % (3°, 1 % crop side, 1.5 % depth), 35 % (8°, 3 %, 4 %), 20 % (20°, 8 %, 10 %), around our DR errors (median 4.6°, ~16 mm).
-  - [ ] **M19.3 data + training**: `RefineDataset` (perturbed pose → crop → sample), `src/train_refiner.py`
+  - [x] **M19.3 data + training**: `RefineDataset` (perturbed pose → crop → sample), `src/train_refiner.py`
     (AdamW, bf16, object-balanced virtual epochs, `last.pt` resume), overfit smoke on `dev`.
+    **Done 2026-11-20** (`src/refiner.py` `RefineDataset`, `src/train_refiner.py`; 500 samples/s on one A100: an 84k-sample epoch ~3 min). Findings: (1) overfitting 256 instances reaches loss 0.0008 (the chain crop → render → update → loss is consistent; `scripts/m19_look_samples.py` shows the GT render outline on the objects). (2) **A ViT-B (10-channel first layer, object token) does not learn on the real distribution: its output stays at the identity** (gain 0.0 % after 12 short epochs) with image-plus-render, zero and negated render-filter inits, with and without pixel augmentation, single or mixed noise. (3) **A ConvNeXt-B (10-channel stem, per-object heads) learns at once: 32.7 % of the starting error removed after 6 short epochs of 25,600 samples.** So the refiner's backbone is `convnext_base` (the comparison of two aligned images wants convolutions, as CosyPose's EfficientNet). Starting-pose error: the loss is ~0.11 diameters on average (depth and rotation noise like our DR errors).
   - [ ] **M19.4 inference + evaluation**: `scripts/refine_bop.py` (our results CSV in, refined CSV per
     iteration out), `scripts/m19_refiner.sh` (train + eval LM-O validation/test).
   - [ ] **M19.5 jobs**: `lmo-m19-refine-001` (and the variants chosen by the smoke runs), 2 seeds.

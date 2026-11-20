@@ -138,8 +138,9 @@ def test_network_conv_copies_the_pretrained_filters():
     except Exception as e:  # weights not downloadable here
         pytest.skip(f"pretrained weights unavailable: {e}")
     w = net.net.backbone.conv_proj.weight
-    torch.testing.assert_close(w[:, 0:3], w[:, 3:6])
-    assert w[:, 6:].abs().max().item() == 0.0 and w[:, 0:3].abs().sum() > 0
+    assert w[:, 3:].abs().max().item() == 0.0 and w[:, 0:3].abs().sum() > 0  # default: render filters at zero
+    neg = RefinerNet("vit_b_16_256", num_objects=2, render_init="neg").net.backbone.conv_proj.weight
+    torch.testing.assert_close(neg[:, 3:6], -neg[:, 0:3])
 
 
 def test_perturbation_statistics():
@@ -199,3 +200,11 @@ def test_refine_instances_chains_iterations():
     for n, (Rn, tn) in enumerate(res, start=1):
         np.testing.assert_allclose(tn[:, 2], t[:, 2] * 1.01**n, rtol=1e-6)
         np.testing.assert_allclose(Rn, R, atol=1e-6)
+
+
+def test_convnext_refiner_uses_per_object_heads_and_ten_channels():
+    net = RefinerNet("convnext_base", num_objects=3).eval()
+    assert net.net.backbone.features[0][0].in_channels == IN_CHANNELS
+    with torch.no_grad():
+        out = net(torch.randn(2, IN_CHANNELS, 64, 64), torch.tensor([0, 2]))
+    assert out.shape == (2, 9) and out.abs().max().item() == 0.0  # zero head: the identity

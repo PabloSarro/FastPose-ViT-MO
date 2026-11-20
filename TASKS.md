@@ -1280,9 +1280,10 @@ prefixes follow the milestone number (m12–m14 were used by audit / M11 jobs).
     --xyz_loss_weight`): total = pose loss + w_m · BCE(mask) + w_x · L1(XYZ in valid pixels);
     separate loss values in the log; validation reports them too. Overfit smoke run (`--bop_overfit`).
     **Done 2026-11-20** (`tests/test_dense_engine.py`, 4 tests; full suite 210 pass). The dense terms are in the training total only: the reported translation / rotation losses and the validation loss stay pose-only, so selection (BOP score) is unchanged; per-epoch mask BCE, XYZ L1 and (validation) mask IoU go to the log and TensorBoard (`Loss/{Train,Validation}/{Mask,XYZ}`, `Dense/Validation/MaskIoU`; under DDP the train values are rank 0's). Smoke run on `dev`, `--bop_overfit 256 --dense_heads`, 30 epochs: mask IoU 0.65 → 0.957, XYZ L1 0.49 → 0.061 (normalised units), BOP score on the same instances 0.979.
-  - [ ] **M18.4 `src/pnp.py`**: the four solvers (PnP RANSAC + LM; LM from the DR pose; DR rotation
+  - [x] **M18.4 `src/pnp.py`**: the four solvers (PnP RANSAC + LM; LM from the DR pose; DR rotation
     + least-squares translation; DR only), batched over instances. Tests: GT correspondences give
     the GT pose, noise / outlier robustness.
+    **Done 2026-11-20** (`tests/test_pnp.py`, 11 tests). Chain test: dense targets of 30 PBR / 30 LM-O test instances → correspondences → `pnp` / `pnp_init` return the GT pose (0.000°, 0.00 mm); `dr_rot_pnp_t` keeps the given rotation. Synthetic: 0.5 px noise + 30 % outliers → < 1°, < 3 mm. `pnp_init` first used a fixed 8 px inlier threshold around the DR pose and dropped every point (DR errors of a few ° / cm are ~10 px): now an adaptive threshold (2.5 × the median error). A failed mode returns the DR pose with `fallback` set, so the failures can be counted.
   - [ ] **M18.5 Evaluation**: `bop_evaluate.py --pose_mode {dr,pnp,pnp_init,dr_rot_pnp_t}` (+ time),
     `scripts/m18_dense.sh` (train + the four evaluations, validation first, test once).
   - [ ] **M18.6 Open points found while designing (not done):** (a) XYZ labels of symmetric objects

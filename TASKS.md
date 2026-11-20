@@ -1317,8 +1317,28 @@ prefixes follow the milestone number (m12–m14 were used by audit / M11 jobs).
   models, not solved. **Conclusion: this refiner is no upper bound for us; R2 (our own refiner,
   trained on perturbations of our poses) is the only way to test whether refinement helps. Decision
   for the user / supervisor (costly: batched GPU renderer + training).**
-- [ ] R2 only if R1 gains clearly: our own refiner (FastPose-ViT on crop + rendering at the current
-  pose → pose update, trained on PBR with perturbed poses; needs a batched GPU renderer).
+- [~] R2 our own refiner (FastPose-ViT on crop + rendering at the current pose → pose update,
+  trained on PBR with perturbed poses; needs a batched GPU renderer). **User 2026-11-20: yes, build it**
+  (R1 gave no gain, so R2 is the only way to know whether refinement helps us). **Plan (one commit per bullet):**
+  design = a ViT-B (our `FastPoseViT`, object token) on 10 channels: the image crop around the
+  projection of the object at the current pose (box × 1.4, as CosyPose), plus a render of the model
+  at that pose (shaded colour 3, normalised object coordinates 3, mask 1). Output 9 values: image-space
+  shift (Δu, Δv in crop sides), depth ratio exp(δz) and a 6D rotation update applied in the camera frame
+  (CosyPose's parametrisation). Loss: point-matching L1 in mm / diameter, minimum over the object's
+  symmetries, disentangled (full + rotation-only + translation-only). Training: PBR images with GT
+  poses perturbed by a mixture of noise levels (DR-like errors and larger); inference iterates 1–4 times
+  from our DR poses (CSV in, CSV out, official eval, as R1).
+  - [ ] **M19.1 `src/render.py`**: pure-PyTorch batched point-splatting renderer (z-buffer with
+    `scatter_reduce`, 3×3 splats), model points sampled from the BOP meshes (vertex colours; YCB-V
+    texture; grey T-LESS CAD) + cache. Tests: the render of a model at the GT pose has the depth of
+    the PBR depth image and the mask of `mask_visib` (unoccluded instances).
+  - [ ] **M19.2 `src/refiner.py`**: the network, the update, the symmetric disentangled point loss.
+    Tests: the exact update recovers GT, loss zero at GT and invariant to symmetries, gradients.
+  - [ ] **M19.3 data + training**: `RefineDataset` (perturbed pose → crop → sample), `src/train_refiner.py`
+    (AdamW, bf16, object-balanced virtual epochs, `last.pt` resume), overfit smoke on `dev`.
+  - [ ] **M19.4 inference + evaluation**: `scripts/refine_bop.py` (our results CSV in, refined CSV per
+    iteration out), `scripts/m19_refiner.sh` (train + eval LM-O validation/test).
+  - [ ] **M19.5 jobs**: `lmo-m19-refine-001` (and the variants chosen by the smoke runs), 2 seeds.
 
 ### M20 — Final models and EPFL report (W7–W11)
 - [ ] Re-examine older candidates with the new rule (evaluation-only table over existing runs):

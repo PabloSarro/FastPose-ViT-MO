@@ -1273,9 +1273,9 @@ prefixes follow the milestone number (m12–m14 were used by audit / M11 jobs).
     per scene (`scene_camera.json`, lazy cache: no index rebuild). Points outside the model box
     ± 15 % (depth noise, occluders) are not valid. Tests: reprojection of the targets, bands, scale.
     **Done 2026-11-20** (`tests/test_bop_dense.py`, 10 tests): points are 1.2 mm (PBR) / 3.0 mm (LM-O real) from the model surface, 98 % / 95 % of the mask pixels are valid; a wrong-pose control fails the check.
-  - [ ] **M18.2 Model**: `VisionTransformer` can return the patch tokens; `FastPoseViT(dense_heads=…)`
+  - [x] **M18.2 Model**: `VisionTransformer` can return the patch tokens; `FastPoseViT(dense_heads=…)`
     adds the decoder and returns (pose output, {mask logits, xyz}). Tests: shapes, per-object
-    selection, unchanged state dict / output without it.
+    selection, unchanged state dict / output without it. **Done 2026-11-20** (`tests/test_dense_head.py`, 9 tests; `FastPoseViT(dense_heads=True, dense_size=64)`, `model(x, obj_idx, return_dense=True)` → (pose output, (B, 4, S, S)); the pose output is bit-identical with or without the flag).
   - [ ] **M18.3 Loss, engine, train args** (`--dense_heads --dense_size --mask_loss_weight
     --xyz_loss_weight`): total = pose loss + w_m · BCE(mask) + w_x · L1(XYZ in valid pixels);
     separate loss values in the log; validation reports them too. Overfit smoke run (`--bop_overfit`).

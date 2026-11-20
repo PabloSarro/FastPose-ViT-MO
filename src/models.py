@@ -188,6 +188,51 @@ class MLPWithProjection(nn.Module):
                 nn.init.zeros_(self.residual_proj.bias)
 
 
+class DenseHead(nn.Module):
+    """Decoder from the ViT patch tokens to a visible-object mask and object coordinates (M18).
+
+    Tokens (B, g*g, D) -> grid (B, D, g, g) -> 1x1 conv to `hidden` -> bilinear x2 + 3x3 conv ->
+    bilinear to `size` + 3x3 conv -> 1x1 conv with 4 channels per output set: channel 0 = mask
+    logit, channels 1-3 = normalised XYZ (src/bop_dataset.object_extents). GroupNorm, no batch
+    statistics: the batch is small and the objects differ.
+
+    Args:
+        in_dim: Token width (the backbone hidden size).
+        grid: Patch grid side g (input size / patch size).
+        size: Output side in pixels (--dense_size).
+        sets: Number of output sets: num_objects with per-object heads, else 1.
+        hidden: Decoder width.
+    """
+
+    def __init__(self, in_dim: int, grid: int, size: int, sets: int = 1, hidden: int = 256):
+        super().__init__()
+        self.grid, self.size, self.sets = grid, size, sets
+        half = hidden // 2
+
+        def block(cin: int, cout: int, kernel: int) -> nn.Sequential:
+            return nn.Sequential(
+                nn.Conv2d(cin, cout, kernel, padding=kernel // 2),
+                nn.GroupNorm(16, cout),
+                nn.GELU(),
+            )
+
+        self.proj = block(in_dim, hidden, 1)
+        self.conv1 = block(hidden, half, 3)
+        self.conv2 = block(half, half, 3)
+        self.out = nn.Conv2d(half, 4 * sets, 1)
+
+    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
+        """(B, g*g, D) -> (B, 4 * sets, size, size)."""
+        b, n, d = tokens.shape
+        if n != self.grid * self.grid:
+            raise ValueError(f"expected {self.grid}x{self.grid} patch tokens, got {n}")
+        x = tokens.transpose(1, 2).reshape(b, d, self.grid, self.grid)
+        x = self.proj(x)
+        x = self.conv1(nn.functional.interpolate(x, scale_factor=2, mode="bilinear"))
+        x = self.conv2(nn.functional.interpolate(x, size=self.size, mode="bilinear"))
+        return self.out(x)
+
+
 class FastPoseViT(nn.Module):
     """
     6D pose estimation model using Vision Transformer or ConvNeXt backbone with MLPs
@@ -209,6 +254,8 @@ class FastPoseViT(nn.Module):
         no_mlp: bool = False,
         num_objects: int = 1,
         object_conditioning: str = "heads",
+        dense_heads: bool = False,
+        dense_size: int = 64,
     ):
         """
         Model initialization
@@ -233,6 +280,10 @@ class FastPoseViT(nn.Module):
                 num_objects > 1 (see OBJECT_CONDITIONINGS): "heads" = one output head per object
                 (option a), "token" = one shared head and a per-object class token (option b),
                 "both" = a + b. Defaults to "heads".
+            dense_heads (bool, optional): Add the M18 decoder on the patch tokens (mask + object
+                coordinates, see DenseHead; ViT only). Its outputs are computed only when forward
+                is called with return_dense=True, so the pose output is unchanged. Defaults to False.
+            dense_size (int, optional): Side of the dense outputs. Defaults to 64.
         """
         super().__init__()
 
@@ -311,9 +362,21 @@ class FastPoseViT(nn.Module):
                 hidden_dim = self.backbone.class_token.shape[-1]
                 self.object_token = nn.Parameter(torch.zeros(num_objects, 1, hidden_dim))
 
+            self.dense = None
+            if dense_heads:
+                self.dense = DenseHead(
+                    self.backbone.hidden_dim,
+                    self.backbone.image_size // self.backbone.patch_size,
+                    dense_size,
+                    sets=num_objects if self.object_heads else 1,
+                )
+
         else:  # ConvNeXt
             if self.object_tokens:
                 raise ValueError("object tokens need a ViT backbone (no class token in ConvNeXt)")
+            if dense_heads:
+                raise ValueError("dense heads need a ViT backbone (patch tokens)")
+            self.dense = None
             if nb_class_tokens > 1:
                 warnings.warn(
                     f"nb_class_tokens={nb_class_tokens} is ignored for ConvNeXt backbone "
@@ -443,7 +506,7 @@ class FastPoseViT(nn.Module):
         return out[torch.arange(out.shape[0], device=out.device), obj_idx.to(out.device)]
 
     def forward(
-        self, x: torch.Tensor, obj_idx: torch.Tensor | None = None
+        self, x: torch.Tensor, obj_idx: torch.Tensor | None = None, return_dense: bool = False
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """
         Forward pass of the model
@@ -455,20 +518,45 @@ class FastPoseViT(nn.Module):
                 outputs of all objects are returned without it, with an extra object dimension
                 (B, num_objects, D).
 
+            return_dense (bool, optional): With dense heads, return (pose output, dense) where
+                dense is (B, 4, dense_size, dense_size): channel 0 = mask logit, 1-3 = XYZ. The
+                pose output is exactly what it is without this flag.
+
         Returns:
             torch.Tensor: Output tensor
         """
+        if return_dense and self.dense is None:
+            raise ValueError("return_dense needs a model built with dense_heads=True")
+        tokens = None
         if self.object_tokens:
             if obj_idx is None:
                 raise ValueError("object tokens need obj_idx")
-            x = self.backbone(x, class_token_offset=self.object_token[obj_idx.to(x.device)])
+            x = self.backbone(
+                x,
+                class_token_offset=self.object_token[obj_idx.to(x.device)],
+                return_tokens=return_dense,
+            )
         elif self.backbone_type == "vit":
-            x = self.backbone(x)
+            x = self.backbone(x, return_tokens=return_dense)
         else:  # ConvNeXt
             x = self.backbone.features(x)  # [batch, channels, H, W]
             x = self.gap(x)  # [batch, channels, 1, 1]
             x = x.flatten(1)  # [batch, channels]
+        if return_dense:
+            x, tokens = x  # class-token features, patch tokens
 
+        pose = self._pose_output(x, obj_idx)
+        if not return_dense:
+            return pose
+        dense = self.dense(tokens)
+        if self.object_heads:  # keep the sample's own object: (B, num_objects * 4, S, S) -> (B, 4, S, S)
+            dense = dense.view(dense.shape[0], self.num_objects, 4, *dense.shape[-2:])
+            if obj_idx is not None:
+                dense = dense[torch.arange(dense.shape[0], device=dense.device), obj_idx.to(dense.device)]
+        return pose, dense
+
+    def _pose_output(self, x: torch.Tensor, obj_idx: torch.Tensor | None):
+        """The translation / rotation heads on the class-token features (forward, unchanged)."""
         if not self.object_heads:
             if self.merge_outputs:
                 return self.output(x)

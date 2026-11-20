@@ -475,17 +475,22 @@ class VisionTransformer(nn.Module):
         return self.class_token.expand(batch_size, -1, -1).clone()
 
     def forward(
-        self, x: torch.Tensor, class_token_offset: torch.Tensor | None = None
-    ) -> torch.Tensor:
+        self,
+        x: torch.Tensor,
+        class_token_offset: torch.Tensor | None = None,
+        return_tokens: bool = False,
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """Perform forward pass through the Vision Transformer.
 
         Args:
             x: Input image tensor of shape (batch, 3, height, width).
             class_token_offset: Optional per-sample vector added to the class token(s),
                 (batch, 1, hidden_dim), e.g. a per-object embedding (FastPoseViT object tokens).
+            return_tokens: Also return the patch tokens after the encoder (M18 dense heads).
 
         Returns:
-            Classification logits or features from class tokens.
+            Classification logits or features from class tokens; with return_tokens, a tuple of
+            that and the patch tokens (batch, num_patches, hidden_dim) in row-major grid order.
         """
         # Reshape and permute the input tensor
         x = self._process_input(x)
@@ -498,6 +503,7 @@ class VisionTransformer(nn.Module):
         x = torch.cat([batch_class_token, x], dim=1)
 
         x = self.encoder(x)
+        patch_tokens = x[:, self.nb_class_tokens :] if return_tokens else None
 
         # Use all class tokens - more efficient slicing
         class_tokens = x[:, : self.nb_class_tokens]
@@ -508,6 +514,8 @@ class VisionTransformer(nn.Module):
         else:
             x = class_tokens.squeeze(1)
 
+        if return_tokens:
+            return self.heads(x), patch_tokens
         return self.heads(x)
 
 

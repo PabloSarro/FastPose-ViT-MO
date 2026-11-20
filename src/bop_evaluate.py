@@ -45,11 +45,13 @@ from src.bop_dataset import (
     default_bop_root,
     load_index,
     load_models_info,
+    object_extents,
     rows_for_objects,
     select_rows,
 )
-from src.engine import CoordinateTransformer, forward_model
+from src.engine import CoordinateTransformer, forward_dense, forward_model
 from src.models import OBJECT_CONDITIONINGS, VIT_MODELS, FastPoseViT
+from src.pnp import POSE_MODES, PoseRefiner
 from src.utils import process_rotation, quaternion_to_rotation_matrix
 
 # BOP19 error thresholds: MSSD in fractions of the diameter, MSPD in pixels at 640 px width
@@ -71,6 +73,8 @@ def build_model(args: argparse.Namespace, device: torch.device) -> FastPoseViT:
         no_mlp=True,
         num_objects=len(SPLITS[args.dataset]["obj_ids"]),  # as trained: one per dataset object
         object_conditioning=args.object_conditioning,
+        dense_heads=getattr(args, "dense_heads", False),  # M18; the decoder is in the weights
+        dense_size=getattr(args, "dense_size", 64),
     )
     # model.pth is a state dict; last.pt (train.py checkpoint) holds it under "model"
     state = load_safe(args.model_weights)  # weights_only + data-only allowlist (audit W9)
@@ -78,9 +82,26 @@ def build_model(args: argparse.Namespace, device: torch.device) -> FastPoseViT:
     return model.to(device).eval()
 
 
+def make_refiner(args, dataset) -> PoseRefiner | None:
+    """The M18 pose mode of the arguments as a PoseRefiner (None for "dr", the plain model)."""
+    mode = getattr(args, "pose_mode", "dr")
+    if mode == "dr":
+        return None
+    centre, half = object_extents(
+        default_bop_root(),
+        SPLITS[args.dataset]["models_dataset"],
+        [int(o) for o in dataset.index["obj_ids"]],
+    )
+    return PoseRefiner(mode, centre, half, getattr(args, "crop_scale", 1.0))
+
+
 @torch.no_grad()
 def predict(model, dataset, args, device) -> dict:
-    """Absolute poses (R, t in mm) predicted for every row of `dataset`, in row order."""
+    """Absolute poses (R, t in mm) predicted for every row of `dataset`, in row order.
+
+    With a dense pose mode (--pose_mode other than dr, M18) the poses are the refiner's, and the
+    result has "fallback" too: where the mode failed and the DR pose was kept."""
+    refiner = make_refiner(args, dataset)
     loader = DataLoader(
         dataset, batch_size=args.batch_size, num_workers=args.num_workers, shuffle=False
     )
@@ -90,12 +111,15 @@ def predict(model, dataset, args, device) -> dict:
         no_rotation_compensation=getattr(args, "no_rotation_compensation", False),
         depth_mode=args.depth_mode,
     )
-    out = {"R": [], "t": []}
+    out = {"R": [], "t": [], "fallback": []}
     for batch in loader:
         images = batch["images"].to(device)
         obj_idx = batch["obj_idx"].to(device)
         with autocast("cuda", enabled=device.type == "cuda"):
-            pred_t, pred_R = forward_model(model, images, obj_idx, merge_outputs=True)
+            if refiner is not None:
+                pred_t, pred_R, dense = forward_dense(model, images, obj_idx, merge_outputs=True)
+            else:
+                pred_t, pred_R = forward_model(model, images, obj_idx, merge_outputs=True)
             pred_R = process_rotation(pred_R, "matrix")
         # The ground-truth entries are returned too and ignored: only the prediction is needed
         abs_t, abs_q, _, _ = transformer.transform_to_absolute(
@@ -108,8 +132,20 @@ def predict(model, dataset, args, device) -> dict:
             img_wh=batch["img_wh"],
             diameter=batch["diameter"],
         )
-        out["R"].append(quaternion_to_rotation_matrix(abs_q).cpu().numpy())
-        out["t"].append(abs_t.cpu().numpy())
+        R, t = quaternion_to_rotation_matrix(abs_q).cpu().numpy(), abs_t.cpu().numpy()
+        fallback = np.zeros(len(R), dtype=bool)
+        if refiner is not None:
+            R, t, fallback = refiner(
+                dense.float().cpu().numpy(),
+                batch["bboxes"].numpy(),
+                batch["K"].numpy(),
+                batch["obj_idx"].numpy(),
+                R,
+                t,
+            )
+        out["R"].append(R)
+        out["t"].append(t)
+        out["fallback"].append(fallback)
     return {k: np.concatenate(v) for k, v in out.items()}
 
 
@@ -156,12 +192,13 @@ def normalize_crops(crops: np.ndarray, device) -> torch.Tensor:
     return ((images - mean) / std).contiguous()
 
 
-def estimate_image(model, dataset, transformer, rows, image, device):
+def estimate_image(model, dataset, transformer, rows, image, device, refiner=None):
     """Poses of the instances `rows` of one decoded image: (R (N, 3, 3), t (N, 3) mm) on the CPU.
 
     The whole per-image path: crop and normalisation of every instance, the network on that
     batch, and R, t recovery. Used for the BOP `time` (time_per_image) and the M9 latency
-    benchmark (optimization/bop_latency.py).
+    benchmark (optimization/bop_latency.py). With a `refiner` (M18, make_refiner) the network
+    also returns its dense outputs and the poses are the refiner's, PnP time included.
     """
     if dataset.augment:
         raise ValueError("estimate_image needs a dataset without augmentation")
@@ -177,8 +214,12 @@ def estimate_image(model, dataset, transformer, rows, image, device):
     )
     images = normalize_crops(crops, device)
     obj_idx = torch.as_tensor(index["obj_idx"][rows], device=device)
+    dense = None
     with autocast("cuda", enabled=device.type == "cuda"):
-        pred_t, pred_R = forward_model(model, images, obj_idx, merge_outputs=True)
+        if refiner is not None:
+            pred_t, pred_R, dense = forward_dense(model, images, obj_idx, merge_outputs=True)
+        else:
+            pred_t, pred_R = forward_model(model, images, obj_idx, merge_outputs=True)
     # R, t recovery on the CPU, in fp32: N x 9 values, and on the GPU its masked ops synced it
     # ~66 times per image (~9 ms, M9 latency)
     pred_t, pred_R = pred_t.float().cpu(), pred_R.float().cpu()
@@ -194,7 +235,17 @@ def estimate_image(model, dataset, transformer, rows, image, device):
         img_wh=torch.from_numpy(index["img_wh"][rows]).float(),
         diameter=torch.from_numpy(index["diameters"][index["obj_idx"][rows]]).float(),
     )
-    return quaternion_to_rotation_matrix(abs_q).numpy(), abs_t.numpy()
+    R, t = quaternion_to_rotation_matrix(abs_q).numpy(), abs_t.numpy()
+    if refiner is not None:
+        R, t, _ = refiner(
+            dense.float().cpu().numpy(),
+            np.array(bboxes),
+            index["K"][rows],
+            index["obj_idx"][rows],
+            R,
+            t,
+        )
+    return R, t
 
 
 def time_per_image(model, dataset, args, device, warmup: int = 3) -> dict:
@@ -213,9 +264,10 @@ def time_per_image(model, dataset, args, device, warmup: int = 3) -> dict:
     for row in range(len(dataset)):
         groups.setdefault((int(index["scene_id"][row]), int(index["im_id"][row])), []).append(row)
     transformer = pose_transformer(dataset, args)
+    refiner = make_refiner(args, dataset)
 
     def estimate(rows, image):
-        return estimate_image(model, dataset, transformer, rows, image, device)
+        return estimate_image(model, dataset, transformer, rows, image, device, refiner)
 
     times = {}
     model.eval()
@@ -468,6 +520,20 @@ def main() -> None:
         "--object_conditioning", default="heads", choices=OBJECT_CONDITIONINGS, help="as train.py"
     )
     parser.add_argument(
+        "--dense_heads",
+        action="store_true",
+        help="M18: the weights come from train.py --dense_heads (needed for --pose_mode != dr)",
+    )
+    parser.add_argument("--dense_size", type=int, default=64, help="as train.py")
+    parser.add_argument(
+        "--pose_mode",
+        default="dr",
+        choices=POSE_MODES,
+        help="M18: dr = direct regression; pnp = PnP-RANSAC on the predicted mask + XYZ; "
+        "pnp_init = LM from the DR pose; dr_rot_pnp_t = DR rotation + PnP translation. A mode "
+        "that fails for an instance keeps its DR pose (counted in pose_mode.json)",
+    )
+    parser.add_argument(
         "--bbox_source",
         default="visib",
         choices=["visib", "obj"],
@@ -528,6 +594,10 @@ def main() -> None:
     if args.table_only:
         write_tables(args.out_dir, args.splits, symmetric_ids, boxes_label(args))
         return
+    if args.pose_mode != "dr" and not args.dense_heads:
+        parser.error("--pose_mode other than dr needs --dense_heads")
+    if args.dense_heads and args.backend == "trt":
+        parser.error("--dense_heads is not supported by the TensorRT backend")
     if args.backend == "trt" and not args.trt_engine:
         parser.error("--backend trt needs --trt_engine")
     if args.backend == "torch" and not args.model_weights:
@@ -544,6 +614,7 @@ def main() -> None:
     os.makedirs(args.out_dir, exist_ok=True)
 
     per_obj = {o: {} for o in args.obj_ids}
+    fallbacks = {}
     for split in args.splits:
         index = load_index(args.dataset, split)
         # One pass over all requested objects, then the errors object by object
@@ -581,6 +652,13 @@ def main() -> None:
             crop_scale=getattr(args, "crop_scale", 1.0),
         )
         pred_det = predict(model, dataset, args, device)
+        if args.pose_mode != "dr":
+            n_fail = int(pred_det["fallback"].sum())
+            fallbacks[split] = {"instances": len(pred_det["R"]), "fallback_to_dr": n_fail}
+            logging.info(
+                f"{split}: pose mode {args.pose_mode}: {n_fail} of {len(pred_det['R'])} "
+                "instances fell back to the DR pose"
+            )
         # Targets without a detection: a pose 10 km away, so every error counts as a failure
         pred_all = {
             "R": np.tile(np.eye(3, dtype=pred_det["R"].dtype), (n_rows, 1, 1)),
@@ -636,6 +714,8 @@ def main() -> None:
     for obj_id, d in per_obj.items():
         with open(os.path.join(args.out_dir, f"obj_{obj_id}", "summary.json"), "w") as f:
             json.dump(d, f, indent=2)
+    with open(os.path.join(args.out_dir, "pose_mode.json"), "w") as f:
+        json.dump({"pose_mode": args.pose_mode, "splits": fallbacks}, f, indent=2)
     write_tables(args.out_dir, args.splits, symmetric_ids, boxes_label(args))
 
 

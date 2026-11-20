@@ -218,3 +218,48 @@ def estimate_pose(
         return R_dr, np.asarray(t_dr, dtype=np.float64), {"fallback": mode != "dr", "inliers": 0}
     R, t, inliers = result
     return R, t, {"fallback": False, "inliers": inliers}
+
+
+class PoseRefiner:
+    """A pose mode applied to a batch: dense outputs + DR poses -> final poses.
+
+    Args:
+        mode: One of POSE_MODES.
+        centre, half: Model-box centre / half-extent (mm) of every object of the model, (n_obj, 3),
+            indexed by the sample's obj_idx (bop_dataset.object_extents).
+        crop_scale: The crop scale the network saw.
+    """
+
+    def __init__(self, mode: str, centre: np.ndarray, half: np.ndarray, crop_scale: float = 1.0):
+        if mode not in POSE_MODES:
+            raise ValueError(f"pose mode must be one of {POSE_MODES}, got {mode!r}")
+        self.mode, self.centre, self.half, self.crop_scale = mode, centre, half, crop_scale
+
+    @property
+    def needs_dense(self) -> bool:
+        return self.mode != "dr"
+
+    def __call__(self, dense, bboxes, K, obj_idx, R_dr, t_dr):
+        """Final (R (N, 3, 3), t (N, 3), fallback (N,) bool) of N instances.
+
+        Args:
+            dense: (N, 4, S, S) network dense outputs (numpy; unused for mode "dr").
+            bboxes: (N, 4) crop boxes [x1, y1, x2, y2] in K coordinates.
+            K: (N, 3, 3) intrinsics.
+            obj_idx: (N,) object index into centre / half.
+            R_dr, t_dr: (N, 3, 3), (N, 3) the direct-regression poses (mm).
+        """
+        R_out, t_out = np.array(R_dr, dtype=np.float64), np.array(t_dr, dtype=np.float64)
+        fallback = np.zeros(len(R_out), dtype=bool)
+        if self.mode == "dr":
+            return R_out, t_out, fallback
+        for i in range(len(R_out)):
+            o = int(obj_idx[i])
+            corr = dense_correspondences(
+                dense[i], bboxes[i], self.centre[o], self.half[o], self.crop_scale
+            )
+            R_out[i], t_out[i], info = estimate_pose(
+                self.mode, corr, np.asarray(K[i], dtype=np.float64), R_out[i], t_out[i], seed=i
+            )
+            fallback[i] = info["fallback"]
+        return R_out, t_out, fallback

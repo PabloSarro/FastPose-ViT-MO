@@ -52,7 +52,7 @@ W9 Dec 14 · W10 Dec 21 · W11 Dec 28 · W12 Jan 4 · W13 Jan 11 · W14 Jan 18. 
 | M15 Backbone and resolution | W5–W7 | `[ ]` | Best backbone / input size by the rule | ViT-B/16 at 512 and 640, ViT-L/16 at 512, ViT-H/14 at 518 on LM-O, 2×, 2 seeds each (user: all now, ViT-H included) |
 | M16 One network per object | W5–W7 | `[ ]` | Per-object vs shared by the rule, 3 datasets | LM-O: 2 seeds done (test 0.669 vs 0.666), validation to add; YCB-V (21 objects) and T-LESS (30 objects), 2 seeds each (user: re-train now on all datasets) |
 | M17 PBR + real training | W5–W7 | `[ ]` | PBR + real vs PBR only by the rule, 3 datasets | YCB-V running (M11 B3); LM-O (LM test scenes ≠ 2) and T-LESS (`train_primesense`) to code |
-| M18 Multi-head: DR + masks + PnP | W6–W7 | `[ ]` | DR / PnP / combined, AR and time | New architecture (supervisor): one ViT, heads for direct regression, visible mask and dense object coordinates; PnP at test time |
+| M18 Multi-head: DR + masks + PnP | W6–W7 | `[~]` | DR / PnP / combined, AR and time | New architecture (supervisor): one ViT, heads for direct regression, visible mask and dense object coordinates; PnP at test time. **Code done 2026-11-20 (M18.1–M18.5, 33 new tests, full suite green), no training yet:** dense targets, `--dense_heads`, `src/pnp.py` (4 pose modes), `bop_evaluate.py --pose_mode`, `scripts/m18_dense.sh`. Open: M18.6 (symmetric XYZ labels, rendered targets for real images, loss weights) |
 | M19 Render-and-compare refinement | W6–W7 | `[ ]` | AR gain of refinement | R1 CosyPose PBR refiner on our poses (upper bound); R2 own refiner only if R1 gains |
 | M20 Final models and EPFL report | W7–W11 | `[ ]` | Report sent by 2027-01-01 | Decision gate 2026-12-04, finals W8–W9, report on `paper/` |
 
@@ -1284,8 +1284,9 @@ prefixes follow the milestone number (m12–m14 were used by audit / M11 jobs).
     + least-squares translation; DR only), batched over instances. Tests: GT correspondences give
     the GT pose, noise / outlier robustness.
     **Done 2026-11-20** (`tests/test_pnp.py`, 11 tests). Chain test: dense targets of 30 PBR / 30 LM-O test instances → correspondences → `pnp` / `pnp_init` return the GT pose (0.000°, 0.00 mm); `dr_rot_pnp_t` keeps the given rotation. Synthetic: 0.5 px noise + 30 % outliers → < 1°, < 3 mm. `pnp_init` first used a fixed 8 px inlier threshold around the DR pose and dropped every point (DR errors of a few ° / cm are ~10 px): now an adaptive threshold (2.5 × the median error). A failed mode returns the DR pose with `fallback` set, so the failures can be counted.
-  - [ ] **M18.5 Evaluation**: `bop_evaluate.py --pose_mode {dr,pnp,pnp_init,dr_rot_pnp_t}` (+ time),
+  - [x] **M18.5 Evaluation**: `bop_evaluate.py --pose_mode {dr,pnp,pnp_init,dr_rot_pnp_t}` (+ time),
     `scripts/m18_dense.sh` (train + the four evaluations, validation first, test once).
+    **Done 2026-11-20** (`tests/test_pose_modes_eval.py`, 8 tests; `src/pnp.py` `PoseRefiner`, `bop_evaluate.py --dense_heads --pose_mode`, the BOP `time` includes PnP, `pose_mode.json` counts the DR fallbacks). Oracle test: a network that returns the dataset's own labels and dense targets makes every mode return the GT poses through `predict()` and through the timed per-image path, so boxes, K, extents and row order are right. CLI check on the smoke checkpoint: all four modes run, PnP adds ~15 ms per image (10.7 → 25–27 ms), 0–4 of 400 instances fall back. `scripts/m18_dense.sh VARIANT[2]` = the tlwocc recipe + dense heads (variants `dense`, `densex5`, `densexl` = XYZ weight 1 / 5 / 0.2), then for each mode: validation (GT and noisy boxes), then the test with detections + official eval. **Not run: no training was started (user: code first).**
   - [ ] **M18.6 Open points found while designing (not done):** (a) XYZ labels of symmetric objects
     (LM-O eggbox, glue; YCB-V, T-LESS): v1 uses the GT pose as is, so the target is ambiguous;
     better = the symmetry the rotation loss picks, applied to the XYZ target; (b) real training
@@ -1428,7 +1429,7 @@ prefixes follow the milestone number (m12–m14 were used by audit / M11 jobs).
    | M16 baselines: T-LESS `tok4x` / `tok4x2` on the new `val_real` (`DS=tless scripts/m14_valreal_eval.sh`, dev) | Done 2026-11-18: `eval_valrealn` **0.877 / 0.879 (mean 0.878)**, GT boxes 0.910 / 0.911 |
    | M15 fix 2026-11-19: `lmo-m15-vitb512-001` stopped with "unknown variant" (a trailing "2" was read as seed b: `vitb512` → `vitb51`); parsing fixed (`8c894c0`), relaunched as `lmo-m15-vitb512-002`; `lmo-m15-vitl512-001` (would have failed the same way) replaced by `lmo-m15-vitl512-002`. The seed-b jobs `vitb5122`, `vitl5122` parse correctly | Queued |
    | **Still to do** | |
-   | M18 multi-head (DR + mask + XYZ, PnP at test), then `lmo-m18-dense{,2}-001` | To code |
+   | M18 multi-head (DR + mask + XYZ, PnP at test) | **Code done 2026-11-20** (M18.1–M18.5). To launch when GPUs allow, one job per candidate with 2 seeds: `lmo-m18-{dense,densex5,densexl}{,2}-001` via `CPUS=16 bash rcp/train.sh NAME bash -c 'SPE=$((2 * 42208)) bash scripts/m18_dense.sh VARIANT'` (~2× budget; baseline `tlwocc{,2}`). Then compare the four pose modes on `eval_valn_<mode>` and the test by the adoption rule |
    | M19 R1 CosyPose PBR refiner on our poses (separate venv) | To do |
    | M16 LM-O result (`eval_valn` of the 16 per-object models) | Done 2026-11-18: validation 0.879 vs 0.883, test 0.669 vs 0.666 → not adopted on LM-O |
    | **Report (M20)** | |

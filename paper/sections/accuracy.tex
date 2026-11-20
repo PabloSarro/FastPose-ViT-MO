@@ -1,0 +1,169 @@
+% Accuracy-oriented extensions (scope of 2026-11-18: accuracy first, inference cost does not matter).
+% Skeleton of the EPFL report's new results; numbers from TASKS.md §9 (2026-11-20). Every cell
+% marked \pending is a run that has not finished; \todo marks text to write after the decision
+% gate of 2026-12-04. All AR values: BOP19 average recall, LM-O / YCB-V / T-LESS test with the
+% BOP default detections. Validation: LM-O real validation images (the 200 BOP19 images of each
+% object), YCB-V four held-out real videos, T-LESS held-out real rings, all with noisy boxes
+% (each side moved by up to 10\,\% of the box size).
+\section{Accuracy-Oriented Extensions}
+\label{sec:accuracy}
+
+The main model of the previous sections trades accuracy for speed. This section drops that
+constraint: inference cost and model size do not matter, only the BOP19 AR does. Every change is
+chosen on the validation images and adopted only if the mean of two seeds beats the baseline's
+mean on both the noisy-box validation score and the test AR, by any margin
+(\cref{sec:acc:rule}). Results trained on PBR images only and results that also use real training
+images are always reported separately.
+\todo{Rewrite the abstract, introduction and conclusion for this scope after the 2026-12-04 decision gate.}
+
+\subsection{Selection Rule}
+\label{sec:acc:rule}
+Each candidate is trained with two seeds and compared with the baseline's two seeds under the same
+budget. The validation score is $(\mathrm{AR}_\mathrm{MSSD}+\mathrm{AR}_\mathrm{MSPD})/2$ on real
+validation images with perturbed boxes, so that the choice does not use the test set and sees the
+box errors of a detector; the test AR is read once per candidate. A change is adopted when both
+means improve.
+
+\subsection{Backbone and Input Resolution}
+\label{sec:acc:backbone}
+\begin{table}[t]
+  \centering
+  \small
+  \begin{tabular}{@{}llcccc@{}}
+    \toprule
+    Backbone & Input & Val. a / b & Val. mean & Test a / b & Test mean \\
+    \midrule
+    ViT-B/16 (baseline) & 384 & .885 / .880 & .883 & .664 / .658 & .661 \\
+    ViT-B/16 & 512 & .881 / .884 & .882 & .657 / .664 & .661 \\
+    ViT-B/16 & 640 & \pending{running} & & & \\
+    ViT-L/16 & 512 & \pending{seed a} / .890 & & \pending{seed a} / .681 & \\
+    ViT-H/14 & 518 & \pending{running} & & & \\
+    \bottomrule
+  \end{tabular}
+  \caption{\textbf{Backbone and input size on LM-O} (PBR only, 2$\times$ budget, two seeds).
+  Validation: noisy-box score on the real validation images; test: BOP19 AR with detections.}
+  \label{tab:acc_backbone}
+\end{table}
+A larger input alone does not help (ViT-B at 512\,px equals the 384\,px baseline on both numbers,
+\cref{tab:acc_backbone}); LM-O crops are usually smaller than 384\,px natively, so more pixels add
+no detail. The first ViT-L/16 seed is clearly better (+0.008 validation, +0.021 test) and also
+much better on the synthetic validation images (0.942 vs.\ 0.909).
+\todo{Decide with the second seed; ViT-B/640 and ViT-H/518 are still running.}
+
+\subsection{Training Budget}
+\label{sec:acc:budget}
+Going from $2\times$ to $4\times$ the number of samples per epoch gave +0.011 AR. At $8\times$
+the first seed reaches 0.673 test AR and 0.886 noisy-box validation, against 0.668 / 0.886 at
+$4\times$ (same recipe, first seeds); the second seed is \pending{running} (\cref{tab:acc_budget}).
+\begin{table}[t]
+  \centering
+  \small
+  \begin{tabular}{@{}lccc@{}}
+    \toprule
+    Budget & Val. (a / b) & Test (a / b) & Mean test \\
+    \midrule
+    $4\times$ & .886 / .880 & .668 / .664 & .666 \\
+    $8\times$ & .886 / \pending{running} & .673 / \pending{running} & \\
+    \bottomrule
+  \end{tabular}
+  \caption{\textbf{Training budget on LM-O} (PBR only, baseline recipe).}
+  \label{tab:acc_budget}
+\end{table}
+
+\subsection{One Network per Object}
+\label{sec:acc:per_object}
+\begin{table}[t]
+  \centering
+  \small
+  \begin{tabular}{@{}lcccc@{}}
+    \toprule
+    & \multicolumn{2}{c}{One network (shared)} & \multicolumn{2}{c}{One per object} \\
+    Dataset & Val. & Test & Val. & Test \\
+    \midrule
+    LM-O  & .883 & .666 & .879 & .669 \\
+    YCB-V & .691 & .698 & .674 & .713 \\
+    T-LESS & .878 & .762 & .845 & .736 \\
+    \bottomrule
+  \end{tabular}
+  \caption{\textbf{Shared network vs.\ one network per object} (PBR only, $4\times$ budget per
+  object, mean of two seeds). Per-object models are not adopted on any dataset: they are better on
+  the test set of LM-O and YCB-V but worse on validation, and clearly worse on T-LESS.}
+  \label{tab:acc_per_object}
+\end{table}
+Eight to thirty separate models cost up to thirty times the weights and do not pay off by the
+selection rule (\cref{tab:acc_per_object}). On YCB-V the test AR improves by 0.015 but the
+validation score drops by 0.017, so the improvement is not trusted.
+
+\subsection{Training with Real Images}
+\label{sec:acc:real}
+\begin{table}[t]
+  \centering
+  \small
+  \begin{tabular}{@{}lccccc@{}}
+    \toprule
+    & \multicolumn{2}{c}{PBR only} & \multicolumn{2}{c}{PBR + real} & \\
+    Dataset & Val. & Test & Val. & Test & Real data \\
+    \midrule
+    LM-O  & .883 & .661 & .972\textsuperscript{*} & .681 & LM, no BOP19 images \\
+    YCB-V & .676 & .685 & .752 & .764 & \texttt{train\_real} \\
+    T-LESS & \pending{running} & & & & \texttt{train\_primesense} \\
+    \bottomrule
+  \end{tabular}
+  \caption{\textbf{Adding the real training images} ($2\times$ budget, mean of two seeds; the two
+  groups of columns are different leaderboard categories). \textsuperscript{*}The LM-O real
+  validation images lie about $5^\circ$ from real training views, which inflates the validation
+  score of the real-trained model; its test AR is not affected.}
+  \label{tab:acc_real}
+\end{table}
+Real images help on both datasets (\cref{tab:acc_real}): $+0.079$ test AR on YCB-V and $+0.020$ on
+LM-O. On YCB-V the validation videos are held out entirely, so the validation gain
+($+0.076$) is a fair estimate. These models belong to the PBR + real category of the BOP
+leaderboard and are reported as such.
+
+\subsection{Dense Heads and PnP}
+\label{sec:acc:dense}
+\begin{table}[t]
+  \centering
+  \small
+  \begin{tabular}{@{}lcccc@{}}
+    \toprule
+    Pose mode & Val. & Test & Time (ms) & Fallbacks \\
+    \midrule
+    Direct regression, no dense heads (baseline) & & & & \\
+    Direct regression, with dense heads & \pending{} & \pending{} & & \\
+    PnP on mask + XYZ & \pending{} & \pending{} & & \\
+    PnP from the regressed pose & \pending{} & \pending{} & & \\
+    Regressed rotation + PnP translation & \pending{} & \pending{} & & \\
+    \bottomrule
+  \end{tabular}
+  \caption{\textbf{Multi-head network on LM-O} (PBR only, $2\times$ budget). One ViT predicts the
+  pose directly and, from its patch tokens, a visible-object mask and normalised object
+  coordinates; PnP-RANSAC, a refinement from the regressed pose, or a translation solved for the
+  regressed rotation give the final pose. ``Fallbacks'': instances where PnP failed and the
+  regressed pose was kept.}
+  \label{tab:acc_dense}
+\end{table}
+\todo{Describe the decoder (\texttt{DenseHead}), the targets (depth + ground-truth pose + visible
+mask, normalised by the model box), the losses and the symmetric-object handling once the six
+\texttt{lmo-m18-*} runs are compared; weights 1 / 5 / 0.2 for the XYZ term are the candidates.}
+
+\subsection{Render-and-Compare Refinement}
+\label{sec:acc:refine}
+\begin{table}[t]
+  \centering
+  \small
+  \begin{tabular}{@{}lccccc@{}}
+    \toprule
+    Refinement iterations & 0 & 1 & 2 & 3 & 4 \\
+    \midrule
+    LM-O  & \pending{} & & & & \\
+    YCB-V & \pending{} & & & & \\
+    T-LESS & \pending{} & & & & \\
+    \bottomrule
+  \end{tabular}
+  \caption{\textbf{CosyPose's PBR-only refiner~\cite{labbe2020cosypose} on our poses} (test AR
+  with detections, PBR-trained refiner and no further training; 0 = our poses as they are).}
+  \label{tab:acc_refine}
+\end{table}
+\todo{Fill from \texttt{\$NAS\_HOME/results/m19\_r1\_*/summary.txt} (scripts/m19\_r1.sh); add the
+time per image and decide whether to train our own refiner (M19 R2).}

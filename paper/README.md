@@ -11,7 +11,9 @@ comes from `docs/BOP.md` / `TASKS.md` §9. Still-missing items are listed in `do
   document (Menu -> Main document), or keep two projects. In the PDF, orange **Pending** marks results
   that are still running (none at the moment), red **TODO**
   marks text or facts to write or check.
-- `sections/*.tex`: abstract, introduction, related work, method, experiments, conclusion.
+- `sections/*.tex`: abstract, introduction, related work, method, experiments, conclusion, and
+  `accuracy.tex` (2026-11-20): the accuracy-oriented extensions of the new scope (backbone, budget,
+  per-object, real images, dense heads + PnP, refinement), with `\pending` cells to fill from `TASKS.md` §9.
 - `references.bib`: entries marked `% CHECK` were written from memory and must be verified.
 
 **Overleaf:** upload this folder (or zip it) as a new project; it compiles with pdfLaTeX + BibTeX.

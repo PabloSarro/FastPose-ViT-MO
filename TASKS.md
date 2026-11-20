@@ -1260,6 +1260,36 @@ prefixes follow the milestone number (m12–m14 were used by audit / M11 jobs).
   (VSD / MSSD)? What does each variant cost?
 - [ ] Tests: XYZ targets reproject onto their pixels with the GT pose; PnP on GT correspondences
   returns the GT pose. Jobs `lmo-m18-dense{,2}-001` (2×, 2 seeds).
+- **Coding plan 2026-11-20 (user: "start coding M18"; code first, no training until all pieces are
+  done and tested; one commit per bullet).** Design: dense head = 1×1 conv on the patch tokens →
+  2× bilinear up + conv → resize to `--dense_size` (64) + conv → per-object (4 channels: 1 mask
+  logit + 3 XYZ, like the per-object pose heads) 1×1 conv; all off by default (`--dense_heads`), so
+  the SPEED / existing BOP models and checkpoints are untouched. XYZ target = (X − centre) /
+  half-extent per axis of the model bounding box (models_info.json), so it lies in [−1, 1]; PnP
+  undoes it with the same table.
+  - [x] **M18.1 Dense targets in `BOPDataset`** (`dense_size`): `mask` (1, S, S) from `mask_visib`
+    and `xyz` (3, S, S) + `xyz_valid` from depth + GT pose (X = Rᵀ(p − t)), sampled at the crop
+    pixel centres (nearest), black bands outside the box zeroed as in the image. Depth scale read
+    per scene (`scene_camera.json`, lazy cache: no index rebuild). Points outside the model box
+    ± 15 % (depth noise, occluders) are not valid. Tests: reprojection of the targets, bands, scale.
+    **Done 2026-11-20** (`tests/test_bop_dense.py`, 10 tests): points are 1.2 mm (PBR) / 3.0 mm (LM-O real) from the model surface, 98 % / 95 % of the mask pixels are valid; a wrong-pose control fails the check.
+  - [ ] **M18.2 Model**: `VisionTransformer` can return the patch tokens; `FastPoseViT(dense_heads=…)`
+    adds the decoder and returns (pose output, {mask logits, xyz}). Tests: shapes, per-object
+    selection, unchanged state dict / output without it.
+  - [ ] **M18.3 Loss, engine, train args** (`--dense_heads --dense_size --mask_loss_weight
+    --xyz_loss_weight`): total = pose loss + w_m · BCE(mask) + w_x · L1(XYZ in valid pixels);
+    separate loss values in the log; validation reports them too. Overfit smoke run (`--bop_overfit`).
+  - [ ] **M18.4 `src/pnp.py`**: the four solvers (PnP RANSAC + LM; LM from the DR pose; DR rotation
+    + least-squares translation; DR only), batched over instances. Tests: GT correspondences give
+    the GT pose, noise / outlier robustness.
+  - [ ] **M18.5 Evaluation**: `bop_evaluate.py --pose_mode {dr,pnp,pnp_init,dr_rot_pnp_t}` (+ time),
+    `scripts/m18_dense.sh` (train + the four evaluations, validation first, test once).
+  - [ ] **M18.6 Open points found while designing (not done):** (a) XYZ labels of symmetric objects
+    (LM-O eggbox, glue; YCB-V, T-LESS): v1 uses the GT pose as is, so the target is ambiguous;
+    better = the symmetry the rotation loss picks, applied to the XYZ target; (b) real training
+    images (M17): depth + GT pose are slightly inconsistent, a rendered target (bop_toolkit
+    renderer) would be cleaner; v1 filters by the model box; (c) loss weights and decoder size
+    are untuned: variants run in parallel with repeats when the training starts.
 
 ### M19 — Render-and-compare refinement (W6–W7)
 - What it does: render the object at the current pose estimate, let a network compare rendering

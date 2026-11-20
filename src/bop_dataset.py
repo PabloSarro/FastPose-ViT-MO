@@ -316,6 +316,24 @@ def load_models_info(bop_root: str, dataset: str, obj_ids) -> dict:
     }
 
 
+def object_extents(bop_root: str, dataset: str, obj_ids) -> tuple[np.ndarray, np.ndarray]:
+    """Centre and half-extent (mm, per axis) of every object's model bounding box: (n, 3) each.
+
+    From models_eval/models_info.json (min_x, size_x, ...), in the model frame the poses refer to
+    (M18). The dense XYZ target is (X - centre) / half_extent, so it lies in [-1, 1] on the model;
+    the PnP step undoes it with this same table.
+    """
+    info = _load_json(os.path.join(bop_root, dataset, "models_eval", "models_info.json"))
+    centre, half = [], []
+    for o in obj_ids:
+        i = info[str(o)]
+        lo = np.array([i["min_x"], i["min_y"], i["min_z"]], dtype=np.float64)
+        size = np.array([i["size_x"], i["size_y"], i["size_z"]], dtype=np.float64)
+        centre.append(lo + 0.5 * size)
+        half.append(0.5 * size)
+    return np.array(centre), np.array(half)
+
+
 def symmetry_table(
     bop_root: str, dataset: str, obj_ids, max_sym_disc_step: float = 0.01
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -824,6 +842,8 @@ class BOPDataset(Dataset):
     - bboxes: the crop bbox [x1, y1, x2, y2] in K coordinates (bop_bbox_to_xyxy, after
       jitter), needed to undo U.
     - K, img_wh, obj_idx, diameter: per-sample camera and object, for the inverse transforms.
+    - mask, xyz, xyz_valid (only with dense_size > 0, M18): visible-object mask (1, S, S), object
+      coordinates normalised by the model box (3, S, S) and where they are valid (1, S, S).
     - R_m2c, t_m2c: the original BOP pose (egocentric, t in mm), and obj_id, scene_id, im_id,
       gt_id, row: to trace a sample back to its files.
     """
@@ -845,6 +865,7 @@ class BOPDataset(Dataset):
         occlusion_aug: bool = False,
         real_background: bool = False,
         no_rotation_compensation: bool = False,
+        dense_size: int = 0,
         index: dict | None = None,
         bop_root: str | None = None,
         cache_dir: str | None = None,
@@ -871,6 +892,9 @@ class BOPDataset(Dataset):
                 source > 0, e.g. T-LESS train_primesense on a black background) onto a random
                 PBR image (source 0), with its mask_visib (M17).
             no_rotation_compensation: Regress the egocentric rotation instead.
+            dense_size: If > 0, also return the dense targets of M18 at this side (pixels of the
+                crop grid): `mask`, `xyz`, `xyz_valid` (see dense_targets). `dataset` then names the
+                models (SPLITS[dataset]["models_dataset"]) the XYZ normalisation comes from.
             index: A prebuilt index (dict of arrays), e.g. for tests.
             bop_root, cache_dir: Passed to load_index.
         """
@@ -901,6 +925,14 @@ class BOPDataset(Dataset):
         self.transform = pixel_transform(
             pixel_aug if self.augment else "none", occlusion=occlusion_aug and self.augment
         )
+        self.dense_size = dense_size
+        self._scene_cameras: dict = {}
+        if dense_size > 0:
+            self.xyz_centre, self.xyz_half = object_extents(
+                bop_root or default_bop_root(),
+                SPLITS[dataset]["models_dataset"],
+                [int(o) for o in self.index["obj_ids"]],
+            )
 
     # The engine reads val_dataset.camera; BOP samples carry their own K, so it is only a fallback
     camera = Camera
@@ -970,6 +1002,75 @@ class BOPDataset(Dataset):
         rotation = quaternion_to_rotation_matrix(q) if self.rotation_format == "matrix" else q
         return U.squeeze(0), rotation.squeeze(0)
 
+    def depth_path(self, row: int) -> str:
+        """Path of the depth image of a row (BOP: <scene>/depth/<im>.png, 16 bit)."""
+        index = self.index
+        return os.path.join(
+            str(index["source_dirs"][int(index["source"][row])]),
+            f"{int(index['scene_id'][row]):06d}",
+            "depth",
+            f"{int(index['im_id'][row]):06d}.png",
+        )
+
+    def depth_scale(self, row: int) -> float:
+        """Millimetres per depth unit of a row's image (scene_camera.json), cached per scene."""
+        index = self.index
+        key = (int(index["source"][row]), int(index["scene_id"][row]))
+        if key not in self._scene_cameras:
+            path = os.path.join(
+                str(index["source_dirs"][key[0]]), f"{key[1]:06d}", "scene_camera.json"
+            )
+            self._scene_cameras[key] = _load_json(path)
+        return float(self._scene_cameras[key][str(int(index["im_id"][row]))]["depth_scale"])
+
+    def dense_targets(self, row: int, bbox) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Dense targets of the crop (M18): mask (S, S), xyz (3, S, S), valid (S, S), S = dense_size.
+
+        Each crop pixel j, i looks at the image point u = (j - tx) / s + 0.5 (K coordinates, as
+        crop_warp_matrix); its mask_visib and depth are those of the nearest image pixel. The 3D
+        point is p = depth * K^-1 (u, v, 1) in the camera frame, and the target its object
+        coordinate Rᵀ(p - t) with the GT pose, normalised by the model box (object_extents).
+        - mask: 1 where the object is visible, inside the image and (without crop_context)
+          inside the crop box: the black bands of the image carry no object.
+        - valid: mask and depth > 0 and the point within 15 % of the model box. Depth noise,
+          other objects in front of a mask edge and slightly inconsistent real GT fail it.
+        """
+        index = self.index
+        size = self.dense_size
+        mask_img = cv2.imread(self.mask_path(row), cv2.IMREAD_GRAYSCALE)
+        depth_img = cv2.imread(self.depth_path(row), cv2.IMREAD_UNCHANGED)
+        if mask_img is None or depth_img is None:
+            raise FileNotFoundError(f"Could not load mask / depth of row {row}")
+        M = crop_warp_matrix(bbox, size, self.crop_scale)
+        grid = np.arange(size, dtype=np.float64)
+        u = (grid - M[0, 2]) / M[0, 0] + 0.5  # K coordinates of the crop columns (S,)
+        v = (grid - M[1, 2]) / M[1, 1] + 0.5  # and rows
+        height, width = mask_img.shape
+        ui = np.clip(np.floor(u).astype(int), 0, width - 1)  # pixel containing the crop pixel
+        vi = np.clip(np.floor(v).astype(int), 0, height - 1)
+        inside_x = (u >= 0) & (u < width)
+        inside_y = (v >= 0) & (v < height)
+        if not self.crop_context:
+            x1, y1, x2, y2 = (float(c) for c in bbox)
+            inside_x &= (u >= x1) & (u <= x2)
+            inside_y &= (v >= y1) & (v <= y2)
+        mask = (mask_img[np.ix_(vi, ui)] > 0) & inside_y[:, None] & inside_x[None, :]
+        depth = depth_img[np.ix_(vi, ui)].astype(np.float64) * self.depth_scale(row)
+
+        K = index["K"][row].astype(np.float64)
+        uu, vv = np.meshgrid(u, v)  # (S, S)
+        points = np.stack(  # camera frame, mm
+            [(uu - K[0, 2]) / K[0, 0] * depth, (vv - K[1, 2]) / K[1, 1] * depth, depth], axis=-1
+        )
+        R = nearest_rotation(index["R"][row].astype(np.float64))
+        t = index["t"][row].astype(np.float64)
+        local = (points - t) @ R  # row-wise Rᵀ(p - t)
+        obj = int(index["obj_idx"][row])
+        xyz = (local - self.xyz_centre[obj]) / self.xyz_half[obj]  # (S, S, 3)
+        valid = mask & (depth > 0) & np.all(np.abs(xyz) <= 1.15, axis=-1)
+        xyz = np.where(valid[..., None], xyz, 0.0)
+        return mask.astype(np.float32), xyz.transpose(2, 0, 1).astype(np.float32), valid
+
     def __getitem__(self, row: int) -> dict:
         index = self.index
         bbox = self.crop_bbox(row)
@@ -980,7 +1081,7 @@ class BOPDataset(Dataset):
         image = self.transform(image=crop.astype(np.float32) / 255.0)["image"]
         U, rotation = self.labels(row, bbox)
         obj_idx = int(index["obj_idx"][row])
-        return {
+        sample = {
             "images": image,
             "translations": U.float(),
             "rotations": rotation.float(),
@@ -997,6 +1098,12 @@ class BOPDataset(Dataset):
             "gt_id": int(index["gt_id"][row]),
             "row": row,
         }
+        if self.dense_size > 0:
+            mask, xyz, valid = self.dense_targets(row, bbox)
+            sample["mask"] = torch.from_numpy(mask).unsqueeze(0)
+            sample["xyz"] = torch.from_numpy(xyz)
+            sample["xyz_valid"] = torch.from_numpy(valid.astype(np.float32)).unsqueeze(0)
+        return sample
 
 
 if __name__ == "__main__":

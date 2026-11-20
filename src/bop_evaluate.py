@@ -43,6 +43,7 @@ from src.bop_dataset import (
     bop_bbox_to_xyxy,
     crop_image,
     default_bop_root,
+    default_cache_dir,
     load_index,
     load_models_info,
     object_extents,
@@ -52,6 +53,8 @@ from src.bop_dataset import (
 from src.engine import CoordinateTransformer, forward_dense, forward_model
 from src.models import OBJECT_CONDITIONINGS, VIT_MODELS, FastPoseViT
 from src.pnp import POSE_MODES, PoseRefiner
+from src.refiner import RefinerNet, refine_instances
+from src.render import PointRenderer, load_render_assets
 from src.utils import process_rotation, quaternion_to_rotation_matrix
 
 # BOP19 error thresholds: MSSD in fractions of the diameter, MSPD in pixels at 640 px width
@@ -80,6 +83,40 @@ def build_model(args: argparse.Namespace, device: torch.device) -> FastPoseViT:
     state = load_safe(args.model_weights)  # weights_only + data-only allowlist (audit W9)
     model.load_state_dict(state["model"] if "model" in state else state)
     return model.to(device).eval()
+
+
+_REFINE_CACHE: dict = {}
+
+
+def make_refine_fn(args, dataset, device):
+    """The M19 render-and-compare refinement of the arguments as a function
+    f(image, K, obj_idx, R, t) -> (R, t) for the instances of one image (None without
+    --refine_iterations). The network, its weights and the renderer are built once."""
+    n = getattr(args, "refine_iterations", 0)
+    if n <= 0:
+        return None
+    key = (args.refine_weights, str(device))
+    if key not in _REFINE_CACHE:
+        cfg = SPLITS[args.dataset]
+        obj_ids = list(cfg["obj_ids"])
+        bop_root = default_bop_root()
+        model = RefinerNet(args.refine_vit_model, num_objects=len(obj_ids))
+        state = load_safe(args.refine_weights)
+        model.load_state_dict(state["model"] if "model" in state else state)
+        model = model.to(device).eval()
+        assets = load_render_assets(bop_root, args.dataset, obj_ids, args.refine_n_points, default_cache_dir())
+        centre, half = object_extents(bop_root, cfg["models_dataset"], obj_ids)
+        _REFINE_CACHE[key] = (model, PointRenderer(assets, centre, half, device), assets["points"][:, :2000])
+    model, renderer, points_box = _REFINE_CACHE[key]
+
+    def refine(image, K, obj_idx, R, t):
+        steps = refine_instances(
+            model, renderer, points_box, image, K, obj_idx, R, t, n,
+            args.refine_size, args.refine_margin, device,
+        )
+        return steps[-1]
+
+    return refine
 
 
 def make_refiner(args, dataset) -> PoseRefiner | None:
@@ -146,7 +183,19 @@ def predict(model, dataset, args, device) -> dict:
         out["R"].append(R)
         out["t"].append(t)
         out["fallback"].append(fallback)
-    return {k: np.concatenate(v) for k, v in out.items()}
+    result = {k: np.concatenate(v) for k, v in out.items()}
+    refine = make_refine_fn(args, dataset, device)
+    if refine is not None:  # M19: one image at a time, all its instances together
+        index = dataset.index
+        groups: dict[tuple, list[int]] = {}
+        for row in range(len(dataset)):
+            groups.setdefault((int(index["scene_id"][row]), int(index["im_id"][row])), []).append(row)
+        for rows in groups.values():
+            result["R"][rows], result["t"][rows] = refine(
+                dataset.load_image(rows[0]), index["K"][rows[0]].astype(np.float64),
+                index["obj_idx"][rows], result["R"][rows], result["t"][rows],
+            )
+    return result
 
 
 def noisy_boxes(bbox_xywh: np.ndarray, img_wh: np.ndarray, fraction: float, seed: int) -> np.ndarray:
@@ -192,7 +241,7 @@ def normalize_crops(crops: np.ndarray, device) -> torch.Tensor:
     return ((images - mean) / std).contiguous()
 
 
-def estimate_image(model, dataset, transformer, rows, image, device, refiner=None):
+def estimate_image(model, dataset, transformer, rows, image, device, refiner=None, refine=None):
     """Poses of the instances `rows` of one decoded image: (R (N, 3, 3), t (N, 3) mm) on the CPU.
 
     The whole per-image path: crop and normalisation of every instance, the network on that
@@ -245,6 +294,9 @@ def estimate_image(model, dataset, transformer, rows, image, device, refiner=Non
             R,
             t,
         )
+    if refine is not None:  # M19 render-and-compare refinement, its time included
+        R, t = refine(image, index["K"][rows[0]].astype(np.float64), index["obj_idx"][rows], R, t)
+        R, t = np.asarray(R), np.asarray(t)
     return R, t
 
 
@@ -265,9 +317,10 @@ def time_per_image(model, dataset, args, device, warmup: int = 3) -> dict:
         groups.setdefault((int(index["scene_id"][row]), int(index["im_id"][row])), []).append(row)
     transformer = pose_transformer(dataset, args)
     refiner = make_refiner(args, dataset)
+    refine = make_refine_fn(args, dataset, device)
 
     def estimate(rows, image):
-        return estimate_image(model, dataset, transformer, rows, image, device, refiner)
+        return estimate_image(model, dataset, transformer, rows, image, device, refiner, refine)
 
     times = {}
     model.eval()
@@ -533,6 +586,12 @@ def main() -> None:
         "pnp_init = LM from the DR pose; dr_rot_pnp_t = DR rotation + PnP translation. A mode "
         "that fails for an instance keeps its DR pose (counted in pose_mode.json)",
     )
+    parser.add_argument("--refine_weights", default=None, help="M19: the refiner (src/train_refiner.py last.pt / model.pth)")
+    parser.add_argument("--refine_iterations", type=int, default=0, help="M19: refinement iterations after the pose (0 = none)")
+    parser.add_argument("--refine_vit_model", default="convnext_base")
+    parser.add_argument("--refine_size", type=int, default=256)
+    parser.add_argument("--refine_margin", type=float, default=1.4)
+    parser.add_argument("--refine_n_points", type=int, default=65536)
     parser.add_argument(
         "--bbox_source",
         default="visib",
@@ -594,6 +653,8 @@ def main() -> None:
     if args.table_only:
         write_tables(args.out_dir, args.splits, symmetric_ids, boxes_label(args))
         return
+    if args.refine_iterations > 0 and not args.refine_weights:
+        parser.error("--refine_iterations needs --refine_weights")
     if args.pose_mode != "dr" and not args.dense_heads:
         parser.error("--pose_mode other than dr needs --dense_heads")
     if args.dense_heads and args.backend == "trt":

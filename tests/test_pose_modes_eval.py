@@ -134,3 +134,62 @@ def test_cli_rejects_pose_modes_without_dense_heads(monkeypatch, tmp_path):
     )
     with pytest.raises(SystemExit):
         be.main()
+
+
+def stub_refiner_cache(monkeypatch, device):
+    """A refiner that scales the depth by 1.01 per iteration, in place of the trained network."""
+    from src.bop_dataset import object_extents
+    from src.render import PointRenderer, load_render_assets
+
+    obj_ids = list(SPLITS["lmo"]["obj_ids"])
+    assets = load_render_assets(BOP_ROOT, "lmo", obj_ids, 4096)
+    centre, half = object_extents(BOP_ROOT, "lmo", obj_ids)
+
+    class Deeper(torch.nn.Module):
+        def forward(self, x, obj):
+            out = torch.zeros(len(x), 9, device=x.device)
+            out[:, 2] = float(np.log(1.01))
+            return out
+
+    monkeypatch.setitem(
+        be._REFINE_CACHE, ("stub", str(device)),
+        (Deeper(), PointRenderer(assets, centre, half, device), assets["points"][:, :2000]),
+    )
+
+
+def test_refinement_hook_in_predict_and_estimate_image(dataset, monkeypatch):
+    """With --refine_iterations the poses of predict() and of the timed per-image path go through
+    the refiner, image by image; here a stub that multiplies the depth by 1.01 per iteration."""
+    device = torch.device("cpu")
+    stub_refiner_cache(monkeypatch, device)
+    oracle(dataset, monkeypatch)
+    args = args_for("dr")
+    args.refine_weights, args.refine_iterations = "stub", 2
+    args.refine_size, args.refine_margin = 64, 1.4
+    plain = be.predict(None, dataset, args_for("dr"), device)
+    oracle(dataset, monkeypatch)  # the oracle serves each batch once: rebuild it
+    refined = be.predict(None, dataset, args, device)
+    np.testing.assert_allclose(refined["t"][:, 2], plain["t"][:, 2] * 1.01**2, rtol=1e-5)
+    np.testing.assert_allclose(refined["R"], plain["R"], atol=1e-5)
+    # the per-image path
+    index = dataset.index
+    key = (int(index["scene_id"][0]), int(index["im_id"][0]))
+    rows = [r for r in range(len(dataset)) if (int(index["scene_id"][r]), int(index["im_id"][r])) == key]
+    sub = BOPDataset(dataset="lmo", split="test", index=select_rows(index, np.array(rows)), img_size=64,
+                     dense_size=64, augment=False)
+    oracle(sub, monkeypatch, batch_size=len(rows))
+    transformer = be.pose_transformer(sub, args)
+    refine = be.make_refine_fn(args, sub, device)
+    R, t = be.estimate_image(None, sub, transformer, list(range(len(rows))), sub.load_image(0), device, None, refine)
+    oracle(sub, monkeypatch, batch_size=len(rows))
+    R0, t0 = be.estimate_image(None, sub, transformer, list(range(len(rows))), sub.load_image(0), device)
+    np.testing.assert_allclose(t[:, 2], t0[:, 2] * 1.01**2, rtol=1e-5)
+
+
+def test_cli_rejects_refine_iterations_without_weights(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "sys.argv",
+        ["bop_evaluate", "--out_dir", str(tmp_path), "--model_weights", "x.pt", "--refine_iterations", "2"],
+    )
+    with pytest.raises(SystemExit):
+        be.main()

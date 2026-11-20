@@ -290,3 +290,45 @@ The NAS is not backed up: keep code in Git and push (`git push`).
   `dev`, then `bash "$NAS_HOME/RCP_tutorial/setup-agents.sh"`, then `claude`.
 - Use the default lab image `cvlab-pancey/base:0.4` + a `uv` venv instead of my own image.
 - More: `RCP_tutorial/guides/` (cluster, agents, jupyter, hybrid laptop/cluster, images).
+
+## 11. CosyPose refiner (M19 R1, 2026-11-20)
+
+The public CosyPose PBR-only refiner is run through happypose (agimus-project, branch `dev`) in a
+**separate venv**, so the project's `.venv` is never touched. Everything lives on the NAS, outside
+the repo:
+
+```
+$NAS_HOME/venvs/happypose/            python3 -m venv --system-site-packages (torch from the image)
+$NAS_HOME/external/happypose/         git clone --depth 1 -b dev (pip install --no-deps -e)
+$NAS_HOME/happypose_data/             HAPPYPOSE_DATA_DIR: bop_datasets -> $NAS_HOME/datasets/bop,
+                                      experiments/<run id>/{config.yaml,checkpoint.pth.tar}
+```
+
+Setup, in order: `python3 -m venv --system-site-packages $NAS_HOME/venvs/happypose`; `pip install`
+the dependencies of happypose's `pyproject.toml` (addict, omegaconf, panda3d, pybullet, plyfile,
+pybind11, roma, scikit-image, scikit-learn, trimesh, transforms3d, webdataset, xarray, seaborn,
+bokeh, `pin`); `pip install --no-deps -e $NAS_HOME/external/happypose`. `bop_toolkit_lib` comes from
+our own checkout (`PYTHONPATH=$NAS_HOME/bop_toolkit`). Models (42 MB each, from
+`https://www.paris.inria.fr/archive_ylabbeprojectsdata/cosypose/experiments/<id>/`, files
+`checkpoint.pth.tar` and `config.yaml`; the configs only contain `argparse.Namespace`, `PosixPath`
+and `tuple` YAML tags, checked before they are loaded with an unsafe loader):
+`coarse-bop-{lmo,ycbv,tless}-pbr--{707448,724183,506801}`,
+`refiner-bop-{lmo,ycbv,tless}-pbr--{325214,604090,233420}`.
+
+Container quirks and the local patches to the clone (it is not tracked by Git):
+- `getpass.getuser()` fails without a passwd entry: set `USER=rcp` (the scripts do).
+- happypose's downloader fails for the same reason: fetch the model files with `curl`.
+- `cosypose/simulator/base_scene.py`: the PyBullet EGL device is the host GPU's minor number,
+  not an EGL index in a container: patched to read `HAPPYPOSE_EGL_DEVICE` (use 0, with
+  `CUDA_VISIBLE_DEVICES=0`).
+- `cosypose/libmesh/urdf_utils.py` (`ply_to_obj`): skip the material for vertex-colour meshes
+  (LM models), which crashed with a newer trimesh.
+- `toolbox/renderer/bullet_batch_renderer.py`: the worker image has an extra leading dimension:
+  take `rgb[0]`. Use one render worker for Bullet (the workers race on `urdfs/tmp`).
+- A render process may not exit cleanly: run everything with `timeout`.
+
+Scripts: `scripts/cosypose_refine.py` (our results CSV in, one refined CSV per iteration count out),
+`scripts/m19_r1.sh` (all of it + the official eval), `scripts/m19_refiner_check.py` (noisy ground
+truth in: does the refiner reduce the error?). Run them with
+`HAPPYPOSE_DATA_DIR=$NAS_HOME/happypose_data PYTHONPATH=$NAS_HOME/bop_toolkit
+$NAS_HOME/venvs/happypose/bin/python ...`.

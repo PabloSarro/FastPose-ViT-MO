@@ -156,14 +156,17 @@ mask, normalised by the model box), the losses and the symmetric-object handling
     \toprule
     Refinement iterations & 0 & 1 & 2 & 3 & 4 \\
     \midrule
-    LM-O  & \pending{} & & & & \\
-    YCB-V & \pending{} & & & & \\
-    T-LESS & \pending{} & & & & \\
+    LM-O  & .669 & .616 & .584 & .567 & .557 \\
+    YCB-V & .694 & .693 & .694 & .689 & .689 \\
+    T-LESS & .762 & .743 & .731 & .722 & .719 \\
     \bottomrule
   \end{tabular}
   \caption{\textbf{CosyPose's PBR-only refiner~\cite{labbe2020cosypose} on our poses} (test AR
   with detections, PBR-trained refiner and no further training; 0 = our poses as they are).}
   \label{tab:acc_refine}
 \end{table}
-\todo{Fill from \texttt{\$NAS\_HOME/results/m19\_r1\_*/summary.txt} (scripts/m19\_r1.sh); add the
-time per image and decide whether to train our own refiner (M19 R2).}
+The public refiner brings no gain (\cref{tab:acc_refine}): it corrects large errors (on YCB-V, a
+noisy ground truth of 15$^\circ$ / 40\,mm goes down to 4.8$^\circ$ / 21\,mm in two iterations) but not
+errors below about $3^\circ$ and 15\,mm, which is where our poses already are, and it makes LM-O
+and T-LESS worse. Each iteration costs about 0.04\,s per image.
+\todo{Decide whether to train our own refiner on perturbations of our poses (M19 R2).}

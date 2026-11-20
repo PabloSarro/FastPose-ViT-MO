@@ -28,7 +28,6 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-import pandas as pd
 import torch
 
 # dataset -> (happypose object dataset name, label prefix, BOP test folder, model run ids)
@@ -69,6 +68,10 @@ def main() -> None:
     parser.add_argument("--out_dir", required=True)
     parser.add_argument("--iterations", type=int, default=4)
     parser.add_argument("--max_images", type=int, default=0, help="debug: first N images only")
+    parser.add_argument(
+        "--renderer", default="panda3d", choices=["bullet", "panda3d"],
+        help="panda3d (happypose's default; the R1 results) or bullet (the original training renderer, needs the patches of docs/RCP_WORKFLOW.md §11)",
+    )
     parser.add_argument("--bop_root", default=os.path.join(os.environ.get("NAS_HOME", "."), "datasets", "bop"))
     args = parser.parse_args()
     if "HAPPYPOSE_DATA_DIR" not in os.environ:
@@ -79,10 +82,6 @@ def main() -> None:
 
     # happypose reads HAPPYPOSE_DATA_DIR at import time
     from happypose.pose_estimators.cosypose.cosypose.bop_config import PBR_COARSE, PBR_REFINER
-    from happypose.pose_estimators.cosypose.cosypose.integrated.pose_predictor import (
-        CoarseRefinePosePredictor,
-    )
-    import happypose.pose_estimators.cosypose.cosypose.utils.tensor_collection as tc
     from happypose.pose_estimators.cosypose.cosypose.evaluation.evaluation import (
         load_pose_models_cosypose,
     )
@@ -98,9 +97,9 @@ def main() -> None:
     object_dataset = make_object_dataset(ds_name)
     # the original CosyPose checkpoints (their own config format, the Panda3D renderer)
     _, refiner, _ = load_pose_models_cosypose(
-        object_dataset, PBR_COARSE[key], PBR_REFINER[key], n_workers=4
+        object_dataset, PBR_COARSE[key], PBR_REFINER[key], n_workers=1 if args.renderer == "bullet" else 4,  # Bullet workers race on urdfs/tmp
+        renderer_type=args.renderer,
     )
-    predictor = CoarseRefinePosePredictor(coarse_model=None, refiner_model=refiner)
 
     by_image = defaultdict(list)
     for i, row in enumerate(rows):
@@ -119,32 +118,28 @@ def main() -> None:
         K = np.array(cameras[scene_id][str(im_id)]["cam_K"], dtype=np.float32).reshape(3, 3)
         image = load_image(test_dir, scene_id, im_id)
         idx = by_image[(scene_id, im_id)]
-        infos = pd.DataFrame(
-            {
-                "label": [f"{prefix}-obj_{int(rows[i]['obj_id']):06d}" for i in idx],
-                "batch_im_id": 0,
-                "row": idx,
-            }
-        )
+        labels = [f"{prefix}-obj_{int(rows[i]['obj_id']):06d}" for i in idx]
         poses = torch.tensor(np.stack([pose_matrix(rows[i]) for i in idx]), dtype=torch.float32)
-        init = tc.PandasTensorCollection(infos=infos, poses=poses.to(device))
+        n_obj = len(idx)
+        # the refiner takes one image / K per object: the same image repeated
         images = torch.from_numpy(image).to(device).float().permute(2, 0, 1)[None] / 255.0
-        Ks = torch.from_numpy(K)[None].to(device)
+        images = images.expand(n_obj, -1, -1, -1).contiguous()
+        Ks = torch.from_numpy(K)[None].to(device).expand(n_obj, -1, -1).contiguous()
         if device.type == "cuda":
             torch.cuda.synchronize()
         start = time.perf_counter()
-        _, preds = predictor.run_inference_pipeline(
-            images, Ks, data_TCO_init=init, n_coarse_iterations=0,
-            n_refiner_iterations=args.iterations,
-        )
+        with torch.no_grad():
+            outputs = refiner(
+                images=images, K=Ks, labels=labels, TCO=poses.to(device),
+                n_iterations=args.iterations,
+            )
         if device.type == "cuda":
             torch.cuda.synchronize()
         refine_seconds[(scene_id, im_id)] = time.perf_counter() - start
         for n in range(1, args.iterations + 1):
-            out = preds[f"refiner/iteration={n}"]
-            T = out.poses.detach().cpu().numpy().astype(np.float64)
-            for j, i in enumerate(out.infos["row"].values):
-                refined[n][int(i)] = (T[j, :3, :3], T[j, :3, 3] * 1000.0)
+            T = outputs[f"iteration={n}"].TCO_output.detach().cpu().numpy().astype(np.float64)
+            for j, i in enumerate(idx):
+                refined[n][i] = (T[j, :3, :3], T[j, :3, 3] * 1000.0)
         if count % 20 == 0:
             print(f"{count + 1}/{len(keys)} images, {refine_seconds[(scene_id, im_id)]:.2f} s", flush=True)
 

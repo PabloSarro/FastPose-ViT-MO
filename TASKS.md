@@ -53,7 +53,7 @@ W9 Dec 14 · W10 Dec 21 · W11 Dec 28 · W12 Jan 4 · W13 Jan 11 · W14 Jan 18. 
 | M16 One network per object | W5–W7 | `[x]` | Per-object vs shared by the rule, 3 datasets | **Closed 2026-11-20: not adopted on any dataset** (noisy validation and official test AR, 2-seed means vs the shared `tok4x{,2}`): LM-O 0.879 / 0.669 vs 0.883 / 0.666; YCB-V 0.674 / 0.713 vs 0.691 / 0.698 (test better, validation worse); T-LESS 0.845 / 0.736 vs 0.878 / 0.762 (clearly worse on both) |
 | M17 PBR + real training | W5–W7 | `[~]` | PBR + real vs PBR only by the rule, 3 datasets | **2026-11-20 (adopt for the PBR + real category, always labelled):** YCB-V 2× noisy validation on held-out real videos 0.752 vs 0.676 (`tok2x{,2}`), test 0.764 vs 0.685; LM-O 2× test 0.681 vs 0.661 (`tlwocc{,2}`), validation 0.972 vs 0.883 but biased (neighbouring real views in training). T-LESS running (epochs 91–131 of 150) |
 | M18 Multi-head: DR + masks + PnP | W6–W7 | `[~]` | DR / PnP / combined, AR and time | New architecture (supervisor): one ViT, heads for direct regression, visible mask and dense object coordinates; PnP at test time. **Code done 2026-11-20 (M18.1–M18.5, 33 new tests, full suite green), no training yet:** dense targets, `--dense_heads`, `src/pnp.py` (4 pose modes), `bop_evaluate.py --pose_mode`, `scripts/m18_dense.sh`. Open: M18.6 (symmetric XYZ labels, rendered targets for real images, loss weights) |
-| M19 Render-and-compare refinement | W6–W7 | `[ ]` | AR gain of refinement | R1 CosyPose PBR refiner on our poses (upper bound); R2 own refiner only if R1 gains |
+| M19 Render-and-compare refinement | W6–W7 | `[~]` | AR gain of refinement | **R1 done 2026-11-20: CosyPose's public PBR refiner gives no gain on our poses** (LM-O 0.669 → 0.616 after 1 iteration, YCB-V 0.694 → 0.693, T-LESS 0.762 → 0.743; it does not refine errors below ~3° / 15 mm). R2 (our own refiner) needs a decision |
 | M20 Final models and EPFL report | W7–W11 | `[ ]` | Report sent by 2027-01-01 | Decision gate 2026-12-04, finals W8–W9, report on `paper/` |
 
 ---
@@ -1298,9 +1298,25 @@ prefixes follow the milestone number (m12–m14 were used by audit / M11 jobs).
   and crop and predict a pose update, repeat 1–4 times. It corrects the residual error of a
   single-shot estimate, mostly depth (our weakest part). Typical BOP gains: a few AR points
   (CosyPose, GDRNPP + refiner, MegaPose), for several times the inference time.
-- [ ] R1 upper-bound check: CosyPose's PBR-trained refiner (public weights for LM-O, T-LESS, YCB-V;
+- [x] R1 upper-bound check: CosyPose's PBR-trained refiner (public weights for LM-O, T-LESS, YCB-V;
   via `happypose`, installed in a separate venv so training jobs are not disturbed) on our poses,
   1–4 iterations, official eval. The training data stays PBR only; credit CosyPose.
+  **Done 2026-11-20: no gain.** Setup in `docs/RCP_WORKFLOW.md` §11 (venv `$NAS_HOME/venvs/happypose`,
+  happypose `dev`, six checkpoints, local patches), `scripts/cosypose_refine.py`, `scripts/m19_r1.sh`,
+  results `$NAS_HOME/results/m19_r1_<dataset>/summary.txt`. Test AR with detections, our PBR-only
+  poses (LM-O `tlwocc4x` seed a, YCB-V / T-LESS `tok4x`), Panda3D renderer, refiner iterations 0 / 1 /
+  2 / 3 / 4: **LM-O 0.669 / 0.616 / 0.584 / 0.567 / 0.557; YCB-V 0.694 / 0.693 / 0.694 / 0.689 /
+  0.689; T-LESS 0.762 / 0.743 / 0.731 / 0.722 / 0.719**; +0.04 s (1 iteration) to +0.15 s (4) per
+  image. **Check that the setup is sound (`scripts/m19_refiner_check.py`: ground-truth poses + noise
+  in, 20-30 images, symmetric objects left out):** on YCB-V with large noise (15°, 40 mm) the refiner
+  works (rotation median 9.3° → 7.8° → 4.8°, translation 60 → 27 → 21 mm after 1 / 2 iterations), but
+  with small noise (5°, 10 mm) it does nothing (3.1° → 3.3°, 15 → 17 mm; Bullet renderer, the one
+  the checkpoints were trained with: the same). So the public refiner stops at about 3° / 15 mm,
+  which is the accuracy of our poses already; on LM-O it makes the rotation worse even from noisy
+  ground truth (5°, 10 mm: 2.2° → 6.8° Panda3D, → 11.9° Bullet), probably the vertex-coloured LM
+  models, not solved. **Conclusion: this refiner is no upper bound for us; R2 (our own refiner,
+  trained on perturbations of our poses) is the only way to test whether refinement helps. Decision
+  for the user / supervisor (costly: batched GPU renderer + training).**
 - [ ] R2 only if R1 gains clearly: our own refiner (FastPose-ViT on crop + rendering at the current
   pose → pose update, trained on PBR with perturbed poses; needs a batched GPU renderer).
 
@@ -1411,6 +1427,7 @@ prefixes follow the milestone number (m12–m14 were used by audit / M11 jobs).
 | 2026-11-20 | M16 `{ycbv,tless}-m16-obj*{,s1}-001`, pooled with `scripts/m16_adopt.sh` | YCB-V, T-LESS | one network per object, 2 seeds | YCB-V: noisy validation 0.6814 / 0.6664 (12 objects in the held-out videos), test AR (detections) 0.7180 / 0.7069. T-LESS: 0.8457 / 0.8437, test 0.7376 / 0.7342 | baselines `tok4x{,2}`: YCB-V 0.6930 / 0.6885, test 0.6936 / 0.7021; T-LESS 0.8768 / 0.8793, test 0.7616 / 0.7624. Not adopted (YCB-V test +0.015 but validation −0.017; T-LESS −0.033 / −0.026) |
 | 2026-11-20 | M17 `lmo-m17-real2x-002`, `lmo-m17-real2x2-001` | LM-O, PBR + real (LM `test_all`, no BOP19 images) | tlwocc recipe, 2× | noisy validation 0.9706 / 0.9724, test AR 0.6756 / 0.6858 (mean 0.6807) | vs `tlwocc{,2}` 0.8825, 0.6606: test +0.020; the validation gain is inflated (the real validation views are ~5° from real training views). PBR + real category |
 | 2026-11-20 | M17 / M11 B3 `ycbv-m14-real2x-001`, `ycbv-m14-real2x2-002` | YCB-V, PBR + real (`train_real`) | 2× | noisy validation on 4 held-out real videos 0.7418 / 0.7613 (after `summary_remean.py` on seed a), test AR (detections) 0.7570 / 0.7711 (0.7641) | vs `tok2x{,2}`: 0.6684 / 0.6829 (0.6757), 0.6814 / 0.6885 (0.6849): +0.076 / +0.079, adopted for the PBR + real category |
+| 2026-11-20 | M19 R1, `$NAS_HOME/results/m19_r1_{lmo,ycbv,tless}/` | LM-O, YCB-V, T-LESS test | CosyPose PBR-only refiner (happypose, Panda3D) on our poses, 1–4 iterations | test AR 0 / 1 / 2 / 3 / 4 iterations: LM-O 0.669 / 0.616 / 0.584 / 0.567 / 0.557; YCB-V 0.694 / 0.693 / 0.694 / 0.689 / 0.689; T-LESS 0.762 / 0.743 / 0.731 / 0.722 / 0.719 | no gain; sanity check with noisy ground truth in the M19 R1 bullet |
 (Paths relative to `$NAS_HOME`.)
 
 ---

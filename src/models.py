@@ -26,6 +26,7 @@ SUPPORTED_VIT_MODELS = [
     "vit_b_16_no_weights",
     "vit_b_16_384",
     "vit_b_16_384_no_weights",
+    "vit_b_16_256",
     "vit_b_16_512",
     "vit_b_16_640",
     "vit_b_32",
@@ -50,6 +51,8 @@ VIT_MODELS = {
     "vit_b_16_384_no_weights": (vit_b_16, None, 768, (384, 384)),
     # M15: the 384 px SWAG E2E weights at a larger input; the position embeddings are resized
     # to the larger patch grid when the weights are loaded (resize_pos_embedding)
+    # M19 refiner: the 384 px weights at 256 px (16 x 16 patches), position embeddings resized
+    "vit_b_16_256": (vit_b_16, ViT_B_16_Weights.IMAGENET1K_SWAG_E2E_V1, 768, (256, 256)),
     "vit_b_16_512": (vit_b_16, ViT_B_16_Weights.IMAGENET1K_SWAG_E2E_V1, 768, (512, 512)),
     "vit_b_16_640": (vit_b_16, ViT_B_16_Weights.IMAGENET1K_SWAG_E2E_V1, 768, (640, 640)),
     "vit_b_32": (vit_b_32, ViT_B_32_Weights.IMAGENET1K_V1, 768, (224, 224)),

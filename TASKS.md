@@ -1328,12 +1328,14 @@ prefixes follow the milestone number (m12–m14 were used by audit / M11 jobs).
   symmetries, disentangled (full + rotation-only + translation-only). Training: PBR images with GT
   poses perturbed by a mixture of noise levels (DR-like errors and larger); inference iterates 1–4 times
   from our DR poses (CSV in, CSV out, official eval, as R1).
-  - [ ] **M19.1 `src/render.py`**: pure-PyTorch batched point-splatting renderer (z-buffer with
+  - [x] **M19.1 `src/render.py`**: pure-PyTorch batched point-splatting renderer (z-buffer with
     `scatter_reduce`, 3×3 splats), model points sampled from the BOP meshes (vertex colours; YCB-V
     texture; grey T-LESS CAD) + cache. Tests: the render of a model at the GT pose has the depth of
     the PBR depth image and the mask of `mask_visib` (unoccluded instances).
-  - [ ] **M19.2 `src/refiner.py`**: the network, the update, the symmetric disentangled point loss.
+    **Done 2026-11-20** (`tests/test_render.py`, 4 tests): one pixel per point + hole closing gives a silhouette within 0.5 px of the analytic sphere (3×3 splats fattened it by 1.7 px); on LM PBR instances the render has IoU > 0.93 with `mask_visib` and median depth error < 2 mm; deterministic; 9 ms for 64 renders of 224 px (13 ms at 384 px).
+  - [x] **M19.2 `src/refiner.py`**: the network, the update, the symmetric disentangled point loss.
     Tests: the exact update recovers GT, loss zero at GT and invariant to symmetries, gradients.
+    **Done 2026-11-20** (`tests/test_refiner.py`, 9 tests; new backbone `vit_b_16_256` = the 384 px SWAG weights at 256 px). Noise levels of the starting poses: 45 % (3°, 1 % crop side, 1.5 % depth), 35 % (8°, 3 %, 4 %), 20 % (20°, 8 %, 10 %), around our DR errors (median 4.6°, ~16 mm).
   - [ ] **M19.3 data + training**: `RefineDataset` (perturbed pose → crop → sample), `src/train_refiner.py`
     (AdamW, bf16, object-balanced virtual epochs, `last.pt` resume), overfit smoke on `dev`.
   - [ ] **M19.4 inference + evaluation**: `scripts/refine_bop.py` (our results CSV in, refined CSV per

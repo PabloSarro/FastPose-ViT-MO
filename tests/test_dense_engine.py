@@ -112,3 +112,30 @@ def test_dense_without_targets_is_a_clear_error():
             None,
             config,
         )
+
+
+def test_symmetric_xyz_target_follows_the_predicted_rotation():
+    """Two symmetries (identity, a half turn about z): a prediction near the half-turn pose
+    makes the XYZ target the half-turn one; near the GT pose it stays the GT target."""
+    from src.engine import symmetric_xyz_target
+    from src.losses import SymmetricRotation6DLoss
+    from src.utils import rotation_matrix_to_6d
+
+    half_turn = torch.diag(torch.tensor([-1.0, -1.0, 1.0]))
+    table = torch.stack([torch.eye(3), half_turn]).unsqueeze(0)  # one object, K = 2
+    crit = SymmetricRotation6DLoss(table)
+    centre, half = torch.zeros(1, 3), torch.ones(1, 3)  # X = xyz, so the check is plain
+    xyz = torch.rand(1, 3, 4, 4) * 2 - 1
+    R = torch.linalg.qr(torch.randn(3, 3)).Q
+    if torch.det(R) < 0:
+        R[:, 0] *= -1
+    obj = torch.zeros(1, dtype=torch.long)
+    rotations = R.unsqueeze(0)
+    gt = rotation_matrix_to_6d(rotations)
+    sym = rotation_matrix_to_6d(rotations @ half_turn)
+    kept = symmetric_xyz_target(crit, xyz, gt, rotations, obj, {}, centre, half, torch.device("cpu"))
+    turned = symmetric_xyz_target(crit, xyz, sym, rotations, obj, {}, centre, half, torch.device("cpu"))
+    torch.testing.assert_close(kept, xyz)
+    expected = xyz.clone()
+    expected[:, :2] *= -1  # Sᵀ X for the half turn about z
+    torch.testing.assert_close(turned, expected)

@@ -11,6 +11,8 @@
 #   dense     mask BCE weight 1, XYZ L1 weight 1
 #   densex5   XYZ L1 weight 5  (the XYZ term is small next to the pose losses)
 #   densexl   XYZ L1 weight 0.2
+#   densesym  as dense, with the XYZ target of the symmetric pose the rotation loss picks
+#             (--dense_symmetric_xyz, M18.6a; eggbox / glue on LM-O)
 # Baseline for the DR head: tlwocc / tlwocc2 (same SPE); for the pose modes: DR of the same run.
 # Compare per pose mode with `scripts/val_score.py` on eval_val_<mode>, eval_valn_<mode>.
 set -euo pipefail
@@ -22,17 +24,18 @@ DET=$(ls "$NAS_HOME"/datasets/bop_detections/default_task1/bop23_default_detecti
 MODES=${MODES:-"dr pnp pnp_init dr_rot_pnp_t"}
 
 (( $# == 1 )) || { echo "usage: $0 VARIANT[2]"; exit 5; }
-VARIANTS=" dense densex5 densexl "
+VARIANTS=" dense densex5 densexl densesym "
 v=$1 base=$1 seed=0
 if [[ $VARIANTS != *" $v "* && $v == *2 ]]; then
     base=${v%2} seed=1
 fi
 VIT=vit_b_16_384 DEPTH=site
-MASK_W=1 XYZ_W=1
+MASK_W=1 XYZ_W=1 extra=()
 case $base in
     dense)   ;;
     densex5) XYZ_W=5 ;;
     densexl) XYZ_W=0.2 ;;
+    densesym) extra=(--dense_symmetric_xyz) ;;
     *) echo "unknown variant $v"; exit 5 ;;
 esac
 out=$RUN_DIR/$v
@@ -52,7 +55,7 @@ if [[ ! -e $out/TRAINED ]]; then
         --object_conditioning token --symmetric_rotation_loss --bop_pixel_aug domain_gap \
         --translation_loss_weight 2 --bop_occlusion_aug \
         --dense_heads --dense_size 64 --mask_loss_weight "$MASK_W" --xyz_loss_weight "$XYZ_W" \
-        --bop_epoch_samples "$SPE" --bop_sampler_seed "$seed"
+        --bop_epoch_samples "$SPE" --bop_sampler_seed "$seed" "${extra[@]}"
     touch "$out/TRAINED"
 fi
 EVAL=(.venv/bin/python src/bop_evaluate.py --dataset lmo --model_weights "$out/last.pt"

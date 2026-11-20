@@ -48,6 +48,11 @@ class TrainingConfig:
     dense: bool = False
     mask_loss_weight: float = 1.0
     xyz_loss_weight: float = 1.0
+    # M18.6a: XYZ target of the symmetry the rotation loss picks (needs SymmetricRotation6DLoss
+    # as rotation_criterion); the model-box centre / half-extent tensors (n_obj, 3) on the device
+    symmetric_xyz: bool = False
+    xyz_centre: Optional[torch.Tensor] = None
+    xyz_half: Optional[torch.Tensor] = None
 
 
 @dataclass
@@ -64,6 +69,10 @@ class ValidationConfig:
     pose_metrics: Optional[object] = None
     # M18: also report the dense losses and mask IoU (they are not part of the validation loss)
     dense: bool = False
+    # M18.6a: SymmetricRotation6DLoss (the training one) to pick the XYZ target's symmetry, + extents
+    symmetry_criterion: Optional[object] = None
+    xyz_centre: Optional[torch.Tensor] = None
+    xyz_half: Optional[torch.Tensor] = None
 
 
 # Batch fields beyond SPEED's (images, translations, rotations, bboxes); None when absent
@@ -132,6 +141,29 @@ def dense_targets_of(batch: dict, device: torch.device) -> tuple:
     if "mask" not in batch:
         raise KeyError("dense heads need dense targets: build the BOPDataset with dense_size > 0")
     return tuple(batch[k].to(device, non_blocking=True) for k in ("mask", "xyz", "xyz_valid"))
+
+
+def symmetric_xyz_target(
+    criterion: SymmetricRotation6DLoss,
+    xyz: torch.Tensor,
+    pred_6d: torch.Tensor,
+    rotations: torch.Tensor,
+    obj_idx: torch.Tensor,
+    batch: dict,
+    centre: torch.Tensor,
+    half: torch.Tensor,
+    device: torch.device,
+) -> torch.Tensor:
+    """The XYZ target of the symmetry that `criterion` picks for the predicted rotation (M18.6a).
+
+    Args:
+        pred_6d: Raw predicted 6D rotations (B, 6); rotations: allocentric targets (B, 3, 3).
+    """
+    pose = None
+    if criterion.has_offsets:  # symmetries that shift the model need the original BOP pose
+        pose = tuple(batch[k].to(device, non_blocking=True) for k in SYMMETRIC_POSE_KEYS)
+    k = criterion.choose_symmetry(pred_6d, rotations, obj_idx, pose)
+    return criterion.symmetric_xyz(xyz, k, obj_idx, centre, half)
 
 
 class ProgressTracker:
@@ -551,6 +583,11 @@ def train_epoch(
             total_loss = config.translation_loss_weight * loss_translation + loss_rotation
             if config.dense:
                 mask, xyz, valid = dense_targets_of(batch, device)
+                if config.symmetric_xyz:
+                    xyz = symmetric_xyz_target(
+                        rotation_criterion, xyz, pred_rotations, rotations, obj_idx, batch,
+                        config.xyz_centre, config.xyz_half, device,
+                    )
                 loss_mask, loss_xyz = dense_losses(pred_dense, mask, xyz, valid)
                 total_loss = (
                     total_loss
@@ -711,6 +748,7 @@ def val_epoch(
                         model, images, obj_idx, config.merge_outputs
                     )
 
+                pred_6d = pred_rotations  # raw network rotation (M18.6a symmetric XYZ target)
                 pred_rotations = process_rotation(pred_rotations, config.rotation_format)
 
             # Transform to absolute coordinate space
@@ -749,6 +787,11 @@ def val_epoch(
 
             if config.dense:
                 mask, xyz, valid = dense_targets_of(batch, device)
+                if config.symmetry_criterion is not None:
+                    xyz = symmetric_xyz_target(
+                        config.symmetry_criterion, xyz, pred_6d, rotations, obj_idx, batch,
+                        config.xyz_centre, config.xyz_half, device,
+                    )
                 loss_mask, loss_xyz = dense_losses(pred_dense, mask, xyz, valid)
                 predicted = pred_dense[:, :1].float() > 0
                 target = mask > 0.5

@@ -841,6 +841,14 @@ def train(
     elif args.resume is not None:
         logger.info(f"No checkpoint at {checkpoint_path}: starting from scratch")
 
+    # M18: model-box centre / half-extent per object, on the device (symmetric XYZ targets)
+    xyz_extents = (None, None)
+    if args.dense_heads:
+        xyz_extents = tuple(
+            torch.as_tensor(a, dtype=torch.float32, device=device)
+            for a in (train_dataset.xyz_centre, train_dataset.xyz_half)
+        )
+
     # Training loop
     for epoch in range(start_epoch, args.epochs):
         if train_sampler is not None:
@@ -862,6 +870,9 @@ def train(
             dense=args.dense_heads,
             mask_loss_weight=args.mask_loss_weight,
             xyz_loss_weight=args.xyz_loss_weight,
+            symmetric_xyz=args.dense_symmetric_xyz,
+            xyz_centre=xyz_extents[0],
+            xyz_half=xyz_extents[1],
         )
 
         train_start = time.time()
@@ -902,6 +913,9 @@ def train(
             depth_mode=args.depth_mode,
             pose_metrics=pose_metrics,
             dense=args.dense_heads,
+            symmetry_criterion=rotation_criterion if args.dense_symmetric_xyz else None,
+            xyz_centre=xyz_extents[0],
+            xyz_half=xyz_extents[1],
         )
 
         if dist_info.is_main:
@@ -1071,6 +1085,8 @@ if __name__ == "__main__":
             "--symmetric_rotation_loss needs a BOP dataset, --rotation_format matrix and "
             "--rotation_loss 6d_relative_frobenius"
         )
+    if args.dense_symmetric_xyz and not (args.dense_heads and args.symmetric_rotation_loss):
+        parser.error("--dense_symmetric_xyz needs --dense_heads and --symmetric_rotation_loss")
     # Validate bbox_crop_percent
     if not (0.0 <= args.bbox_crop_percent <= 50.0):
         parser.error("--bbox_crop_percent must be between 0 and 50 (inclusive)")

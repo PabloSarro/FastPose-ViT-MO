@@ -397,6 +397,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--dense_size", type=int, default=64, help="M18: side of the dense outputs / targets"
     )
     parser.add_argument(
+        "--dense_symmetric_xyz",
+        action="store_true",
+        help="M18.6a: the XYZ target of a symmetric object is the one of the symmetric pose the "
+        "rotation loss picks for the predicted rotation (needs --dense_heads and the symmetric "
+        "rotation loss); off = the GT pose as is",
+    )
+    parser.add_argument(
         "--mask_loss_weight", type=float, default=1.0, help="M18: weight of the mask BCE"
     )
     parser.add_argument(

@@ -916,6 +916,50 @@ class SymmetricRotation6DLoss(nn.Module):
         U_best = U[torch.arange(len(k), device=k.device), k].float()
         return loss, U_best
 
+    def choose_symmetry(
+        self, pred_6d: torch.Tensor, target_R: torch.Tensor, obj_idx: torch.Tensor, pose=None
+    ) -> torch.Tensor:
+        """Index k of the symmetry this loss picks for each sample (the argmin of forward /
+        pose_loss), for the M18 dense XYZ targets.
+
+        Args:
+            pred_6d (B, 6), target_R (B, 3, 3) allocentric, obj_idx (B,): as forward.
+            pose: (R_m2c, t_m2c, K, bboxes, img_wh, diameter) as pose_loss, needed when the
+                symmetries shift the model (has_offsets), else None.
+        """
+        with torch.no_grad():
+            if self.has_offsets:
+                _, rotations = self.symmetric_labels(obj_idx, *pose)
+                return self._min_over_targets(pred_6d, rotations.float())[1]
+            targets = target_R.float().unsqueeze(1) @ self.sym_table[obj_idx]
+            return self._min_over_targets(pred_6d, targets)[1]
+
+    def symmetric_xyz(
+        self,
+        xyz: torch.Tensor,
+        k: torch.Tensor,
+        obj_idx: torch.Tensor,
+        centre: torch.Tensor,
+        half: torch.Tensor,
+    ) -> torch.Tensor:
+        """The normalised XYZ target of the symmetric pose k instead of the GT pose (M18).
+
+        The pose (R·S, t + R·s) puts the model point X' where (R, t) puts X = S·X' + s, so
+        X' = Sᵀ(X - s). `xyz` (B, 3, H, W) is (X - centre) / half of the GT pose; the result is
+        normalised the same way. Pixels without a target (zeros = the box centre) are mapped too
+        and must stay masked by the validity map.
+
+        Args:
+            k: (B,) symmetry index per sample (choose_symmetry); obj_idx (B,).
+            centre, half: (n_obj, 3) model-box centre / half-extent in mm (object_extents).
+        """
+        S = self.sym_table[obj_idx, k]  # (B, 3, 3)
+        offset = self.sym_offsets[obj_idx, k][:, :, None, None]
+        c, h = centre[obj_idx][:, :, None, None], half[obj_idx][:, :, None, None]
+        X = xyz * h + c
+        X_sym = torch.einsum("bji,bjhw->bihw", S, X - offset)
+        return (X_sym - c) / h
+
 
 class Identity(nn.Module):
     """

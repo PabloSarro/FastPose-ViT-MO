@@ -10,6 +10,7 @@
 # Variants (the learning rate is untuned: run both, with seeds):
 #   cnxa   ConvNeXt-B refiner, lr 5e-5 (head x3)
 #   cnxb   same, lr 1e-4
+#   cnxs   as cnxa, starting-pose noise weighted towards small errors (--noise dr: 60 / 35 / 5 %)
 set -euo pipefail
 : "${RUN_DIR:?run inside a train job (RUN_DIR not set)}"
 export PYTHONPATH=.
@@ -18,14 +19,16 @@ DET=$(ls "$NAS_HOME"/datasets/bop_detections/default_task1/bop23_default_detecti
 DR=$NAS_HOME/outputs/FastPose-ViT/runs/lmo-m13-tlwocc4x-001/tlwocc/last.pt  # the poses to refine
 
 (( $# == 1 )) || { echo "usage: $0 VARIANT[2]"; exit 5; }
-VARIANTS=" cnxa cnxb "
+VARIANTS=" cnxa cnxb cnxs "
 v=$1 base=$1 seed=0
 if [[ $VARIANTS != *" $v "* && $v == *2 ]]; then
     base=${v%2} seed=1
 fi
+NOISE=mix
 case $base in
     cnxa) LR=5e-5 ;;
     cnxb) LR=1e-4 ;;
+    cnxs) LR=5e-5 NOISE=dr ;;
     *) echo "unknown variant $v"; exit 5 ;;
 esac
 out=$RUN_DIR/$v
@@ -34,7 +37,7 @@ if [[ ! -e $out/TRAINED ]]; then
     echo "== $v: train refiner, seed $seed ($(date '+%F %T'))"
     .venv/bin/python src/train_refiner.py --dataset LMO --out_dir "$out" --resume auto \
         --vit_model convnext_base --epochs "$EPOCHS" --lr "$LR" --seed "$seed" \
-        --num_workers "${NUM_WORKERS:-12}" --occlusion_aug
+        --num_workers "${NUM_WORKERS:-12}" --occlusion_aug --noise "$NOISE"
     touch "$out/TRAINED"
 fi
 EVAL=(.venv/bin/python src/bop_evaluate.py --dataset lmo --model_weights "$DR" --vit_model vit_b_16_384

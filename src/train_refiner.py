@@ -63,7 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max_grad_norm", type=float, default=1.0)
     p.add_argument("--num_workers", type=int, default=12)
     p.add_argument("--pixel_aug", default="domain_gap")
-    p.add_argument("--noise", default="mix", choices=["mix", "small", "medium", "large"], help="noise level(s) of the starting poses")
+    p.add_argument("--noise", default="mix", choices=["mix", "dr", "small", "medium", "large"], help="noise level(s) of the starting poses: mix = 45/35/20 %, dr = 60/35/5 % (closer to our direct-regression errors)")
     p.add_argument("--occlusion_aug", action="store_true")
     p.add_argument("--train_split", default="train")
     p.add_argument("--val_split", default="val")
@@ -72,6 +72,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--overfit", type=int, default=0, help="sanity check: N fixed training instances, no augmentation")
     p.add_argument("--seed", type=int, default=0)
     return p
+
+
+def noise_levels(name: str):
+    if name == "mix":
+        return NOISE_LEVELS
+    if name == "dr":
+        return tuple(dict(lv, p=p) for lv, p in zip(NOISE_LEVELS, (0.60, 0.35, 0.05)))
+    return (dict(NOISE_LEVELS[["small", "medium", "large"].index(name)], p=1.0),)
 
 
 def make_datasets(args, assets):
@@ -83,7 +91,7 @@ def make_datasets(args, assets):
     common = dict(
         assets=assets, size=args.size, margin=args.margin, dataset=name,
         real_background=False, noise_seed=args.seed,
-        noise_levels=NOISE_LEVELS if args.noise == "mix" else (dict(NOISE_LEVELS[["small", "medium", "large"].index(args.noise)], p=1.0),),
+        noise_levels=noise_levels(args.noise),
     )
     train_rows = rows_for_objects(train_index, obj_ids)
     if args.overfit:

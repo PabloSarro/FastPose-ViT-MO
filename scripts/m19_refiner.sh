@@ -11,6 +11,9 @@
 #   cnxa   ConvNeXt-B refiner, lr 5e-5 (head x3)
 #   cnxb   same, lr 1e-4
 #   cnxs   as cnxa, starting-pose noise weighted towards small errors (--noise dr: 60 / 35 / 5 %)
+#   cnxp   as cnxa, smaller starting errors for PnP poses (--noise pnp); evaluated on the PnP poses
+#          of the multi-head model lmo-m18-densesym-001 (adopted 2026-11-21) instead of tlwocc 4x
+#   cnxq   as cnxp with a single small noise level (--noise small: 3 deg, 0.01, 0.015)
 set -euo pipefail
 : "${RUN_DIR:?run inside a train job (RUN_DIR not set)}"
 export PYTHONPATH=.
@@ -19,7 +22,7 @@ DET=$(ls "$NAS_HOME"/datasets/bop_detections/default_task1/bop23_default_detecti
 DR=$NAS_HOME/outputs/FastPose-ViT/runs/lmo-m13-tlwocc4x-001/tlwocc/last.pt  # the poses to refine
 
 (( $# == 1 )) || { echo "usage: $0 VARIANT[2]"; exit 5; }
-VARIANTS=" cnxa cnxb cnxs "
+VARIANTS=" cnxa cnxb cnxs cnxp cnxq "
 v=$1 base=$1 seed=0
 if [[ $VARIANTS != *" $v "* && $v == *2 ]]; then
     base=${v%2} seed=1
@@ -29,6 +32,8 @@ case $base in
     cnxa) LR=5e-5 ;;
     cnxb) LR=1e-4 ;;
     cnxs) LR=5e-5 NOISE=dr ;;
+    cnxp) LR=5e-5 NOISE=pnp ;;
+    cnxq) LR=5e-5 NOISE=small ;;
     *) echo "unknown variant $v"; exit 5 ;;
 esac
 out=$RUN_DIR/$v
@@ -40,9 +45,14 @@ if [[ ! -e $out/TRAINED ]]; then
         --num_workers "${NUM_WORKERS:-12}" --occlusion_aug --noise "$NOISE"
     touch "$out/TRAINED"
 fi
+POSE_ARGS=()
+if [[ $base == cnxp || $base == cnxq ]]; then  # PnP poses of the multi-head model
+    DR=$NAS_HOME/outputs/FastPose-ViT/runs/lmo-m18-densesym-001/densesym/last.pt
+    POSE_ARGS=(--dense_heads --pose_mode pnp)
+fi
 EVAL=(.venv/bin/python src/bop_evaluate.py --dataset lmo --model_weights "$DR" --vit_model vit_b_16_384
       --depth_mode site --object_conditioning token --refine_weights "$out/last.pt"
-      --refine_vit_model convnext_base --num_workers "${NUM_WORKERS:-12}")
+      --refine_vit_model convnext_base --num_workers "${NUM_WORKERS:-12}" ${POSE_ARGS[@]+"${POSE_ARGS[@]}"})
 for n in 0 1 2 3 4; do
     if [[ ! -e $out/eval_valn_r$n/DONE ]]; then  # noisy boxes: see scripts/m12_valeval.sh
         echo "== $v: validation, noisy boxes, $n refinement iterations ($(date '+%F %T'))"

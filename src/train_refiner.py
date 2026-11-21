@@ -63,7 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max_grad_norm", type=float, default=1.0)
     p.add_argument("--num_workers", type=int, default=12)
     p.add_argument("--pixel_aug", default="domain_gap")
-    p.add_argument("--noise", default="mix", choices=["mix", "dr", "small", "medium", "large"], help="noise level(s) of the starting poses: mix = 45/35/20 %, dr = 60/35/5 % (closer to our direct-regression errors)")
+    p.add_argument("--noise", default="mix", choices=["mix", "dr", "pnp", "small", "medium", "large"], help="noise level(s) of the starting poses: mix = 45/35/20 %, dr = 60/35/5 % (closer to our direct-regression errors), pnp = smaller errors (60/30/10 % of 1.5 / 4 / 10 deg), for PnP poses")
     p.add_argument("--occlusion_aug", action="store_true")
     p.add_argument("--train_split", default="train")
     p.add_argument("--val_split", default="val")
@@ -79,6 +79,12 @@ def noise_levels(name: str):
         return NOISE_LEVELS
     if name == "dr":
         return tuple(dict(lv, p=p) for lv, p in zip(NOISE_LEVELS, (0.60, 0.35, 0.05)))
+    if name == "pnp":
+        return (
+            {"p": 0.60, "rot": 1.5, "xy": 0.005, "z": 0.008},
+            {"p": 0.30, "rot": 4.0, "xy": 0.012, "z": 0.020},
+            {"p": 0.10, "rot": 10.0, "xy": 0.030, "z": 0.050},
+        )
     return (dict(NOISE_LEVELS[["small", "medium", "large"].index(name)], p=1.0),)
 
 

@@ -44,8 +44,9 @@ means improve.
   Validation: noisy-box score on the real validation images; test: BOP19 AR with detections.}
   \label{tab:acc_backbone}
 \end{table}
-A larger input alone does not help (ViT-B at 512\,px equals the 384\,px baseline on both numbers,
-\cref{tab:acc_backbone}); LM-O crops are usually smaller than 384\,px natively, so more pixels add
+At the short $2\times$ budget a larger input alone does not help (ViT-B at 512\,px equals the
+384\,px baseline on both numbers, \cref{tab:acc_backbone}); this is not a final verdict, because the
+larger models are also trained at $4\times$ (\texttt{lmo-m15x4-*}, pending). LM-O crops are usually smaller than 384\,px natively, so more pixels add
 no detail. The first ViT-L/16 seed is clearly better (+0.008 validation, +0.021 test) and also
 much better on the synthetic validation images (0.942 vs.\ 0.909).
 \todo{Decide with the second seed; ViT-B/640 and ViT-H/518 are still running.}

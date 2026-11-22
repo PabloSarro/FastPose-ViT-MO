@@ -22,7 +22,7 @@ discussion of why the non-adopted approaches are worse is in Sec.~\ref{sec:catal
     \texttt{tlwocc} 2$\times$ & ViT-B/384, translation weight 2, occlusion & .885 / .880 & .882 & .664 / .658 & .661 & baseline 2$\times$ \\
     \texttt{tlwocc} 4$\times$ & 4$\times$ samples per epoch & .887 / .885 & .886 & .669 / .667 & .668 & adopted recipe \\
     \texttt{tok4x} & 4$\times$, no translation weight / occlusion & .886 / .880 & .883 & .668 / .664 & .666 & previous recipe \\
-    \texttt{base8x} & 8$\times$, previous recipe & .886 / -- & .886 & .673 / -- & .673 & seed b \pending{running} \\
+    \texttt{base8x} & 8$\times$, previous recipe & .886 / .884 & .885 & .673 / .674 & .673 & adopted budget (vs.\ \texttt{tok4x}) \\
     ViT-B/224 (\texttt{r224tok4x}) & 224 px, 4$\times$ previous recipe & -- / -- & -- & .643 / .643 & .643 & not adopted \\
     ViT-B/512 & 512 px, 2$\times$ & .881 / .884 & .882 & .657 / .664 & .660 & not adopted (tie) \\
     ViT-B/640 & 640 px, 2$\times$ & .879 / .881 & .880 & .668 / .665 & .667 & not adopted at 2$\times$ \\

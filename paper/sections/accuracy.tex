@@ -58,7 +58,7 @@ ViT-H/14 at 518\,px is better still at $2\times$ ($+0.016$ validation, $+0.031$ 
 \label{sec:acc:budget}
 Going from $2\times$ to $4\times$ the number of samples per epoch gave +0.011 AR. At $8\times$
 the first seed reaches 0.673 test AR and 0.886 noisy-box validation, against 0.668 / 0.886 at
-$4\times$ (same recipe, first seeds); the second seed is \pending{running} (\cref{tab:acc_budget}).
+$4\times$ (same recipe, first seeds); the second seed gives 0.884 / 0.674, so the 2-seed means at $8\times$ are 0.885 / 0.673 against 0.883 / 0.666 at $4\times$ (\cref{tab:acc_budget}); both numbers improve and the larger budget is adopted.
 \begin{table}[t]
   \centering
   \small
@@ -67,7 +67,7 @@ $4\times$ (same recipe, first seeds); the second seed is \pending{running} (\cre
     Budget & Val. (a / b) & Test (a / b) & Mean test \\
     \midrule
     $4\times$ & .886 / .880 & .668 / .664 & .666 \\
-    $8\times$ & .886 / \pending{running} & .673 / \pending{running} & \\
+    $8\times$ & .886 / .884 & .673 / .674 & .673 \\
     \bottomrule
   \end{tabular}
   \caption{\textbf{Training budget on LM-O} (PBR only, baseline recipe).}

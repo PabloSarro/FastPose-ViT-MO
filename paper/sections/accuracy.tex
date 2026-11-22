@@ -37,7 +37,7 @@ means improve.
     ViT-B/16 & 512 & .881 / .884 & .882 & .657 / .664 & .661 \\
     ViT-B/16 & 640 & .879 / .881 & .880 & .668 / .665 & .667 \\
     ViT-L/16 & 512 & .892 / .890 & .891 & .690 / .681 & .686 \\
-    ViT-H/14 & 518 & \pending{running} & & & \\
+    ViT-H/14 & 518 & .899 / .898 & .898 & .691 / .693 & .692 \\
     \bottomrule
   \end{tabular}
   \caption{\textbf{Backbone and input size on LM-O} (PBR only, 2$\times$ budget, two seeds).
@@ -51,7 +51,8 @@ no detail. ViT-L/16 at 512\,px is clearly better with both seeds (means +0.008 v
 adopted at $2\times$; ViT-B/640 is better on test (+0.006) but worse on validation ($-$0.003) and is not
 adopted at $2\times$. The $4\times$ runs of all four backbones and an $8\times$ ViT-L/512 run are
 running (\cref{tab:cat_backbone}).
-\todo{Decide the final backbone and budget with the $4\times$ / $8\times$ results; ViT-H/518 at $2\times$ is still running.}
+ViT-H/14 at 518\,px is better still at $2\times$ ($+0.016$ validation, $+0.031$ test over the baseline means).
+\todo{Decide the final backbone and budget with the $4\times$ / $8\times$ results.}
 
 \subsection{Training Budget}
 \label{sec:acc:budget}

@@ -1,0 +1,232 @@
+% Complete run catalogue (user request 2026-11-22: report ALL numbers of ALL runs, also the
+% approaches that were not adopted). Generated from TASKS.md section 9 (numbers typed once, means
+% computed); update this file together with TASKS.md whenever a run is resolved.
+% Columns: Val. = noisy-box real validation score (AR_MSSD + AR_MSPD) / 2, Test = BOP19 AR with the
+% default detections; a / b = the two seeds (a single value = one seed); mean = mean of the seeds.
+% Outcome: adopted / not adopted under the rule of Sec.~\ref{sec:acc:rule}, or running.
+\section{Complete Run Catalogue}
+\label{sec:catalogue}
+Every training run of the accuracy-oriented study, adopted or not, with both seeds. Validation is
+the noisy-box real validation score and test the BOP19 AR with the default detections, on LM-O
+unless the caption says otherwise. Runs older than 2026-11-18 have no noisy validation score for
+some rows (shown as --); their test numbers are those of the supplementary Sec.~S3. The
+discussion of why the non-adopted approaches are worse is in Sec.~\ref{sec:catalogue:discussion}.
+
+\begin{table*}[t]
+  \centering
+  \small
+  \begin{tabular}{@{}llccccl@{}}
+    \toprule
+    Run & Change & Val. a / b & Val. mean & Test a / b & Test mean & Outcome \\
+    \midrule
+    \texttt{tlwocc} 2$\times$ & ViT-B/384, translation weight 2, occlusion & .885 / .880 & .882 & .664 / .658 & .661 & baseline 2$\times$ \\
+    \texttt{tlwocc} 4$\times$ & 4$\times$ samples per epoch & .887 / .885 & .886 & .669 / .667 & .668 & adopted recipe \\
+    \texttt{tok4x} & 4$\times$, no translation weight / occlusion & .886 / .880 & .883 & .668 / .664 & .666 & previous recipe \\
+    \texttt{base8x} & 8$\times$, previous recipe & .886 / -- & .886 & .673 / -- & .673 & seed b \pending{running} \\
+    ViT-B/224 (\texttt{r224tok4x}) & 224 px, 4$\times$ previous recipe & -- / -- & -- & .643 / .643 & .643 & not adopted \\
+    ViT-B/512 & 512 px, 2$\times$ & .881 / .884 & .882 & .657 / .664 & .660 & not adopted (tie) \\
+    ViT-B/640 & 640 px, 2$\times$ & .879 / .881 & .880 & .668 / .665 & .667 & not adopted at 2$\times$ \\
+    ViT-L/512 & ViT-L/16, 512 px, 2$\times$ & .892 / .890 & .891 & .690 / .681 & .686 & adopted at 2$\times$ \\
+    ViT-H/518 & ViT-H/14, 518 px, 2$\times$ & -- / -- & -- & -- / -- & -- & \pending{running} \\
+    ViT-B/512, 4$\times$ & 4$\times$ & -- / -- & -- & -- / -- & -- & \pending{running} \\
+    ViT-B/640, 4$\times$ & 4$\times$ & -- / -- & -- & -- / -- & -- & \pending{running} \\
+    ViT-L/512, 4$\times$ & 4$\times$ & -- / -- & -- & -- / -- & -- & \pending{running} \\
+    ViT-H/518, 4$\times$ & 4$\times$ & -- / -- & -- & -- / -- & -- & \pending{running} \\
+    ViT-L/512, 8$\times$ & 8$\times$ & -- / -- & -- & -- / -- & -- & \pending{seed a running} \\
+    \bottomrule
+  \end{tabular}
+  \caption{\textbf{Backbone, input size and budget on LM-O} (PBR only; \texttt{tlwocc} 2$\times$ is the baseline of the 2$\times$ rows, \texttt{tlwocc} 4$\times$ of the 4$\times$ rows).}
+  \label{tab:cat_backbone}
+\end{table*}
+
+\begin{table*}[t]
+  \centering
+  \small
+  \begin{tabular}{@{}llccccl@{}}
+    \toprule
+    Run & Change & Val. a / b & Val. mean & Test a / b & Test mean & Outcome \\
+    \midrule
+    \texttt{symtok2x} & token, \texttt{domain\_gap}, symmetric loss & .874 / .874 & .874 & .655 / .655 & .655 & reference (older code) \\
+    \texttt{base} (re-train) & same recipe, current code & .875 / .871 & .873 & .650 / .654 & .652 & reference (current code) \\
+    \texttt{tlw} & translation loss weight 2 & .871 / .876 & .873 & .659 / .658 & .659 & not adopted alone \\
+    \texttt{occl} & occlusion augmentation & .875 / .878 & .877 & .657 / .651 & .654 & not adopted alone \\
+    \texttt{tlwocc} & both & .885 / .880 & .883 & .664 / .658 & .661 & adopted (at 4$\times$) \\
+    \texttt{ctx} & context crop & .815 / .810 & .812 & .623 / .621 & .622 & not adopted \\
+    \texttt{ctx125} & context crop, scale 1.25 & .815 / .817 & .816 & .624 / .627 & .625 & not adopted \\
+    \texttt{ctx15} & context crop, scale 1.5 & .813 / .816 & .815 & .623 / .619 & .621 & not adopted \\
+    \texttt{bbox5} & box jitter 5\,\% & .858 / .858 & .858 & .647 / .654 & .651 & not adopted \\
+    \texttt{bbox15} & box jitter 15\,\% & .869 / .872 & .871 & .656 / .651 & .653 & not adopted (tie) \\
+    \texttt{bbox30} & box jitter 30\,\% & .851 / .849 & .850 & .646 / .643 & .645 & not adopted \\
+    \texttt{bbox0} & no box jitter & -- / -- & -- & .625 / .625 & .625 & not adopted \\
+    \texttt{bbox20} & crop margin 20\,\% & -- / -- & -- & .650 / .651 & .651 & not adopted \\
+    \texttt{augnone} & no pixel augmentation & -- / -- & -- & .626 / .629 & .627 & not adopted \\
+    \texttt{augcolor} & colour only & -- / -- & -- & .649 / .641 & .645 & not adopted \\
+    \texttt{augblur} & blur only & -- / -- & -- & .628 / .630 & .629 & not adopted \\
+    \texttt{augnoise} & noise only & -- / -- & -- & .627 / .627 & .627 & not adopted \\
+    \texttt{augsimple} & colour + blur + noise & -- / -- & -- & .641 / .643 & .642 & not adopted \\
+    \texttt{augstrong} & \texttt{domain\_gap} p = 0.8 & -- / -- & -- & .641 / .631 & .636 & not adopted \\
+    \texttt{absrot} & absolute rotation (no compensation) & -- / -- & -- & .546 / .548 & .547 & not adopted \\
+    \texttt{scratch} & no pretrained weights & -- / -- & -- & .516 / .517 & .516 & not adopted \\
+    \texttt{legacy} & legacy depth parametrisation & -- / -- & -- & .610 / .625 & .617 & not adopted \\
+    \bottomrule
+  \end{tabular}
+  \caption{\textbf{Recipe changes on LM-O} (PBR only, 2$\times$ budget, one change from the \texttt{symtok2x} reference; test = BOP19 AR with the default detections).}
+  \label{tab:cat_recipe}
+\end{table*}
+
+\begin{table*}[t]
+  \centering
+  \small
+  \begin{tabular}{@{}llccccl@{}}
+    \toprule
+    Run & Change & Val. a / b & Val. mean & Test a / b & Test mean & Outcome \\
+    \midrule
+    per-object heads & 2$\times$, ADD@0.1d val. 0.655 / 0.664 & -- / -- & -- & .650 / .650 & .650 & not adopted \\
+    object token & 2$\times$ & -- / -- & -- & .659 / .651 & .655 & adopted (M4) \\
+    heads + token & 2$\times$ & -- / -- & -- & .660 / .661 & .661 & not adopted \\
+    symmetric loss & 2$\times$ & -- / -- & -- & .655 / .655 & .655 & kept (no measurable gain) \\
+    crop source \texttt{bbox\_obj} & 2$\times$ & -- / -- & -- & .646 / .650 & .648 & not adopted \\
+    crop source mix & 2$\times$ & -- / -- & -- & .650 / .654 & .652 & not adopted \\
+    LM-O, one net per object (mean val.) & 4$\times$ per object, 8 nets & .879 & .879 & .672 / .666 & .669 & not adopted (tie) \\
+    YCB-V, shared \texttt{tok4x} & 21 objects & .693 / .689 & .691 & .694 / .702 & .698 & baseline \\
+    YCB-V, one net per object & 21 nets & .681 / .666 & .674 & .718 / .707 & .712 & not adopted (val.\ $-$0.017) \\
+    YCB-V, heads vs token (2$\times$) & token 0.681 / 0.689 & -- / -- & -- & .674 / .678 & .676 & not adopted \\
+    T-LESS, shared \texttt{tok4x} & 30 objects & .877 / .879 & .878 & .762 / .762 & .762 & baseline \\
+    T-LESS, one net per object & 30 nets & .846 / .844 & .845 & .738 / .734 & .736 & not adopted ($-$0.03) \\
+    \bottomrule
+  \end{tabular}
+  \caption{\textbf{Object conditioning, symmetric loss, crop source and one network per object.} For LM-O only the mean validation score of the two per-object seeds is available.}
+  \label{tab:cat_object}
+\end{table*}
+
+\begin{table*}[t]
+  \centering
+  \small
+  \begin{tabular}{@{}llccccl@{}}
+    \toprule
+    Run & Change & Val. a / b & Val. mean & Test a / b & Test mean & Outcome \\
+    \midrule
+    \texttt{tlwocc} 2$\times$ & direct regression & .885 / .880 & .882 & .664 / .658 & .661 & baseline (no dense heads) \\
+    \texttt{dense} & PnP on mask + XYZ, XYZ weight 1 & .905 / .904 & .905 & .705 / .702 & .703 & adopted over baseline \\
+    \texttt{dense} & direct regression, XYZ weight 1 & .885 / .888 & .886 & .680 / .682 & .681 & direct, better than baseline \\
+    \texttt{dense} & PnP from the regressed pose, XYZ weight 1 & .881 / .880 & .881 & .663 / .662 & .663 & not adopted \\
+    \texttt{dense} & regressed rotation + PnP translation, XYZ weight 1 & .855 / .846 & .850 & .616 / .618 & .617 & not adopted \\
+    \midrule
+    \texttt{densex5} & PnP on mask + XYZ, XYZ weight 5 & .910 / .914 & .912 & .716 / .717 & .717 & tie with the best \\
+    \texttt{densex5} & direct regression, XYZ weight 5 & .890 / .894 & .892 & .691 / .689 & .690 & direct, better than baseline \\
+    \texttt{densex5} & PnP from the regressed pose, XYZ weight 5 & .884 / .891 & .887 & .715 / .669 & .692 & not adopted \\
+    \texttt{densex5} & regressed rotation + PnP translation, XYZ weight 5 & .842 / .847 & .845 & .710 / .617 & .663 & not adopted \\
+    \midrule
+    \texttt{densexl} & PnP on mask + XYZ, XYZ weight 0.2 & .897 / .895 & .896 & .695 / .692 & .694 & not adopted \\
+    \texttt{densexl} & direct regression, XYZ weight 0.2 & .883 / .886 & .884 & .675 / .675 & .675 & direct, better than baseline \\
+    \texttt{densexl} & PnP from the regressed pose, XYZ weight 0.2 & .872 / .871 & .871 & .658 / .672 & .665 & not adopted \\
+    \texttt{densexl} & regressed rotation + PnP translation, XYZ weight 0.2 & .829 / .837 & .833 & .621 / .658 & .639 & not adopted \\
+    \midrule
+    \texttt{densesym} & PnP on mask + XYZ, weight 1, symmetric XYZ & .905 / .907 & .906 & .707 / .714 & .710 & adopted over \texttt{dense} \\
+    \texttt{densesym} & direct regression, weight 1, symmetric XYZ & .890 / .890 & .890 & .686 / .687 & .687 & direct, better than baseline \\
+    \texttt{densesym} & PnP from the regressed pose, weight 1, symmetric XYZ & .906 / .907 & .907 & .707 / .715 & .711 & not adopted \\
+    \texttt{densesym} & regressed rotation + PnP translation, weight 1, symmetric XYZ & .907 / .906 & .907 & .705 / .710 & .707 & not adopted \\
+    \midrule
+    \texttt{densesymx5} & PnP on mask + XYZ, weight 5, symmetric XYZ & .914 / .910 & .912 & .718 / .713 & .715 & adopted (best) \\
+    \texttt{densesymx5} & direct regression, weight 5, symmetric XYZ & .893 / .889 & .891 & .691 / .682 & .687 & direct, better than baseline \\
+    \texttt{densesymx5} & PnP from the regressed pose, weight 5, symmetric XYZ & .914 / .910 & .912 & .718 / .713 & .716 & adopted (equal) \\
+    \texttt{densesymx5} & regressed rotation + PnP translation, weight 5, symmetric XYZ & .912 / .909 & .911 & .712 / .708 & .710 & not adopted \\
+    \bottomrule
+  \end{tabular}
+  \caption{\textbf{Multi-head network and PnP on LM-O} (PBR only, 2$\times$ budget, ViT-B/384, two seeds). Four ways of obtaining the pose from the same network; \texttt{pnp\_init} and \texttt{dr\_rot\_pnp\_t} are weak on symmetric objects without symmetric XYZ targets (the seed-b test value of \texttt{densex5} drops to 0.669 and 0.617 for that reason).}
+  \label{tab:cat_dense}
+\end{table*}
+
+\begin{table*}[t]
+  \centering
+  \small
+  \begin{tabular}{@{}llccccc@{}}
+    \toprule
+    Refiner & Metric & 0 & 1 & 2 & 3 & 4 \\
+    \midrule
+    CosyPose (PBR) on \texttt{tlwocc4x} poses, LM-O & test & .669 & .616 & .584 & .567 & .557 \\
+    CosyPose, YCB-V (\texttt{tok4x}) & test & .694 & .693 & .694 & .689 & .689 \\
+    CosyPose, T-LESS (\texttt{tok4x}) & test & .762 & .743 & .731 & .722 & .719 \\
+    Ours \texttt{cnxa} seed a (lr 5e-5) & val & .8873 & .8978 & .8950 & .8913 & .8882 \\
+     & test & .6692 & .6977 & .6970 & .6928 & .6897 \\
+    Ours \texttt{cnxa} seed b & val & .8873 & .8997 & .8980 & .8946 & .8920 \\
+     & test & .6692 & .6969 & .6977 & .6943 & .6915 \\
+    Ours \texttt{cnxb} seed a (lr 1e-4) & val & .8873 & .8891 & .8905 & .8925 & .8938 \\
+     & test & .6692 & .6700 & .6700 & .6697 & .6687 \\
+    Ours \texttt{cnxb} seed b & val & .8873 & .8887 & .8897 & .8911 & .8926 \\
+     & test & .6692 & .6696 & .6696 & .6691 & .6681 \\
+    Ours \texttt{cnxs} seed a (small-error noise), adopted & val & .8873 & .9055 & .9041 & .9004 & .8973 \\
+     & test & .6692 & .6989 & .6980 & .6953 & .6922 \\
+    Ours \texttt{cnxs} seed b & val & .8873 & .9044 & .9044 & .9005 & .8980 \\
+     & test & .6692 & .6972 & .6979 & .6966 & .6940 \\
+    \midrule
+    Ours \texttt{cnxs} (trained on regression errors), seed a, on \texttt{densesym} PnP poses & val & .9055 & .9076 & .9044 & -- & -- \\
+     & test & .7065 & .7091 & .7039 & -- & -- \\
+    Ours \texttt{cnxp} seed a (PnP-like noise) & val & .9055 & .9058 & .9061 & .9066 & .9066 \\
+     & test & .7065 & .7063 & .7064 & .7066 & .7069 \\
+    Ours \texttt{cnxp} seed b & val & .9055 & .9061 & .9066 & .9072 & .9075 \\
+     & test & .7065 & .7067 & .7070 & .7075 & .7080 \\
+    Ours \texttt{cnxq} seed a (single small level) & val & .9055 & .9042 & .9032 & .9017 & .8995 \\
+     & test & .7065 & .7092 & .7086 & .7060 & .7037 \\
+    Ours \texttt{cnxq} seed b & val & .9055 & .9065 & .9054 & .9039 & .9014 \\
+     & test & .7065 & .7083 & .7083 & .7056 & .7044 \\
+    \bottomrule
+  \end{tabular}
+  \caption{\textbf{Render-and-compare refinement on LM-O}, by number of refinement iterations (0 = the poses as they are). Upper block: refining the direct-regression poses of \texttt{tlwocc4x} (seed a). Lower block: refining the PnP poses of \texttt{densesym} (seed a). Refiner names are in Sec.~\ref{sec:acc:refine}.}
+  \label{tab:cat_refine}
+\end{table*}
+
+\begin{table*}[t]
+  \centering
+  \small
+  \begin{tabular}{@{}llccccl@{}}
+    \toprule
+    Run & Change & Val. a / b & Val. mean & Test a / b & Test mean & Outcome \\
+    \midrule
+    LM-O PBR only (\texttt{tlwocc} 2$\times$) &  & .885 / .880 & .882 & .664 / .658 & .661 & baseline \\
+    LM-O PBR + real & val.\ inflated (views 5$^\circ$ from training views) & .971 / .972 & .972 & .676 / .686 & .681 & PBR + real category \\
+    YCB-V PBR only (\texttt{tok2x}) &  & .668 / .683 & .676 & .681 / .689 & .685 & baseline \\
+    YCB-V PBR + real & \texttt{train\_real} & .742 / .761 & .752 & .757 / .771 & .764 & PBR + real category \\
+    T-LESS PBR only (2$\times$) &  & .871 / .872 & .871 & .763 / .762 & .763 & baseline \\
+    T-LESS PBR + real & \texttt{train\_primesense} & .874 / .882 & .878 & .775 / .778 & .777 & PBR + real category \\
+    LM-O pose ensemble of two seeds & average of \texttt{tok4x}, \texttt{tok4x2} & -- / -- & -- & .669 / -- & .669 & not adopted \\
+    YCB-V pose ensemble of two seeds & seeds 0.694 / 0.702 & -- / -- & -- & .705 / -- & .705 & not adopted \\
+    LM-O RGB-D depth correction & \texttt{tok4x} poses + test depth & -- / -- & -- & .750 / -- & .750 & separate category \\
+    YCB-V RGB-D depth correction &  & -- / -- & -- & .854 / -- & .854 & separate category \\
+    T-LESS RGB-D depth correction & RGB 0.762 / 0.762 & -- / -- & -- & .858 / .859 & .859 & separate category \\
+    LM-O own detector (small) & default detections 0.668 & -- / -- & -- & .654 / .656 & .655 & not adopted \\
+    YCB-V own detector (small) & default 0.702 & -- / -- & -- & .681 / -- & .681 & not adopted \\
+    \bottomrule
+  \end{tabular}
+  \caption{\textbf{Real training images, RGB-D, ensemble and own detector.} Rows of different categories (PBR only, PBR + real, RGB-D) are different leaderboard categories and are never compared across.}
+  \label{tab:cat_other}
+\end{table*}
+
+\subsection{Why the Non-Adopted Approaches Are Worse}
+\label{sec:catalogue:discussion}
+\todo{Write once the best configuration is final (decision gate 2026-12-04). Candidate explanations
+below are \emph{hypotheses}, not measured; each should be confirmed by a figure or a number before
+it is stated in the report.}
+\begin{itemize}\setlength\itemsep{1pt}
+  \item \textbf{Larger input (512 / 640 px) at 2$\times$.} \todo{Compare with the 4$\times$ runs.}
+        Hypothesis: LM-O crops are mostly smaller than 384 px natively, so extra pixels add no
+        detail, and the larger token grid needs a longer schedule.
+  \item \textbf{One network per object.} \todo{} Hypothesis: with the same samples per object each
+        per-object network gets $8\times$ to $30\times$ fewer optimiser steps than the shared one
+        and cannot share features across similar objects (T-LESS).
+  \item \textbf{Context crops, box jitter, augmentation variants.} \todo{} Hypothesis: they move
+        the training crops away from the distribution of detector boxes.
+  \item \textbf{Absolute rotation, no pretraining, legacy depth.} \todo{} Hypothesis: they break the
+        crop-relative parametrisation or throw away the pretrained features.
+  \item \textbf{Direct regression versus PnP.} \todo{} Hypothesis: dense XYZ supervision is a richer
+        training signal than six pose numbers, and PnP is geometrically exact for the visible
+        surface; the dense heads help even direct regression (+0.02 test).
+  \item \textbf{\texttt{pnp\_init} and \texttt{dr\_rot\_pnp\_t}.} \todo{} Hypothesis: for symmetric
+        objects the regressed pose and the XYZ target disagree unless the target follows the
+        symmetry the rotation loss picks; the symmetric XYZ targets remove the disagreement.
+  \item \textbf{CosyPose refiner and our refiner on PnP poses.} \todo{} Hypothesis: the public
+        refiner was trained with a different renderer and on larger errors; PnP poses leave
+        little for a refiner to correct.
+  \item \textbf{Ensembling, own detector, RGB-D.} \todo{} Hypothesis: ensembling two seeds averages
+        mostly the same errors; the own detector has lower mAP than the default one.
+\end{itemize}

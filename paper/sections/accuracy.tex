@@ -36,7 +36,7 @@ means improve.
     ViT-B/16 (baseline) & 384 & .885 / .880 & .883 & .664 / .658 & .661 \\
     ViT-B/16 & 512 & .881 / .884 & .882 & .657 / .664 & .661 \\
     ViT-B/16 & 640 & .879 / .881 & .880 & .668 / .665 & .667 \\
-    ViT-L/16 & 512 & \pending{seed a} / .890 & & \pending{seed a} / .681 & \\
+    ViT-L/16 & 512 & .892 / .890 & .891 & .690 / .681 & .686 \\
     ViT-H/14 & 518 & \pending{running} & & & \\
     \bottomrule
   \end{tabular}
@@ -47,9 +47,11 @@ means improve.
 At the short $2\times$ budget a larger input alone does not help (ViT-B at 512\,px equals the
 384\,px baseline on both numbers, \cref{tab:acc_backbone}); this is not a final verdict, because the
 larger models are also trained at $4\times$ (\texttt{lmo-m15x4-*}, pending). LM-O crops are usually smaller than 384\,px natively, so more pixels add
-no detail. The first ViT-L/16 seed is clearly better (+0.008 validation, +0.021 test) and also
-much better on the synthetic validation images (0.942 vs.\ 0.909).
-\todo{Decide with the second seed; ViT-B/640 and ViT-H/518 are still running.}
+no detail. ViT-L/16 at 512\,px is clearly better with both seeds (means +0.008 validation, +0.025 test) and is
+adopted at $2\times$; ViT-B/640 is better on test (+0.006) but worse on validation ($-$0.003) and is not
+adopted at $2\times$. The $4\times$ runs of all four backbones and an $8\times$ ViT-L/512 run are
+running (\cref{tab:cat_backbone}).
+\todo{Decide the final backbone and budget with the $4\times$ / $8\times$ results; ViT-H/518 at $2\times$ is still running.}
 
 \subsection{Training Budget}
 \label{sec:acc:budget}
@@ -107,7 +109,7 @@ validation score drops by 0.017, so the improvement is not trusted.
     \midrule
     LM-O  & .883 & .661 & .972\textsuperscript{*} & .681 & LM, no BOP19 images \\
     YCB-V & .676 & .685 & .752 & .764 & \texttt{train\_real} \\
-    T-LESS & \pending{running} & & & & \texttt{train\_primesense} \\
+    T-LESS & .872 & .763 & .878 & .777 & \texttt{train\_primesense} \\
     \bottomrule
   \end{tabular}
   \caption{\textbf{Adding the real training images} ($2\times$ budget, mean of two seeds; the two
@@ -130,23 +132,26 @@ leaderboard and are reported as such.
     \toprule
     Pose mode & Val. & Test & Time (ms) & Fallbacks \\
     \midrule
-    Direct regression, no dense heads (baseline) & & & & \\
-    Direct regression, with dense heads & \pending{} & \pending{} & & \\
-    PnP on mask + XYZ & \pending{} & \pending{} & & \\
-    PnP from the regressed pose & \pending{} & \pending{} & & \\
-    Regressed rotation + PnP translation & \pending{} & \pending{} & & \\
+    Direct regression, no dense heads (baseline) & .883 & .661 & & \\
+    Direct regression, with dense heads & .891 & .687 & & \\
+    PnP on mask + XYZ & .912 & .715 & & \\
+    PnP from the regressed pose & .912 & .716 & & \\
+    Regressed rotation + PnP translation & .911 & .710 & & \\
     \bottomrule
   \end{tabular}
-  \caption{\textbf{Multi-head network on LM-O} (PBR only, $2\times$ budget). One ViT predicts the
+  \caption{\textbf{Multi-head network on LM-O} (PBR only, $2\times$ budget, mean of two seeds, symmetric XYZ targets and XYZ weight 5; all variants and seeds in \cref{tab:cat_dense}). One ViT predicts the
   pose directly and, from its patch tokens, a visible-object mask and normalised object
   coordinates; PnP-RANSAC, a refinement from the regressed pose, or a translation solved for the
   regressed rotation give the final pose. ``Fallbacks'': instances where PnP failed and the
   regressed pose was kept.}
   \label{tab:acc_dense}
 \end{table}
+PnP on the dense output adds $+0.030$ validation and $+0.055$ test over the baseline; the dense heads
+alone already help direct regression ($+0.008$ / $+0.026$). The symmetric XYZ targets and weight 5
+are adopted (\cref{tab:cat_dense}); without symmetric targets the two modes that start from the
+regressed pose fail on the symmetric objects.
 \todo{Describe the decoder (\texttt{DenseHead}), the targets (depth + ground-truth pose + visible
-mask, normalised by the model box), the losses and the symmetric-object handling once the six
-\texttt{lmo-m18-*} runs are compared; weights 1 / 5 / 0.2 for the XYZ term are the candidates.}
+mask, normalised by the model box), the losses and the symmetric-object handling; time and fallback columns.}
 
 \subsection{Render-and-Compare Refinement}
 \label{sec:acc:refine}
@@ -171,4 +176,9 @@ The public refiner brings no gain (\cref{tab:acc_refine}): it corrects large err
 noisy ground truth of 15$^\circ$ / 40\,mm goes down to 4.8$^\circ$ / 21\,mm in two iterations) but not
 errors below about $3^\circ$ and 15\,mm, which is where our poses already are, and it makes LM-O
 and T-LESS worse. Each iteration costs about 0.04\,s per image.
-\todo{Decide whether to train our own refiner on perturbations of our poses (M19 R2).}
+Our own refiner (ConvNeXt-B, trained on perturbations of the training poses) does gain on the poses of the
+direct-regression model: one iteration gives $+0.018$ validation and $+0.029$ test (mean of two seeds, row
+``our refiner'' of \cref{tab:acc_refine}). On the PnP poses of the dense model it gives at most
+$+0.002$ / $+0.001$, so the two gains do not add up and PnP alone is better than refined direct
+poses (\cref{tab:cat_refine}).
+\todo{Describe the renderer, the input and the loss of the refiner.}

@@ -60,6 +60,7 @@ Exit codes: 0 ok · 1 job failed · 2 no such job · 3 still waiting · 4 runai 
   - A new job normally appears in `runai list` within ~10 s. Once the cluster delayed new jobs by ~9 min, and `wait.sh` returned 2 in the meantime, so re-check for a few minutes before concluding a job failed. `$RUN_DIR/log.txt` ("exit code" line) is the reliable signal.
   - Put job logic in script files, not inline multi-line `python -c`, because runai strips the inner quotes.
   - Install packages with `.venv/bin/pip`: uv ignores the system site-packages.
+- Report completeness (user, 2026-11-22): the report must contain ALL numbers of ALL runs, also the approaches that were not adopted. Whenever a run is resolved and a row goes into `TASKS.md` §9, update the report in the same commit: the full catalogue is `paper/sections/all_runs.tex` (generated once from `scratchpad`-style data; edit the .tex directly now), the headline tables are in `paper/sections/accuracy.tex`. Keep an "outcome" for every run (adopted / not adopted / running) and fill the Discussion subsection `sec:catalogue:discussion` (why the non-adopted ones are worse) once the best approach is final.
 - Results of BOP runs go in `$RUN_DIR`, and a summary row goes in `TASKS.md` §9.
 - Geometry conventions:
   - BOP `cam_R_m2c` is used as is: it is the same R model→camera as SPEED's `quaternion_to_rotation_matrix(q_vbs2tango)`.

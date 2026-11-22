@@ -14,6 +14,7 @@
 #   densesym  as dense, with the XYZ target of the symmetric pose the rotation loss picks
 #             (--dense_symmetric_xyz, M18.6a; eggbox / glue on LM-O)
 #   densesymx5  symmetric XYZ targets and XYZ L1 weight 5 (both adopted 2026-11-21)
+#   densesymx5l densesymx5 with ViT-L/16 at 512 px (2 GPUs: GPUS=2 CPUS=16 MEMORY=96Gi; SPE as wanted, e.g. 4x)
 # Baseline for the DR head: tlwocc / tlwocc2 (same SPE); for the pose modes: DR of the same run.
 # Compare per pose mode with `scripts/val_score.py` on eval_val_<mode>, eval_valn_<mode>.
 set -euo pipefail
@@ -25,7 +26,7 @@ DET=$(ls "$NAS_HOME"/datasets/bop_detections/default_task1/bop23_default_detecti
 MODES=${MODES:-"dr pnp pnp_init dr_rot_pnp_t"}
 
 (( $# == 1 )) || { echo "usage: $0 VARIANT[2]"; exit 5; }
-VARIANTS=" dense densex5 densexl densesym densesymx5 "
+VARIANTS=" dense densex5 densexl densesym densesymx5 densesymx5l "
 v=$1 base=$1 seed=0
 if [[ $VARIANTS != *" $v "* && $v == *2 ]]; then
     base=${v%2} seed=1
@@ -38,6 +39,7 @@ case $base in
     densexl) XYZ_W=0.2 ;;
     densesym) extra=(--dense_symmetric_xyz) ;;
     densesymx5) XYZ_W=5; extra=(--dense_symmetric_xyz) ;;
+    densesymx5l) XYZ_W=5; VIT=vit_l_16_512; extra=(--dense_symmetric_xyz) ;;
     *) echo "unknown variant $v"; exit 5 ;;
 esac
 out=$RUN_DIR/$v

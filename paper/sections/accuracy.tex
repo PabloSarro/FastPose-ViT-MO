@@ -46,7 +46,7 @@ means improve.
 \end{table}
 At the short $2\times$ budget a larger input alone does not help (ViT-B at 512\,px equals the
 384\,px baseline on both numbers, \cref{tab:acc_backbone}); this is not a final verdict, because the
-larger models are also trained at $4\times$ (\texttt{lmo-m15x4-*}, pending). LM-O crops are usually smaller than 384\,px natively, so more pixels add
+larger models are also trained at $4\times$ (\texttt{lmo-m15x4-*}; ViT-B/512 and B/640 are within noise of the baseline, ViT-L/512 gains +0.008 / +0.024, \cref{tab:cat_backbone}; ViT-H pending). LM-O crops are usually smaller than 384\,px natively, so more pixels add
 no detail. ViT-L/16 at 512\,px is clearly better with both seeds (means +0.008 validation, +0.025 test) and is
 adopted at $2\times$; ViT-B/640 is better on test (+0.006) but worse on validation ($-$0.003) and is not
 adopted at $2\times$. The $4\times$ runs of all four backbones and an $8\times$ ViT-L/512 run are

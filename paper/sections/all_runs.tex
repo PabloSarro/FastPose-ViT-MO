@@ -28,11 +28,13 @@ discussion of why the non-adopted approaches are worse is in Sec.~\ref{sec:catal
     ViT-B/640 & 640 px, 2$\times$ & .879 / .881 & .880 & .668 / .665 & .667 & not adopted at 2$\times$ \\
     ViT-L/512 & ViT-L/16, 512 px, 2$\times$ & .892 / .890 & .891 & .690 / .681 & .686 & adopted at 2$\times$ \\
     ViT-H/518 & ViT-H/14, 518 px, 2$\times$ & .899 / .898 & .898 & .691 / .693 & .692 & adopted at 2$\times$ (best so far) \\
-    ViT-B/512, 4$\times$ & 4$\times$ & -- / -- & -- & -- / -- & -- & \pending{running} \\
-    ViT-B/640, 4$\times$ & 4$\times$ & -- / -- & -- & -- / -- & -- & \pending{running} \\
-    ViT-L/512, 4$\times$ & 4$\times$ & -- / -- & -- & -- / -- & -- & \pending{running} \\
+    ViT-B/512, 4$\times$ & 512 px, 4$\times$ & .881 / .888 & .884 & .673 / .671 & .672 & not adopted (validation $-$.002, test +.004) \\
+    ViT-B/640, 4$\times$ & 640 px, 4$\times$ & .888 / .887 & .888 & .666 / .675 & .671 & adopted by a small margin (+.001 / +.003) \\
+    ViT-L/512, 4$\times$ & ViT-L/16, 512 px, 4$\times$ & .892 / .896 & .894 & .688 / .695 & .691 & adopted (+.008 / +.024), best at 4$\times$ so far \\
     ViT-H/518, 4$\times$ & 4$\times$ & -- / -- & -- & -- / -- & -- & \pending{running} \\
-    ViT-L/512, 8$\times$ & 8$\times$ & -- / -- & -- & -- / -- & -- & \pending{seed a running} \\
+    ViT-L/512, 8$\times$ & 8$\times$ & -- / -- & -- & -- / -- & -- & \pending{seed a queued, seed b running} \\
+    ViT-B/640, 8$\times$ & 8$\times$ & -- / -- & -- & -- / -- & -- & \pending{running} \\
+    ViT-B/512, 8$\times$ & 8$\times$ & -- / -- & -- & -- / -- & -- & \pending{not launched} \\
     \bottomrule
   \end{tabular}
   \caption{\textbf{Backbone, input size and budget on LM-O} (PBR only; \texttt{tlwocc} 2$\times$ is the baseline of the 2$\times$ rows, \texttt{tlwocc} 4$\times$ of the 4$\times$ rows).}
@@ -135,6 +137,31 @@ discussion of why the non-adopted approaches are worse is in Sec.~\ref{sec:catal
   \end{tabular}
   \caption{\textbf{Multi-head network and PnP on LM-O} (PBR only, 2$\times$ budget, ViT-B/384, two seeds). Four ways of obtaining the pose from the same network; \texttt{pnp\_init} and \texttt{dr\_rot\_pnp\_t} are weak on symmetric objects without symmetric XYZ targets (the seed-b test value of \texttt{densex5} drops to 0.669 and 0.617 for that reason).}
   \label{tab:cat_dense}
+\end{table*}
+
+\begin{table*}[t]
+  \centering
+  \small
+  \begin{tabular}{@{}llccccl@{}}
+    \toprule
+    Run & Change & Val. a / b & Val. mean & Test a / b & Test mean & Outcome \\
+    \midrule
+    \texttt{densex5} & PnP on mask + XYZ, XYZ weight 5 & .909 / .916 & .913 & .722 / .720 & .721 & adopted (best; both seeds above \texttt{densesymx5}) \\
+    \texttt{densex5} & direct regression & .892 / .891 & .892 & .695 / .692 & .693 & direct, better than baseline \\
+    \texttt{densex5} & PnP from the regressed pose & .888 / .891 & .889 & .693 / .671 & .682 & not adopted \\
+    \texttt{densex5} & regressed rotation + PnP translation & .844 / .847 & .846 & .673 / .621 & .647 & not adopted \\
+    \midrule
+    \texttt{densesymx5} & PnP on mask + XYZ, weight 5, symmetric XYZ & .912 / .908 & .910 & .715 / .716 & .715 & not adopted (below \texttt{densex5}) \\
+    \texttt{densesymx5} & direct regression & .891 / .889 & .890 & .691 / .692 & .691 & direct, better than baseline \\
+    \texttt{densesymx5} & PnP from the regressed pose & .912 / .908 & .910 & .715 / .716 & .715 & not adopted \\
+    \texttt{densesymx5} & regressed rotation + PnP translation & .911 / .910 & .910 & .712 / .714 & .713 & not adopted \\
+    \midrule
+    \texttt{densesymx5l} & PnP, ViT-L/512, symmetric XYZ & -- / -- & -- & -- / -- & -- & \pending{queued} \\
+    \texttt{densex5l} & PnP, ViT-L/512 & -- / -- & -- & -- / -- & -- & \pending{queued} \\
+    \bottomrule
+  \end{tabular}
+  \caption{\textbf{Multi-head network at $4\times$ on LM-O} (PBR only, ViT-B/384, two seeds; the $2\times$ references are in \cref{tab:cat_dense}: \texttt{densex5} PnP .912 / .717, \texttt{densesymx5} PnP .912 / .715). The $4\times$ budget separates the two variants that tied at $2\times$: without symmetric XYZ targets the modes that start from the regressed pose (\texttt{pnp\_init}, \texttt{dr\_rot\_pnp\_t}) collapse on the symmetric objects, which does not affect plain PnP.}
+  \label{tab:cat_dense4x}
 \end{table*}
 
 \begin{table*}[t]

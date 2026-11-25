@@ -142,6 +142,10 @@ def create_bop_datasets(args: argparse.Namespace, img_size: int, logger) -> tupl
         pixel_aug="none" if args.no_pixel_augmentation else args.bop_pixel_aug,
         bbox_source=args.bop_bbox_source,
         occlusion_aug=args.bop_occlusion_aug,
+        occlusion_p=args.bop_occlusion_p,
+        occlusion_max_holes=args.bop_occlusion_max_holes,
+        occlusion_max_size=args.bop_occlusion_max_size,
+        cutout_p=args.bop_cutout_p,
         real_background=args.bop_real_background,
         **common,
     )
@@ -867,6 +871,7 @@ def train(
             use_per_iteration_scheduling=use_per_iteration_scheduling,
             global_iteration_start=global_iteration,
             translation_loss_weight=args.translation_loss_weight,
+            rotation_loss_weight=args.rotation_loss_weight,
             dense=args.dense_heads,
             mask_loss_weight=args.mask_loss_weight,
             xyz_loss_weight=args.xyz_loss_weight,

@@ -672,7 +672,12 @@ class FastRandomSunFlare(A.RandomSunFlare):
 
 
 def pixel_transform(
-    pixel_aug: str, fast_sun_flare: bool = True, occlusion: bool = False
+    pixel_aug: str,
+    fast_sun_flare: bool = True,
+    occlusion: bool = False,
+    occlusion_p: float = 0.5,
+    occlusion_max_holes: int = 4,
+    occlusion_max_size: float = 0.3,
 ) -> A.Compose:
     """Photometric augmentations + ImageNet normalization, for crops already at model size.
 
@@ -736,14 +741,15 @@ def pixel_transform(
         }[pixel_aug]
     if occlusion:
         # M11 (2026-11-14): synthetic occlusion, 1-4 rectangles of 10-30 % of the crop side filled
-        # with uniform noise; labels are unchanged
+        # with uniform noise; labels are unchanged (also the M18 dense targets). M18.7 varies the
+        # probability, the number and the size.
         augs = list(augs) + [
             A.CoarseDropout(
-                num_holes_range=(1, 4),
-                hole_height_range=(0.1, 0.3),
-                hole_width_range=(0.1, 0.3),
+                num_holes_range=(1, occlusion_max_holes),
+                hole_height_range=(0.1, occlusion_max_size),
+                hole_width_range=(0.1, occlusion_max_size),
                 fill="random_uniform",
-                p=0.5,
+                p=occlusion_p,
             )
         ]
     return A.Compose(
@@ -863,6 +869,10 @@ class BOPDataset(Dataset):
         crop_context: bool = False,
         crop_scale: float = 1.0,
         occlusion_aug: bool = False,
+        occlusion_p: float = 0.5,
+        occlusion_max_holes: int = 4,
+        occlusion_max_size: float = 0.3,
+        cutout_p: float = 0.0,
         real_background: bool = False,
         no_rotation_compensation: bool = False,
         dense_size: int = 0,
@@ -888,6 +898,11 @@ class BOPDataset(Dataset):
             crop_scale: Side of the square crop in units of max(w, h) of the box (M11; 1 = tight).
                 The labels still refer to the box, so this only changes what the network sees.
             occlusion_aug: Also erase 1-4 random rectangles of the crop (M11), when augmenting.
+            occlusion_p, occlusion_max_holes, occlusion_max_size: Probability, largest number and
+                largest side (fraction of the crop side) of those rectangles.
+            cutout_p: When augmenting, with this probability paste the visible pixels of another
+                object (a random other row) over the crop (M18.7). The pasted pixels leave the
+                dense targets (mask, xyz_valid), as a real occluder would; pose labels unchanged.
             real_background: When augmenting, paste the object of a real training image (rows of
                 source > 0, e.g. T-LESS train_primesense on a black background) onto a random
                 PBR image (source 0), with its mask_visib (M17).
@@ -923,8 +938,13 @@ class BOPDataset(Dataset):
         self.real_background = real_background and self.augment
         self.pbr_rows = np.flatnonzero(self.index["source"] == 0) if self.real_background else None
         self.transform = pixel_transform(
-            pixel_aug if self.augment else "none", occlusion=occlusion_aug and self.augment
+            pixel_aug if self.augment else "none",
+            occlusion=occlusion_aug and self.augment,
+            occlusion_p=occlusion_p,
+            occlusion_max_holes=occlusion_max_holes,
+            occlusion_max_size=occlusion_max_size,
         )
+        self.cutout_p = cutout_p if self.augment else 0.0
         self.dense_size = dense_size
         self._scene_cameras: dict = {}
         if dense_size > 0:
@@ -966,6 +986,64 @@ class BOPDataset(Dataset):
         bg = self.load_image(int(np.random.choice(self.pbr_rows)))
         bg = cv2.resize(bg, (image.shape[1], image.shape[0]), interpolation=cv2.INTER_AREA)
         return np.where(mask[..., None] > 0, image, bg)
+
+    def paste_occluder(self, row: int, crop: np.ndarray, bbox) -> tuple[np.ndarray, np.ndarray]:
+        """M18.7: the visible pixels of another object pasted over a crop of `row`.
+
+        A random row of a different object gives the occluder (its image inside the box of its
+        mask_visib), resized to 30-70 % of the longer side of the target's box and centred at a
+        random point of that box; nothing is pasted outside the box (black bands).
+        Returns (crop, covered): covered (S, S) bool marks the replaced pixels.
+        """
+        size = self.img_size
+        covered = np.zeros((size, size), dtype=bool)
+        obj = self.index["obj_idx"][row]
+        for _ in range(10):
+            other = int(np.random.randint(len(self)))
+            if self.index["obj_idx"][other] != obj:
+                break
+        else:
+            return crop, covered  # single-object training: no other object to paste
+        mask = cv2.imread(self.mask_path(other), cv2.IMREAD_GRAYSCALE)
+        if mask is None:
+            raise FileNotFoundError(f"Could not load mask: {self.mask_path(other)}")
+        x, y, w, h = cv2.boundingRect((mask > 0).astype(np.uint8))
+        if w < 2 or h < 2:
+            return crop, covered
+        patch = self.load_image(other)[y : y + h, x : x + w]
+        patch_mask = mask[y : y + h, x : x + w]
+
+        M = crop_warp_matrix(bbox, size, self.crop_scale)
+        # the target's box in crop pixels (bbox is in K coordinates: pixel i is centred at i + 0.5)
+        bx1, bx2 = (M[0, 0] * (v - 0.5) + M[0, 2] for v in (bbox[0], bbox[2]))
+        by1, by2 = (M[1, 1] * (v - 0.5) + M[1, 2] for v in (bbox[1], bbox[3]))
+        scale = np.random.uniform(0.3, 0.7) * max(bx2 - bx1, by2 - by1) / max(w, h)
+        pw, ph = max(1, int(round(w * scale))), max(1, int(round(h * scale)))
+        patch = cv2.resize(patch, (pw, ph), interpolation=cv2.INTER_LINEAR)
+        patch_mask = cv2.resize(patch_mask, (pw, ph), interpolation=cv2.INTER_NEAREST) > 0
+        left = int(round(np.random.uniform(bx1, bx2) - pw / 2))
+        top = int(round(np.random.uniform(by1, by2) - ph / 2))
+        x0, x1 = max(left, 0, int(np.ceil(bx1))), min(left + pw, size, int(np.floor(bx2)) + 1)
+        y0, y1 = max(top, 0, int(np.ceil(by1))), min(top + ph, size, int(np.floor(by2)) + 1)
+        if x1 <= x0 or y1 <= y0:
+            return crop, covered
+        inside = patch_mask[y0 - top : y1 - top, x0 - left : x1 - left]
+        covered[y0:y1, x0:x1] = inside
+        crop = crop.copy()
+        crop[y0:y1, x0:x1][inside] = patch[y0 - top : y1 - top, x0 - left : x1 - left][inside]
+        return crop, covered
+
+    def covered_dense(self, covered: np.ndarray, bbox) -> np.ndarray:
+        """A crop-resolution (img_size) pixel mask sampled at the dense grid (dense_size)."""
+        M_img = crop_warp_matrix(bbox, self.img_size, self.crop_scale)
+        M = crop_warp_matrix(bbox, self.dense_size, self.crop_scale)
+        grid = np.arange(self.dense_size, dtype=np.float64)
+        index = []
+        for axis in (0, 1):
+            u = (grid - M[axis, 2]) / M[axis, axis] + 0.5  # K coordinate of each dense pixel
+            i = np.round(M_img[axis, axis] * (u - 0.5) + M_img[axis, 2]).astype(int)
+            index.append(np.clip(i, 0, self.img_size - 1))
+        return covered[np.ix_(index[1], index[0])]
 
     def crop_bbox(self, row: int) -> list[float]:
         """The [x1, y1, x2, y2] bbox the crop and labels use, jittered when augmenting."""
@@ -1078,6 +1156,9 @@ class BOPDataset(Dataset):
         if self.real_background and index["source"][row] > 0:
             image = self.replace_background(row, image)
         crop = crop_image(image, bbox, self.img_size, self.crop_context, self.crop_scale)
+        covered = None
+        if self.cutout_p > 0 and np.random.random() < self.cutout_p:
+            crop, covered = self.paste_occluder(row, crop, bbox)
         image = self.transform(image=crop.astype(np.float32) / 255.0)["image"]
         U, rotation = self.labels(row, bbox)
         obj_idx = int(index["obj_idx"][row])
@@ -1100,6 +1181,9 @@ class BOPDataset(Dataset):
         }
         if self.dense_size > 0:
             mask, xyz, valid = self.dense_targets(row, bbox)
+            if covered is not None:  # pasted occluder: not visible any more
+                keep = ~self.covered_dense(covered, bbox)
+                mask, xyz, valid = mask * keep, xyz * keep, valid & keep
             sample["mask"] = torch.from_numpy(mask).unsqueeze(0)
             sample["xyz"] = torch.from_numpy(xyz)
             sample["xyz_valid"] = torch.from_numpy(valid.astype(np.float32)).unsqueeze(0)

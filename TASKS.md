@@ -1299,6 +1299,12 @@ prefixes follow the milestone number (m12–m14 were used by audit / M11 jobs).
     images (M17): depth + GT pose are slightly inconsistent, a rendered target (bop_toolkit
     renderer) would be cleaner; v1 filters by the model box; (c) loss weights and decoder size
     are untuned: variants run in parallel with repeats when the training starts.
+- [~] **M18.7 (2026-11-25, user: run all remaining settings at 2× on LM-O, plus `densex5` at 8×; then take the ones that help most to higher budgets; YCB-V / T-LESS are left for the end with the best settings, e.g. the top 3).** Each setting is one change from `densex5` (2× baseline `lmo-m18-densex5{,2}-001`: PnP val 0.9122, test 0.7165), 2 seeds:
+  - [x] Code + tests: `--rotation_loss_weight`; `--bop_occlusion_{p,max_holes,max_size}`; `--bop_cutout_p` (visible pixels of another object pasted on the crop at 30–70 % of the box side, removed from the mask / XYZ targets); variants `densex10`, `densex5{m05,m20,m50,r05,r20,j15,op8,obig,ocut,real}` in `scripts/m18_dense.sh`. Defaults unchanged. `tests/test_m187_options.py`, `tests/test_m18_variants.py` (every variant's flags and seed). Smoke runs of `ocut`, `real`, `r05` in `dev`; dense targets on real LM training images: 95.8 % of mask pixels valid, 2.5 mm from the model surface; loader speed unchanged by the pasted occluders.
+  - [x] Seed ensemble of `densex5` + PnP (evaluation only, `scripts/m18_ensemble.sh`, `scripts/val_score_csv.py`; reproduces the single-seed validation scores exactly): results in §9.
+  - [ ] Training runs: `lmo-m18-densex10{,2}-001`, `lmo-m18-densex5{m05,m20,m50,r05,r20,j15,op8,obig,ocut,real}{,2}-001` (2×), `lmo-m18x8-densex5{,2}-001` (8×).
+  - [ ] Evaluate by the adoption rule (PnP, noisy validation + test); for `densex5real` compare on test only (its real validation is biased) with `lmo-m17-real2x{,2}` (PBR + real, direct regression).
+  - Note (open, not launched): the rectangle occlusion of the recipe leaves the dense targets unchanged (the mask and XYZ stay "visible" under the noise rectangles); the pasted occluders remove them. A variant that also removes the rectangle pixels from the targets has not been tried.
 
 ### M19 — Render-and-compare refinement (W6–W7)
 - What it does: render the object at the current pose estimate, let a network compare rendering

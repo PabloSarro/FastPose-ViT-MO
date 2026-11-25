@@ -16,6 +16,16 @@
 #   densesymx5  symmetric XYZ targets and XYZ L1 weight 5 (both adopted 2026-11-21)
 #   densesymx5l densesymx5 with ViT-L/16 at 512 px (2 GPUs: GPUS=2 CPUS=16 MEMORY=96Gi; SPE as wanted, e.g. 4x)
 #   densex5l    densex5 (no symmetric XYZ targets) with ViT-L/16 at 512 px (2 GPUs, as densesymx5l; 2026-11-24)
+# M18.7 (2026-11-25), each one change from densex5:
+#   densex10     XYZ L1 weight 10
+#   densex5m05 / densex5m20 / densex5m50   mask BCE weight 0.5 / 2 / 5
+#   densex5r05 / densex5r20                rotation loss weight 0.5 / 2
+#   densex5j15   box jitter 15 % (default 10 %)
+#   densex5op8   occlusion rectangles with p 0.8 (default 0.5)
+#   densex5obig  up to 6 rectangles of up to 40 % of the side (default 4, 30 %)
+#   densex5ocut  also pasted pixels of another object, p 0.5 (removed from the dense targets)
+#   densex5real  PBR + real LM images, 25 % real per object (as scripts/m17_real.sh): PBR + real
+#                category; baseline lmo-m17-real2x{,2}; its real validation is biased
 # Baseline for the DR head: tlwocc / tlwocc2 (same SPE); for the pose modes: DR of the same run.
 # Compare per pose mode with `scripts/val_score.py` on eval_val_<mode>, eval_valn_<mode>.
 set -euo pipefail
@@ -27,7 +37,10 @@ DET=$(ls "$NAS_HOME"/datasets/bop_detections/default_task1/bop23_default_detecti
 MODES=${MODES:-"dr pnp pnp_init dr_rot_pnp_t"}
 
 (( $# == 1 )) || { echo "usage: $0 VARIANT[2]"; exit 5; }
-VARIANTS=" dense densex5 densexl densesym densesymx5 densesymx5l densex5l "
+VARIANTS=" dense densex5 densexl densesym densesymx5 densesymx5l densex5l densex10 densex5m05
+densex5m20 densex5m50 densex5r05 densex5r20 densex5j15 densex5op8 densex5obig densex5ocut
+densex5real "
+VARIANTS=" $(echo $VARIANTS) "
 v=$1 base=$1 seed=0
 if [[ $VARIANTS != *" $v "* && $v == *2 ]]; then
     base=${v%2} seed=1
@@ -42,6 +55,17 @@ case $base in
     densesymx5) XYZ_W=5; extra=(--dense_symmetric_xyz) ;;
     densesymx5l) XYZ_W=5; VIT=vit_l_16_512; extra=(--dense_symmetric_xyz) ;;
     densex5l) XYZ_W=5; VIT=vit_l_16_512 ;;
+    densex10) XYZ_W=10 ;;
+    densex5m05) XYZ_W=5 MASK_W=0.5 ;;
+    densex5m20) XYZ_W=5 MASK_W=2 ;;
+    densex5m50) XYZ_W=5 MASK_W=5 ;;
+    densex5r05) XYZ_W=5; extra=(--rotation_loss_weight 0.5) ;;
+    densex5r20) XYZ_W=5; extra=(--rotation_loss_weight 2) ;;
+    densex5j15) XYZ_W=5; extra=(--bbox_crop_percent 15) ;;
+    densex5op8) XYZ_W=5; extra=(--bop_occlusion_p 0.8) ;;
+    densex5obig) XYZ_W=5; extra=(--bop_occlusion_max_holes 6 --bop_occlusion_max_size 0.4) ;;
+    densex5ocut) XYZ_W=5; extra=(--bop_cutout_p 0.5) ;;
+    densex5real) XYZ_W=5; extra=(--bop_train_split train_mix --bop_real_fraction 0.25) ;;
     *) echo "unknown variant $v"; exit 5 ;;
 esac
 out=$RUN_DIR/$v

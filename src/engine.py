@@ -44,6 +44,7 @@ class TrainingConfig:
     use_per_iteration_scheduling: bool = True
     global_iteration_start: int = 0
     translation_loss_weight: float = 1.0  # M11: total = weight * translation + rotation (training)
+    rotation_loss_weight: float = 1.0  # M18.7: weight of the rotation term of that total
     # M18 dense heads: total += mask_loss_weight * BCE(mask) + xyz_loss_weight * L1(XYZ)
     dense: bool = False
     mask_loss_weight: float = 1.0
@@ -580,7 +581,10 @@ def train_epoch(
                 loss_rotation = rotation_criterion(pred_rotations, rotations)
 
             loss_translation = translation_criterion(pred_translations, translations, bboxes)
-            total_loss = config.translation_loss_weight * loss_translation + loss_rotation
+            total_loss = (
+                config.translation_loss_weight * loss_translation
+                + config.rotation_loss_weight * loss_rotation
+            )
             if config.dense:
                 mask, xyz, valid = dense_targets_of(batch, device)
                 if config.symmetric_xyz:

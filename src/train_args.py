@@ -376,6 +376,31 @@ def build_parser() -> argparse.ArgumentParser:
         help="BOP (M11): erase 1-4 random rectangles of each training crop (p = 0.5)",
     )
     parser.add_argument(
+        "--bop_occlusion_p",
+        type=float,
+        default=0.5,
+        help="BOP (M18.7): probability of the --bop_occlusion_aug rectangles",
+    )
+    parser.add_argument(
+        "--bop_occlusion_max_holes",
+        type=int,
+        default=4,
+        help="BOP (M18.7): largest number of --bop_occlusion_aug rectangles",
+    )
+    parser.add_argument(
+        "--bop_occlusion_max_size",
+        type=float,
+        default=0.3,
+        help="BOP (M18.7): largest side of those rectangles, as a fraction of the crop side",
+    )
+    parser.add_argument(
+        "--bop_cutout_p",
+        type=float,
+        default=0.0,
+        help="BOP (M18.7): probability of pasting the visible pixels of another object over a "
+        "training crop (its pixels leave the dense mask / XYZ targets); 0 = off",
+    )
+    parser.add_argument(
         "--bop_real_background",
         action="store_true",
         help="BOP (M17, train_mix): paste the object of each real training image onto a random PBR "
@@ -385,7 +410,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--translation_loss_weight",
         type=float,
         default=1.0,
-        help="M11: total loss = weight * translation loss + rotation loss",
+        help="M11: total loss = weight * translation loss + rotation weight * rotation loss",
+    )
+    parser.add_argument(
+        "--rotation_loss_weight",
+        type=float,
+        default=1.0,
+        help="M18.7: weight of the rotation loss in the total training loss",
     )
     parser.add_argument(
         "--dense_heads",

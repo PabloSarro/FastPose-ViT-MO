@@ -158,6 +158,14 @@ are adopted (\cref{tab:cat_dense}); without symmetric targets the two modes that
 regressed pose fail on the symmetric objects. Averaging the PnP poses of the two seed models of
 \texttt{densex5} at test time adds little ($+0.002$ / $+0.002$ at $2\times$, $+0.001$ / $+0.001$ at
 $4\times$, for twice the inference).
+
+The occlusion augmentation erases rectangles of the training crops but leaves the mask and coordinate
+targets unchanged, and the trained \texttt{densex5} models ($2\times$) learn exactly that: with such
+rectangles added at inference they call 96\,\% of the erased object pixels visible and predict their
+coordinates about as accurately as elsewhere (4.9 against 4.8\,mm median). On the LM-O test they call
+21\,\% of the really occluded object pixels visible, but removing these pixels with the ground-truth
+masks does not change the AR ($0.7164 \to 0.7160$ and $0.7166 \to 0.7169$ for the two seeds).
+\pending{Models trained with the erased pixels removed from the targets are running.}
 \todo{Describe the decoder (\texttt{DenseHead}), the targets (depth + ground-truth pose + visible
 mask, normalised by the model box), the losses and the symmetric-object handling; time and fallback columns.}
 

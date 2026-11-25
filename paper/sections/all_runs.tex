@@ -252,6 +252,8 @@ discussion of why the non-adopted approaches are worse is in Sec.~\ref{sec:catal
     \texttt{densex5obig} & up to 6 occlusion rectangles of up to 40\,\% & -- / -- & -- & -- / -- & -- & \pending{running} \\
     \texttt{densex5ocut} & also pasted pixels of another object (p = 0.5) & -- / -- & -- & -- / -- & -- & \pending{running} \\
     \texttt{densex5real} & PBR + real LM images (PBR + real category) & -- / -- & -- & -- / -- & -- & \pending{running} \\
+    \texttt{densex5ochide} & occluded pixels removed from the mask and XYZ targets & -- / -- & -- & -- / -- & -- & \pending{running} \\
+    \texttt{densex5ocmask} & occluded pixels removed from the mask target only & -- / -- & -- & -- / -- & -- & \pending{running} \\
     \bottomrule
   \end{tabular}
   \caption{\textbf{Settings of the multi-head network on LM-O} (PnP, ViT-B/384, 2$\times$ budget, two seeds; reference \texttt{densex5} PnP .912 / .717; \texttt{densex5real} is compared with the real-image direct-regression model on the test set).}

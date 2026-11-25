@@ -223,6 +223,14 @@ discussion of why the non-adopted approaches are worse is in Sec.~\ref{sec:catal
     YCB-V pose ensemble of two seeds & seeds 0.694 / 0.702 & -- / -- & -- & .705 / -- & .705 & not adopted \\
     LM-O seed ensemble of \texttt{densex5} PnP, 2$\times$ & seed means .912 / .717 & .914 / -- & .914 & .719 / -- & .719 & small gain ($+$.002 / $+$.002) \\
     LM-O seed ensemble of \texttt{densex5} PnP, 4$\times$ & seed means .913 / .721 & .914 / -- & .914 & .722 / -- & .722 & small gain ($+$.001 / $+$.001) \\
+    LM-O two seeds, correspondences pooled, 2$\times$ & single .912 / .717 & .914 / -- & .914 & .720 / -- & .720 & small gain ($+$.002 / $+$.004) \\
+    LM-O two seeds, correspondences pooled, 4$\times$ & single .913 / .721 & .914 / -- & .914 & .723 / -- & .723 & small gain ($+$.001 / $+$.002) \\
+    \texttt{densex5} + \texttt{densesymx5}, pose average, 4$\times$ & pairs a, b & .911 / .913 & .912 & .720 / .719 & .720 & not adopted \\
+    \texttt{densex5} + \texttt{densesymx5}, pooled, 4$\times$ & pairs a, b & .909 / .909 & .909 & .718 / .716 & .717 & not adopted \\
+    Four dense models, pose average, 4$\times$ & 2 settings, 2 seeds & .913 / -- & .913 & .721 / -- & .721 & not adopted (no gain) \\
+    Four dense models, pooled, 4$\times$ & 2 settings, 2 seeds & .910 / -- & .910 & .718 / -- & .718 & not adopted \\
+    \texttt{densex5} + ViT-L/512 regression, pose average, 4$\times$ & pairs a, b & .904 / .910 & .907 & .712 / .713 & .712 & not adopted \\
+    \texttt{densex5} + ViT-H/518 regression, pose average, 2$\times$ & pairs a, b & .909 / .911 & .910 & .711 / .713 & .712 & not adopted \\
     LM-O RGB-D depth correction & \texttt{tok4x} poses + test depth & -- / -- & -- & .750 / -- & .750 & separate category \\
     YCB-V RGB-D depth correction &  & -- / -- & -- & .854 / -- & .854 & separate category \\
     T-LESS RGB-D depth correction & RGB 0.762 / 0.762 & -- / -- & -- & .858 / .859 & .859 & separate category \\

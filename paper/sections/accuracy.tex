@@ -157,7 +157,13 @@ alone already help direct regression ($+0.008$ / $+0.026$). The symmetric XYZ ta
 are adopted (\cref{tab:cat_dense}); without symmetric targets the two modes that start from the
 regressed pose fail on the symmetric objects. Averaging the PnP poses of the two seed models of
 \texttt{densex5} at test time adds little ($+0.002$ / $+0.002$ at $2\times$, $+0.001$ / $+0.001$ at
-$4\times$, for twice the inference).
+$4\times$, for twice the inference). Pooling the 2D--3D correspondences of both models into a single
+PnP gives slightly more on the test set ($+0.002$ / $+0.004$ at $2\times$, $+0.001$ / $+0.002$ at
+$4\times$), with the same validation score as the average. Combining different models does not help:
+adding a direct-regression ViT-L/512 or ViT-H/518 to \texttt{densex5} lowers both numbers (by up to
+$0.006$ / $0.008$), and pooling \texttt{densex5} with the symmetric-target model loses
+$0.004$ / $0.004$, mostly on the glue (\cref{tab:cat_other}).
+\pending{Ensemble of the dense ViT-B and ViT-L models.}
 
 The occlusion augmentation erases rectangles of the training crops but leaves the mask and coordinate
 targets unchanged, and the trained \texttt{densex5} models ($2\times$) learn exactly that: with such

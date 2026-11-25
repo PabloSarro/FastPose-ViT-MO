@@ -58,7 +58,9 @@ ViT-H/14 at 518\,px is better still at $2\times$ ($+0.016$ validation, $+0.031$ 
 \label{sec:acc:budget}
 Going from $2\times$ to $4\times$ the number of samples per epoch gave +0.011 AR. At $8\times$
 the first seed reaches 0.673 test AR and 0.886 noisy-box validation, against 0.668 / 0.886 at
-$4\times$ (same recipe, first seeds); the second seed gives 0.884 / 0.674, so the 2-seed means at $8\times$ are 0.885 / 0.673 against 0.883 / 0.666 at $4\times$ (\cref{tab:acc_budget}); both numbers improve and the larger budget is adopted.
+$4\times$ (same recipe, first seeds); the second seed gives 0.884 / 0.674, so the 2-seed means at $8\times$ are 0.885 / 0.673 against 0.883 / 0.666 at $4\times$ (\cref{tab:acc_budget}); both numbers improve and the larger budget is adopted. With translation weight 2 and occlusion
+augmentation the $8\times$ means are 0.888 / 0.677, again above the previous recipe at the same
+budget ($+0.003$ / $+0.004$).
 \begin{table}[t]
   \centering
   \small
@@ -68,9 +70,12 @@ $4\times$ (same recipe, first seeds); the second seed gives 0.884 / 0.674, so th
     \midrule
     $4\times$ & .886 / .880 & .668 / .664 & .666 \\
     $8\times$ & .886 / .884 & .673 / .674 & .673 \\
+    \midrule
+    $4\times$, with translation weight and occlusion & .887 / .885 & .669 / .667 & .668 \\
+    $8\times$, with translation weight and occlusion & .885 / .891 & .677 / .677 & .677 \\
     \bottomrule
   \end{tabular}
-  \caption{\textbf{Training budget on LM-O} (PBR only, baseline recipe).}
+  \caption{\textbf{Training budget on LM-O} (PBR only; upper rows: previous recipe, lower rows: with translation weight 2 and occlusion augmentation).}
   \label{tab:acc_budget}
 \end{table}
 
@@ -150,7 +155,9 @@ leaderboard and are reported as such.
 PnP on the dense output adds $+0.030$ validation and $+0.055$ test over the baseline; the dense heads
 alone already help direct regression ($+0.008$ / $+0.026$). The symmetric XYZ targets and weight 5
 are adopted (\cref{tab:cat_dense}); without symmetric targets the two modes that start from the
-regressed pose fail on the symmetric objects.
+regressed pose fail on the symmetric objects. Averaging the PnP poses of the two seed models of
+\texttt{densex5} at test time adds little ($+0.002$ / $+0.002$ at $2\times$, $+0.001$ / $+0.001$ at
+$4\times$, for twice the inference).
 \todo{Describe the decoder (\texttt{DenseHead}), the targets (depth + ground-truth pose + visible
 mask, normalised by the model box), the losses and the symmetric-object handling; time and fallback columns.}
 

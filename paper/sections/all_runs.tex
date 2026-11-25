@@ -23,6 +23,7 @@ discussion of why the non-adopted approaches are worse is in Sec.~\ref{sec:catal
     \texttt{tlwocc} 4$\times$ & 4$\times$ samples per epoch & .887 / .885 & .886 & .669 / .667 & .668 & adopted recipe \\
     \texttt{tok4x} & 4$\times$, no translation weight / occlusion & .886 / .880 & .883 & .668 / .664 & .666 & previous recipe \\
     \texttt{base8x} & 8$\times$, previous recipe & .886 / .884 & .885 & .673 / .674 & .673 & adopted budget (vs.\ \texttt{tok4x}) \\
+    \texttt{tlwocc8x} & 8$\times$, adopted recipe & .885 / .891 & .888 & .677 / .677 & .677 & adopted ($+$.003 / $+$.004 vs.\ \texttt{base8x}) \\
     ViT-B/224 (\texttt{r224tok4x}) & 224 px, 4$\times$ previous recipe & -- / -- & -- & .643 / .643 & .643 & not adopted \\
     ViT-B/512 & 512 px, 2$\times$ & .881 / .884 & .882 & .657 / .664 & .660 & not adopted (tie) \\
     ViT-B/640 & 640 px, 2$\times$ & .879 / .881 & .880 & .668 / .665 & .667 & not adopted at 2$\times$ \\
@@ -32,8 +33,9 @@ discussion of why the non-adopted approaches are worse is in Sec.~\ref{sec:catal
     ViT-B/640, 4$\times$ & 640 px, 4$\times$ & .888 / .887 & .888 & .666 / .675 & .671 & adopted by a small margin (+.001 / +.003) \\
     ViT-L/512, 4$\times$ & ViT-L/16, 512 px, 4$\times$ & .892 / .896 & .894 & .688 / .695 & .691 & adopted (+.008 / +.024), best at 4$\times$ so far \\
     ViT-H/518, 4$\times$ & 4$\times$ & -- / -- & -- & -- / -- & -- & \pending{running} \\
-    ViT-L/512, 8$\times$ & 8$\times$ & -- / -- & -- & -- / -- & -- & \pending{seed a queued, seed b running} \\
-    ViT-B/640, 8$\times$ & 8$\times$ & -- / -- & -- & -- / -- & -- & \pending{running} \\
+    ViT-L/512, 8$\times$ & 8$\times$ & -- / -- & -- & -- / -- & -- & \pending{running} \\
+    ViT-B/640, 8$\times$ & 8$\times$ & -- / -- & -- & -- / -- & -- & stopped at epoch 16 / 17 of 150 (no result) \\
+    ViT-H/518, 8$\times$ & 8$\times$, seed a only & -- / -- & -- & -- / -- & -- & stopped at epoch 34 of 150 (no result) \\
     ViT-B/512, 8$\times$ & 8$\times$ & -- / -- & -- & -- / -- & -- & \pending{not launched} \\
     \bottomrule
   \end{tabular}
@@ -156,8 +158,9 @@ discussion of why the non-adopted approaches are worse is in Sec.~\ref{sec:catal
     \texttt{densesymx5} & PnP from the regressed pose & .912 / .908 & .910 & .715 / .716 & .715 & not adopted \\
     \texttt{densesymx5} & regressed rotation + PnP translation & .911 / .910 & .910 & .712 / .714 & .713 & not adopted \\
     \midrule
-    \texttt{densesymx5l} & PnP, ViT-L/512, symmetric XYZ & -- / -- & -- & -- / -- & -- & \pending{queued} \\
-    \texttt{densex5l} & PnP, ViT-L/512 & -- / -- & -- & -- / -- & -- & \pending{queued} \\
+    \texttt{densesymx5l} & PnP, ViT-L/512, symmetric XYZ & -- / -- & -- & -- / -- & -- & \pending{running} \\
+    \texttt{densex5l} & PnP, ViT-L/512 & -- / -- & -- & -- / -- & -- & \pending{running} \\
+    \texttt{densex5} 8$\times$ & PnP, XYZ weight 5, 8$\times$ & -- / -- & -- & -- / -- & -- & \pending{running} \\
     \bottomrule
   \end{tabular}
   \caption{\textbf{Multi-head network at $4\times$ on LM-O} (PBR only, ViT-B/384, two seeds; the $2\times$ references are in \cref{tab:cat_dense}: \texttt{densex5} PnP .912 / .717, \texttt{densesymx5} PnP .912 / .715). The $4\times$ budget separates the two variants that tied at $2\times$: without symmetric XYZ targets the modes that start from the regressed pose (\texttt{pnp\_init}, \texttt{dr\_rot\_pnp\_t}) collapse on the symmetric objects, which does not affect plain PnP.}
@@ -218,6 +221,8 @@ discussion of why the non-adopted approaches are worse is in Sec.~\ref{sec:catal
     T-LESS PBR + real & \texttt{train\_primesense} & .874 / .882 & .878 & .775 / .778 & .777 & PBR + real category \\
     LM-O pose ensemble of two seeds & average of \texttt{tok4x}, \texttt{tok4x2} & -- / -- & -- & .669 / -- & .669 & not adopted \\
     YCB-V pose ensemble of two seeds & seeds 0.694 / 0.702 & -- / -- & -- & .705 / -- & .705 & not adopted \\
+    LM-O seed ensemble of \texttt{densex5} PnP, 2$\times$ & seed means .912 / .717 & .914 / -- & .914 & .719 / -- & .719 & small gain ($+$.002 / $+$.002) \\
+    LM-O seed ensemble of \texttt{densex5} PnP, 4$\times$ & seed means .913 / .721 & .914 / -- & .914 & .722 / -- & .722 & small gain ($+$.001 / $+$.001) \\
     LM-O RGB-D depth correction & \texttt{tok4x} poses + test depth & -- / -- & -- & .750 / -- & .750 & separate category \\
     YCB-V RGB-D depth correction &  & -- / -- & -- & .854 / -- & .854 & separate category \\
     T-LESS RGB-D depth correction & RGB 0.762 / 0.762 & -- / -- & -- & .858 / .859 & .859 & separate category \\
@@ -227,6 +232,30 @@ discussion of why the non-adopted approaches are worse is in Sec.~\ref{sec:catal
   \end{tabular}
   \caption{\textbf{Real training images, RGB-D, ensemble and own detector.} Rows of different categories (PBR only, PBR + real, RGB-D) are different leaderboard categories and are never compared across.}
   \label{tab:cat_other}
+\end{table*}
+
+\begin{table*}[t]
+  \centering
+  \small
+  \begin{tabular}{@{}llccccl@{}}
+    \toprule
+    Run & Change from \texttt{densex5} & Val. a / b & Val. mean & Test a / b & Test mean & Outcome \\
+    \midrule
+    \texttt{densex10} & XYZ loss weight 10 & -- / -- & -- & -- / -- & -- & \pending{running} \\
+    \texttt{densex5m05} & mask loss weight 0.5 & -- / -- & -- & -- / -- & -- & \pending{running} \\
+    \texttt{densex5m20} & mask loss weight 2 & -- / -- & -- & -- / -- & -- & \pending{running} \\
+    \texttt{densex5m50} & mask loss weight 5 & -- / -- & -- & -- / -- & -- & \pending{running} \\
+    \texttt{densex5r05} & rotation loss weight 0.5 & -- / -- & -- & -- / -- & -- & \pending{running} \\
+    \texttt{densex5r20} & rotation loss weight 2 & -- / -- & -- & -- / -- & -- & \pending{running} \\
+    \texttt{densex5j15} & box jitter 15\,\% & -- / -- & -- & -- / -- & -- & \pending{running} \\
+    \texttt{densex5op8} & occlusion rectangles with p = 0.8 & -- / -- & -- & -- / -- & -- & \pending{running} \\
+    \texttt{densex5obig} & up to 6 occlusion rectangles of up to 40\,\% & -- / -- & -- & -- / -- & -- & \pending{running} \\
+    \texttt{densex5ocut} & also pasted pixels of another object (p = 0.5) & -- / -- & -- & -- / -- & -- & \pending{running} \\
+    \texttt{densex5real} & PBR + real LM images (PBR + real category) & -- / -- & -- & -- / -- & -- & \pending{running} \\
+    \bottomrule
+  \end{tabular}
+  \caption{\textbf{Settings of the multi-head network on LM-O} (PnP, ViT-B/384, 2$\times$ budget, two seeds; reference \texttt{densex5} PnP .912 / .717; \texttt{densex5real} is compared with the real-image direct-regression model on the test set).}
+  \label{tab:cat_dense_settings}
 \end{table*}
 
 \subsection{Why the Non-Adopted Approaches Are Worse}

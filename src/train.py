@@ -145,6 +145,7 @@ def create_bop_datasets(args: argparse.Namespace, img_size: int, logger) -> tupl
         occlusion_p=args.bop_occlusion_p,
         occlusion_max_holes=args.bop_occlusion_max_holes,
         occlusion_max_size=args.bop_occlusion_max_size,
+        occlusion_targets=args.bop_occlusion_targets,
         cutout_p=args.bop_cutout_p,
         real_background=args.bop_real_background,
         **common,
@@ -1090,6 +1091,8 @@ if __name__ == "__main__":
             "--symmetric_rotation_loss needs a BOP dataset, --rotation_format matrix and "
             "--rotation_loss 6d_relative_frobenius"
         )
+    if args.bop_occlusion_targets != "keep" and not (args.dense_heads and args.bop_occlusion_aug):
+        parser.error("--bop_occlusion_targets needs --dense_heads and --bop_occlusion_aug")
     if args.dense_symmetric_xyz and not (args.dense_heads and args.symmetric_rotation_loss):
         parser.error("--dense_symmetric_xyz needs --dense_heads and --symmetric_rotation_loss")
     # Validate bbox_crop_percent

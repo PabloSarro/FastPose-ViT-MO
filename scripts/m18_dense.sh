@@ -26,6 +26,8 @@
 #   densex5ocut  also pasted pixels of another object, p 0.5 (removed from the dense targets)
 #   densex5real  PBR + real LM images, 25 % real per object (as scripts/m17_real.sh): PBR + real
 #                category; baseline lmo-m17-real2x{,2}; its real validation is biased
+#   densex5ochide  the dense targets follow the occlusion rectangles: removed from mask and XYZ
+#   densex5ocmask  removed from the mask only (XYZ still supervised under the rectangles)
 # Baseline for the DR head: tlwocc / tlwocc2 (same SPE); for the pose modes: DR of the same run.
 # Compare per pose mode with `scripts/val_score.py` on eval_val_<mode>, eval_valn_<mode>.
 set -euo pipefail
@@ -39,7 +41,7 @@ MODES=${MODES:-"dr pnp pnp_init dr_rot_pnp_t"}
 (( $# == 1 )) || { echo "usage: $0 VARIANT[2]"; exit 5; }
 VARIANTS=" dense densex5 densexl densesym densesymx5 densesymx5l densex5l densex10 densex5m05
 densex5m20 densex5m50 densex5r05 densex5r20 densex5j15 densex5op8 densex5obig densex5ocut
-densex5real "
+densex5real densex5ochide densex5ocmask "
 VARIANTS=" $(echo $VARIANTS) "
 v=$1 base=$1 seed=0
 if [[ $VARIANTS != *" $v "* && $v == *2 ]]; then
@@ -66,6 +68,8 @@ case $base in
     densex5obig) XYZ_W=5; extra=(--bop_occlusion_max_holes 6 --bop_occlusion_max_size 0.4) ;;
     densex5ocut) XYZ_W=5; extra=(--bop_cutout_p 0.5) ;;
     densex5real) XYZ_W=5; extra=(--bop_train_split train_mix --bop_real_fraction 0.25) ;;
+    densex5ochide) XYZ_W=5; extra=(--bop_occlusion_targets hide) ;;
+    densex5ocmask) XYZ_W=5; extra=(--bop_occlusion_targets hide_mask) ;;
     *) echo "unknown variant $v"; exit 5 ;;
 esac
 out=$RUN_DIR/$v

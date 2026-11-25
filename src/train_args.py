@@ -394,6 +394,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="BOP (M18.7): largest side of those rectangles, as a fraction of the crop side",
     )
     parser.add_argument(
+        "--bop_occlusion_targets",
+        default="keep",
+        choices=["keep", "hide", "hide_mask"],
+        help="BOP (M18.7), dense targets under the occlusion rectangles: keep (mask and XYZ "
+        "unchanged), hide (removed from both), hide_mask (removed from the mask only); needs "
+        "--dense_heads and --bop_occlusion_aug",
+    )
+    parser.add_argument(
         "--bop_cutout_p",
         type=float,
         default=0.0,

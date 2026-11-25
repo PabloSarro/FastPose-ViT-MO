@@ -146,6 +146,55 @@ def test_pasted_occluder_changes_only_its_pixels_and_leaves_the_targets(index):
     assert hidden_pixels > 0  # and hides part of some objects
 
 
+def make_occluded(index, targets, occlusion=True):
+    return BOPDataset(
+        dataset="lmo",
+        split="train",
+        index=index,
+        img_size=SIZE,
+        dense_size=DENSE,
+        augment=True,
+        bbox_jitter_percent=0.0,
+        pixel_aug="none",
+        occlusion_aug=occlusion,
+        occlusion_p=1.0,
+        occlusion_targets=targets,
+    )
+
+
+@needs_bop
+@pytest.mark.parametrize("targets", ["hide", "hide_mask"])
+def test_targets_follow_the_occlusion_rectangles(index, targets):
+    clean_ds = make_occluded(index, "keep", occlusion=False)
+    ds = make_occluded(index, targets)
+    removed = 0
+    for k, row in enumerate(int(r) for r in np.random.default_rng(1).choice(len(ds), 24, replace=False)):
+        clean = clean_ds[row]
+        ds.transform.set_random_seed(k)
+        occ = ds[row]
+        # with no other augmentation, the pixels that changed are the erased ones
+        changed = ((occ["images"] - clean["images"]).abs().sum(0) > 1e-6).numpy()
+        assert changed.any()
+        keep = torch.from_numpy(~ds.covered_dense(changed, ds.crop_bbox(row)))
+        torch.testing.assert_close(occ["mask"], clean["mask"] * keep)
+        if targets == "hide":
+            torch.testing.assert_close(occ["xyz_valid"], clean["xyz_valid"] * keep)
+            torch.testing.assert_close(occ["xyz"], clean["xyz"] * keep)
+        else:  # XYZ stays supervised under the rectangles
+            torch.testing.assert_close(occ["xyz_valid"], clean["xyz_valid"])
+            torch.testing.assert_close(occ["xyz"], clean["xyz"])
+        removed += int((clean["mask"] - occ["mask"]).sum())
+    assert removed > 0
+
+
+@needs_bop
+def test_keep_leaves_the_targets_under_the_rectangles(index):
+    clean, occ = make_occluded(index, "keep", occlusion=False)[3], make_occluded(index, "keep")[3]
+    assert (occ["images"] != clean["images"]).any()
+    for key in ("mask", "xyz", "xyz_valid"):
+        torch.testing.assert_close(occ[key], clean[key])
+
+
 @needs_bop
 def test_cutout_off_without_augmentation(index):
     ds = BOPDataset(dataset="lmo", split="val", index=index, img_size=SIZE, cutout_p=1.0)

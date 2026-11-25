@@ -1304,7 +1304,7 @@ prefixes follow the milestone number (m12–m14 were used by audit / M11 jobs).
   - [x] Seed ensemble of `densex5` + PnP (evaluation only, `scripts/m18_ensemble.sh`, `scripts/val_score_csv.py`; reproduces the single-seed validation scores exactly): results in §9.
   - [ ] Training runs: `lmo-m18-densex10{,2}-001`, `lmo-m18-densex5{m05,m20,m50,r05,r20,j15,op8,obig,ocut,real}{,2}-001` (2×), `lmo-m18x8-densex5{,2}-001` (8×).
   - [ ] Evaluate by the adoption rule (PnP, noisy validation + test); for `densex5real` compare on test only (its real validation is biased) with `lmo-m17-real2x{,2}` (PBR + real, direct regression).
-  - Note (open, not launched): the rectangle occlusion of the recipe leaves the dense targets unchanged (the mask and XYZ stay "visible" under the noise rectangles); the pasted occluders remove them. A variant that also removes the rectangle pixels from the targets has not been tried.
+  - [~] **Does the target mismatch hurt?** (user, 2026-11-25) The occlusion rectangles of the recipe leave the dense targets unchanged (mask and XYZ stay "visible" under the noise rectangles); the pasted occluders remove them. (a) `--bop_occlusion_targets {keep,hide,hide_mask}` (default keep): variants `densex5ochide` (removed from mask and XYZ) and `densex5ocmask` (mask only); tests check that the removed target pixels are exactly the erased image pixels. Jobs `lmo-m18-densex5{ochide,ocmask}{,2}-001` (2×, 2 seeds), compare with `densex5` 2×. (b) Diagnostic on the trained `densex5` models (`scripts/m18_diag_occlusion.py`), to repeat on the new variants.
 
 ### M19 — Render-and-compare refinement (W6–W7)
 - What it does: render the object at the current pose estimate, let a network compare rendering

@@ -671,6 +671,10 @@ class FastRandomSunFlare(A.RandomSunFlare):
         return sun_flare_overlay_fast(img, flare_center, self.src_radius, self.src_color, circles)
 
 
+# M18.7: what the dense targets say under the synthetic occlusion rectangles
+OCCLUSION_TARGETS = ("keep", "hide", "hide_mask")
+
+
 def pixel_transform(
     pixel_aug: str,
     fast_sun_flare: bool = True,
@@ -678,6 +682,7 @@ def pixel_transform(
     occlusion_p: float = 0.5,
     occlusion_max_holes: int = 4,
     occlusion_max_size: float = 0.3,
+    occlusion_mark: bool = False,
 ) -> A.Compose:
     """Photometric augmentations + ImageNet normalization, for crops already at model size.
 
@@ -749,6 +754,8 @@ def pixel_transform(
                 hole_height_range=(0.1, occlusion_max_size),
                 hole_width_range=(0.1, occlusion_max_size),
                 fill="random_uniform",
+                # called with mask=zeros, the erased pixels come back as 1 (M18.7)
+                fill_mask=1 if occlusion_mark else None,
                 p=occlusion_p,
             )
         ]
@@ -872,6 +879,7 @@ class BOPDataset(Dataset):
         occlusion_p: float = 0.5,
         occlusion_max_holes: int = 4,
         occlusion_max_size: float = 0.3,
+        occlusion_targets: str = "keep",
         cutout_p: float = 0.0,
         real_background: bool = False,
         no_rotation_compensation: bool = False,
@@ -900,6 +908,10 @@ class BOPDataset(Dataset):
             occlusion_aug: Also erase 1-4 random rectangles of the crop (M11), when augmenting.
             occlusion_p, occlusion_max_holes, occlusion_max_size: Probability, largest number and
                 largest side (fraction of the crop side) of those rectangles.
+            occlusion_targets: What the dense targets say under those rectangles (M18.7): "keep"
+                (as before: mask and XYZ unchanged, so noise counts as visible object), "hide"
+                (removed from mask and xyz_valid, as a real occluder), "hide_mask" (removed from
+                the mask only; XYZ is still supervised there).
             cutout_p: When augmenting, with this probability paste the visible pixels of another
                 object (a random other row) over the crop (M18.7). The pasted pixels leave the
                 dense targets (mask, xyz_valid), as a real occluder would; pose labels unchanged.
@@ -919,6 +931,10 @@ class BOPDataset(Dataset):
             )
         if depth_mode not in DEPTH_MODES:
             raise ValueError(f"depth_mode must be one of {DEPTH_MODES}, got {depth_mode!r}")
+        if occlusion_targets not in OCCLUSION_TARGETS:
+            raise ValueError(
+                f"occlusion_targets must be one of {OCCLUSION_TARGETS}, got {occlusion_targets!r}"
+            )
         if bbox_source not in ("visib", "obj", "mix"):
             raise ValueError(f"bbox_source must be visib, obj or mix, got {bbox_source!r}")
         self.index = (
@@ -943,6 +959,11 @@ class BOPDataset(Dataset):
             occlusion_p=occlusion_p,
             occlusion_max_holes=occlusion_max_holes,
             occlusion_max_size=occlusion_max_size,
+            occlusion_mark=occlusion_targets != "keep",
+        )
+        # only needed when the targets must follow the rectangles
+        self.occlusion_targets = (
+            occlusion_targets if occlusion_aug and self.augment and dense_size > 0 else "keep"
         )
         self.cutout_p = cutout_p if self.augment else 0.0
         self.dense_size = dense_size
@@ -1159,7 +1180,15 @@ class BOPDataset(Dataset):
         covered = None
         if self.cutout_p > 0 and np.random.random() < self.cutout_p:
             crop, covered = self.paste_occluder(row, crop, bbox)
-        image = self.transform(image=crop.astype(np.float32) / 255.0)["image"]
+        erased = None
+        if self.occlusion_targets == "keep":
+            image = self.transform(image=crop.astype(np.float32) / 255.0)["image"]
+        else:
+            out = self.transform(
+                image=crop.astype(np.float32) / 255.0,
+                mask=np.zeros(crop.shape[:2], dtype=np.uint8),
+            )
+            image, erased = out["image"], np.asarray(out["mask"]) > 0
         U, rotation = self.labels(row, bbox)
         obj_idx = int(index["obj_idx"][row])
         sample = {
@@ -1184,6 +1213,11 @@ class BOPDataset(Dataset):
             if covered is not None:  # pasted occluder: not visible any more
                 keep = ~self.covered_dense(covered, bbox)
                 mask, xyz, valid = mask * keep, xyz * keep, valid & keep
+            if erased is not None:  # under the occlusion rectangles
+                keep = ~self.covered_dense(erased, bbox)
+                mask = mask * keep
+                if self.occlusion_targets == "hide":
+                    xyz, valid = xyz * keep, valid & keep
             sample["mask"] = torch.from_numpy(mask).unsqueeze(0)
             sample["xyz"] = torch.from_numpy(xyz)
             sample["xyz_valid"] = torch.from_numpy(valid.astype(np.float32)).unsqueeze(0)

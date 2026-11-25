@@ -27,6 +27,7 @@ BASE = {
     "bop_occlusion_max_holes": 4,
     "bop_occlusion_max_size": 0.3,
     "bop_cutout_p": 0.0,
+    "bop_occlusion_targets": "keep",
     "bop_train_split": "train",
     "bop_real_fraction": None,
     "vit_model": "vit_b_16_384",
@@ -51,6 +52,8 @@ CHANGES = {
     "densex5obig": {"bop_occlusion_max_holes": 6, "bop_occlusion_max_size": 0.4},
     "densex5ocut": {"bop_cutout_p": 0.5},
     "densex5real": {"bop_train_split": "train_mix", "bop_real_fraction": 0.25},
+    "densex5ochide": {"bop_occlusion_targets": "hide"},
+    "densex5ocmask": {"bop_occlusion_targets": "hide_mask"},
 }
 
 

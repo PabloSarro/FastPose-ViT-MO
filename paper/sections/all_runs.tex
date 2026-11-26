@@ -31,8 +31,8 @@ discussion of why the non-adopted approaches are worse is in Sec.~\ref{sec:catal
     ViT-H/518 & ViT-H/14, 518 px, 2$\times$ & .899 / .898 & .898 & .691 / .693 & .692 & adopted at 2$\times$ (best so far) \\
     ViT-B/512, 4$\times$ & 512 px, 4$\times$ & .881 / .888 & .884 & .673 / .671 & .672 & not adopted (validation $-$.002, test +.004) \\
     ViT-B/640, 4$\times$ & 640 px, 4$\times$ & .888 / .887 & .888 & .666 / .675 & .671 & adopted by a small margin (+.001 / +.003) \\
-    ViT-L/512, 4$\times$ & ViT-L/16, 512 px, 4$\times$ & .892 / .896 & .894 & .688 / .695 & .691 & adopted (+.008 / +.024), best at 4$\times$ so far \\
-    ViT-H/518, 4$\times$ & 4$\times$ & -- / -- & -- & -- / -- & -- & \pending{running} \\
+    ViT-L/512, 4$\times$ & ViT-L/16, 512 px, 4$\times$ & .892 / .896 & .894 & .688 / .695 & .691 & adopted (+.008 / +.024) \\
+    ViT-H/518, 4$\times$ & ViT-H/14, 518 px, 4$\times$ & .899 / .896 & .898 & .702 / .698 & .700 & adopted ($+$.011 / $+$.032), best direct regression \\
     ViT-L/512, 8$\times$ & 8$\times$ & -- / -- & -- & -- / -- & -- & \pending{running} \\
     ViT-B/640, 8$\times$ & 8$\times$ & -- / -- & -- & -- / -- & -- & stopped at epoch 16 / 17 of 150 (no result) \\
     ViT-H/518, 8$\times$ & 8$\times$, seed a only & -- / -- & -- & -- / -- & -- & stopped at epoch 34 of 150 (no result) \\
@@ -158,12 +158,15 @@ discussion of why the non-adopted approaches are worse is in Sec.~\ref{sec:catal
     \texttt{densesymx5} & PnP from the regressed pose & .912 / .908 & .910 & .715 / .716 & .715 & not adopted \\
     \texttt{densesymx5} & regressed rotation + PnP translation & .911 / .910 & .910 & .712 / .714 & .713 & not adopted \\
     \midrule
-    \texttt{densesymx5l} & PnP, ViT-L/512, symmetric XYZ & -- / -- & -- & -- / -- & -- & \pending{running} \\
+    \texttt{densesymx5l} & PnP, ViT-L/512, symmetric XYZ & .919 / .919 & .919 & .732 / .731 & .732 & adopted (best so far; $+$.007 / $+$.011 over \texttt{densex5}) \\
+    \texttt{densesymx5l} & direct regression & .897 / .898 & .897 & .704 / .705 & .705 & direct, better than baseline \\
+    \texttt{densesymx5l} & PnP from the regressed pose & .919 / .919 & .919 & .732 / .731 & .732 & equal to PnP \\
+    \texttt{densesymx5l} & regressed rotation + PnP translation & .923 / .919 & .921 & .728 / .726 & .727 & not adopted (test below PnP) \\
     \texttt{densex5l} & PnP, ViT-L/512 & -- / -- & -- & -- / -- & -- & \pending{running} \\
     \texttt{densex5} 8$\times$ & PnP, XYZ weight 5, 8$\times$ & -- / -- & -- & -- / -- & -- & \pending{running} \\
     \bottomrule
   \end{tabular}
-  \caption{\textbf{Multi-head network at $4\times$ on LM-O} (PBR only, ViT-B/384, two seeds; the $2\times$ references are in \cref{tab:cat_dense}: \texttt{densex5} PnP .912 / .717, \texttt{densesymx5} PnP .912 / .715). The $4\times$ budget separates the two variants that tied at $2\times$: without symmetric XYZ targets the modes that start from the regressed pose (\texttt{pnp\_init}, \texttt{dr\_rot\_pnp\_t}) collapse on the symmetric objects, which does not affect plain PnP.}
+  \caption{\textbf{Multi-head network at $4\times$ on LM-O} (PBR only, two seeds, ViT-B/384 unless noted; the $2\times$ references are in \cref{tab:cat_dense}: \texttt{densex5} PnP .912 / .717, \texttt{densesymx5} PnP .912 / .715). The $4\times$ budget separates the two variants that tied at $2\times$: without symmetric XYZ targets the modes that start from the regressed pose (\texttt{pnp\_init}, \texttt{dr\_rot\_pnp\_t}) collapse on the symmetric objects, which does not affect plain PnP.}
   \label{tab:cat_dense4x}
 \end{table*}
 
@@ -249,19 +252,19 @@ discussion of why the non-adopted approaches are worse is in Sec.~\ref{sec:catal
     \toprule
     Run & Change from \texttt{densex5} & Val. a / b & Val. mean & Test a / b & Test mean & Outcome \\
     \midrule
-    \texttt{densex10} & XYZ loss weight 10 & -- / -- & -- & -- / -- & -- & \pending{running} \\
+    \texttt{densex10} & XYZ loss weight 10 & .912 / .910 & .911 & .715 / .715 & .715 & not adopted (weight 5 stays) \\
     \texttt{densex5m05} & mask loss weight 0.5 & -- / -- & -- & -- / -- & -- & \pending{paused} \\
     \texttt{densex5m20} & mask loss weight 2 & -- / -- & -- & -- / -- & -- & \pending{paused} \\
     \texttt{densex5m50} & mask loss weight 5 & -- / -- & -- & -- / -- & -- & \pending{paused} \\
     \texttt{densex5r05} & rotation loss weight 0.5 & -- / -- & -- & -- / -- & -- & \pending{paused} \\
     \texttt{densex5r20} & rotation loss weight 2 & -- / -- & -- & -- / -- & -- & \pending{paused} \\
     \texttt{densex5j15} & box jitter 15\,\% & -- / -- & -- & -- / -- & -- & \pending{paused} \\
-    \texttt{densex5op8} & occlusion rectangles with p = 0.8 & -- / -- & -- & -- / -- & -- & \pending{running} \\
-    \texttt{densex5obig} & up to 6 occlusion rectangles of up to 40\,\% & -- / -- & -- & -- / -- & -- & \pending{running} \\
-    \texttt{densex5ocut} & also pasted pixels of another object (p = 0.5) & -- / -- & -- & -- / -- & -- & \pending{running} \\
-    \texttt{densex5real} & PBR + real LM images (PBR + real category) & -- / -- & -- & -- / -- & -- & \pending{running} \\
-    \texttt{densex5ochide} & occluded pixels removed from the mask and XYZ targets & -- / -- & -- & -- / -- & -- & \pending{running} \\
-    \texttt{densex5ocmask} & occluded pixels removed from the mask target only & -- / -- & -- & -- / -- & -- & \pending{running} \\
+    \texttt{densex5op8} & occlusion rectangles with p = 0.8 & .911 / .910 & .911 & .711 / .715 & .713 & not adopted \\
+    \texttt{densex5obig} & up to 6 occlusion rectangles of up to 40\,\% & .912 / .909 & .910 & .719 / .715 & .717 & not adopted (validation $-$.002, test tied) \\
+    \texttt{densex5ocut} & also pasted pixels of another object (p = 0.5) & .913 / .911 & .912 & .714 / .713 & .713 & not adopted \\
+    \texttt{densex5real} & PBR + real LM images (PBR + real category) & .987 / .986 & .986 & .755 / .751 & .753 & adopted for PBR + real ($+$.072 test) \\
+    \texttt{densex5ochide} & occluded pixels removed from the mask and XYZ targets & .913 / .911 & .912 & .712 / .716 & .714 & not adopted \\
+    \texttt{densex5ocmask} & occluded pixels removed from the mask target only & .908 / .913 & .910 & .710 / .717 & .714 & not adopted \\
     \bottomrule
   \end{tabular}
   \caption{\textbf{Settings of the multi-head network on LM-O} (PnP, ViT-B/384, 2$\times$ budget, two seeds; reference \texttt{densex5} PnP .912 / .717; \texttt{densex5real} is compared with the real-image direct-regression model on the test set).}
